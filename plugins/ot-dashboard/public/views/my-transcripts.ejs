@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <main class="page-wrap">
+      <section class="section-card page-intro">
+        <div>
+          <p class="hero-eyebrow"><%= t("transcripts.viewer.portal.title") %></p>
+          <h2 class="hero-title compact"><%= t("transcripts.viewer.portal.headline") %></h2>
+          <p class="hero-subtitle"><%= t("transcripts.viewer.portal.subtitle") %></p>
+        </div>
+      </section>
+
+      <% if (pageAlert) { %>
+        <div class="inline-alert <%= pageAlert.tone %>"><%= pageAlert.message %></div>
+      <% } %>
+
+      <section class="summary-grid">
+        <article class="summary-card summary-card-metric">
+          <p class="summary-label"><%= t("transcripts.viewer.portal.summary.available") %></p>
+          <strong class="summary-value"><%= portal.total %></strong>
+          <p class="summary-detail"><%= t("transcripts.viewer.portal.summary.availableDetail") %></p>
+        </article>
+        <article class="summary-card summary-card-status tone-muted">
+          <span class="status-pill tone-muted"><%= t("transcripts.viewer.portal.summary.membership") %></span>
+          <strong class="summary-value"><%= portal.membershipLabel %></strong>
+          <p class="summary-detail"><%= portal.freshnessLabel %></p>
+        </article>
+        <article class="summary-card summary-card-metric">
+          <p class="summary-label"><%= t("transcripts.viewer.portal.summary.tier") %></p>
+          <strong class="summary-value"><%= portal.tierLabel %></strong>
+          <p class="summary-detail"><%= t("transcripts.viewer.portal.summary.tierDetail") %></p>
+        </article>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.viewer.portal.inventoryTitle") %></h3>
+          <span class="pill-tag"><%= t("transcripts.viewer.portal.inventoryCount", { count: portal.total }) %></span>
+        </div>
+
+        <% if (portal.items.length) { %>
+          <div class="table-wrap">
+            <table class="data-table transcript-records-table">
+              <thead>
+                <tr>
+                  <th><%= t("transcripts.viewer.portal.table.transcript") %></th>
+                  <th><%= t("transcripts.viewer.portal.table.ticketChannel") %></th>
+                  <th><%= t("transcripts.viewer.portal.table.activity") %></th>
+                  <th><%= t("transcripts.viewer.portal.table.access") %></th>
+                  <th><%= t("common.actions") %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% portal.items.forEach((item) => { %>
+                  <tr>
+                    <td><strong><%= item.id %></strong></td>
+                    <td>
+                      <div class="entry-stack">
+                        <span><strong><%= t("transcripts.viewer.portal.ticketLabel") %>:</strong> <%= item.ticketId %></span>
+                        <span><strong><%= t("transcripts.viewer.portal.channelLabel") %>:</strong> <%= item.channelId %></span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="entry-stack">
+                        <span><strong><%= t("common.created") %>:</strong> <%= item.createdLabel %></span>
+                        <span><strong><%= t("common.updated") %>:</strong> <%= item.updatedLabel %></span>
+                      </div>
+                    </td>
+                    <td><span class="pill-tag"><%= item.accessLabel %></span></td>
+                    <td><a class="transcript-table-link" href="<%= item.openHref %>"><%= t("transcripts.viewer.portal.openAction") %></a></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="subsection-card">
+            <h3><%= t("transcripts.viewer.portal.emptyTitle") %></h3>
+            <p class="item-copy"><%= t("transcripts.viewer.portal.emptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+</body>
+</html>

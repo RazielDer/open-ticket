@@ -1,0 +1,61 @@
+[
+    {
+        "id":"whitelist-process",
+        "content":"",
+        "embed":{
+            "enabled":true,
+            "title":"Whitelist Review Process",
+            "url":"",
+            "description":"Complete the form in this ticket and keep your answers accurate. Staff will use that information for the whitelist decision.",
+            "customColor":"#2f855a",
+
+            "image":"",
+            "thumbnail":"",
+            "authorText":"",
+            "authorImage":"",
+            "footerText":"Whitelist applications are reviewed manually.",
+            "footerImage":"",
+
+            "timestamp":true,
+            "fields":[
+                {"name":"What Happens Next","value":"Finish the form, wait for staff review, and respond in this ticket if staff ask follow-up questions.","inline":false},
+                {"name":"Be Accurate","value":"Only submit information you are prepared to stand behind during review.","inline":false}
+            ]
+        },
+        "ping":{
+            "@here":false,
+            "@everyone":false,
+            "custom":[]
+        }
+    },
+    {
+        "id":"whitelist-expectations",
+        "content":"",
+        "embed":{
+            "enabled":true,
+            "title":"Application Expectations",
+            "url":"",
+            "description":"A clean ticket flow helps staff work faster and gives you a better chance of a smooth review.",
+            "customColor":"#d69e2e",
+
+            "image":"",
+            "thumbnail":"",
+            "authorText":"",
+            "authorImage":"",
+            "footerText":"",
+            "footerImage":"",
+
+            "timestamp":false,
+            "fields":[
+                {"name":"Do Not Bump Repeatedly","value":"Repeated bumps slow staff down and do not move your application ahead in the queue.","inline":false},
+                {"name":"Read The Rules","value":"Make sure you understand the server rules and whitelist requirements before asking for a decision.","inline":false},
+                {"name":"Need To Update Something?","value":"Reply in this ticket with the new information so staff can review the latest version.","inline":false}
+            ]
+        },
+        "ping":{
+            "@here":false,
+            "@everyone":false,
+            "custom":[]
+        }
+    }
+]

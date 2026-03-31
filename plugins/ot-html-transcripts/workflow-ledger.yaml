@@ -1,0 +1,251 @@
+version: 2
+generated_from: workflow.yaml
+updated_at: 2026-03-29
+overall_status: completed
+active_slice: null
+prepared_next_slice: null
+prepared_following_slice: null
+prepared_downstream_slice: null
+prepared_trailing_slice: null
+prepared_access_slice: null
+prepared_private_slice: null
+prepared_ux_slice: null
+prepared_editor_slice: null
+prepared_cleanup_slice: null
+prepared_query_slice: null
+prepared_query_dashboard_slice: null
+
+slices:
+  - id: 01-scaffold-contracts
+    phase: P01
+    status: completed
+    blockers: []
+    next_gate:
+      - Manifest, config, checker, declarations, and bootstrap skeleton exist under the plugin folder.
+      - Planned event surface includes responder events required by the repo.
+  - id: 02-service-storage-recovery
+    phase: P02
+    status: completed
+    blockers:
+      - 01-scaffold-contracts
+    next_gate:
+      - SQLite schema, repository, queue, service class, and recovery logic are wired and testable.
+  - id: 03-collection-dto-assets
+    phase: P03
+    status: completed
+    blockers:
+      - 02-service-storage-recovery
+    next_gate:
+      - Full-history collection and DTO parity are in place.
+      - Asset mirroring emits warnings and partial status without remote HTML dependencies.
+  - id: 04-render-http-compiler
+    phase: P04
+    status: completed
+    blockers:
+      - 03-collection-dto-assets
+    next_gate:
+      - Local HTML route serving works end to end.
+      - opendiscord:html-compiler is overwritten without changing core ready builders.
+  - id: 05-admin-tests-cutover
+    phase: P05
+    status: completed
+    blockers:
+      - 04-render-http-compiler
+    next_gate:
+      - Command actions work by transcript id, slug, ticket id, and channel id.
+      - Final build and node --test verification pass.
+  - id: 06-ops-contracts-and-storage
+    phase: P06
+    status: completed
+    blockers:
+      - 05-admin-tests-cutover
+    next_gate:
+      - Event log schema, repository APIs, and service query methods land without breaking shipped transcript behavior.
+      - Recovery writes per-transcript audit events for recovered stale builds.
+      - Build plus targeted storage and service tests pass.
+  - id: 07-retention-execution-and-sweep-actions
+    phase: P06
+    status: completed
+    blockers:
+      - 06-ops-contracts-and-storage
+    next_gate:
+      - Slice 06 is implemented and verified.
+      - Retention execution remains inactive until it is explicitly promoted after the current implementation stop point.
+  - id: 08-integrity-scan-repair-and-export-service
+    phase: P06
+    status: completed
+    blockers:
+      - 07-retention-execution-and-sweep-actions
+    next_gate:
+      - Slice 07 is implemented and verified.
+      - Integrity, repair, and export execution remain inactive until slice 08 is explicitly promoted after slice 07 closes.
+  - id: 09-dashboard-ops-summary-and-detail
+    phase: P07
+    status: completed
+    blockers:
+      - 08-integrity-scan-repair-and-export-service
+    next_gate:
+      - Slices 06 through 08 are implemented and verified in order.
+      - Dashboard operations summary and detail remain inactive until slice 09 is explicitly promoted after slice 08 closes.
+  - id: 10-dashboard-filters-bulk-actions-and-exports
+    phase: P07
+    status: completed
+    blockers:
+      - 09-dashboard-ops-summary-and-detail
+    next_gate:
+      - Slices 06 through 09 are implemented and verified in order.
+      - Dashboard filters, bulk actions, and direct export surfaces remain inactive until slice 10 is explicitly promoted after slice 09 closes.
+  - id: 11-link-policy-and-expiry
+    phase: P08
+    status: completed
+    blockers:
+      - 10-dashboard-filters-bulk-actions-and-exports
+    next_gate:
+      - Slices 06 through 10 are implemented and verified in order.
+      - Link policy and expiry remain inactive until slice 11 is explicitly promoted after slice 10 closes.
+  - id: 12-dashboard-private-access-mode
+    phase: P08
+    status: completed
+    blockers:
+      - 11-link-policy-and-expiry
+    next_gate:
+      - Slices 06 through 11 are implemented and verified in order.
+      - Dashboard private viewer mode remains inactive until slice 12 is explicitly promoted after slice 11 closes.
+  - id: 13-transcript-preview-and-style-presets
+    phase: P09
+    status: completed
+    blockers:
+      - 12-dashboard-private-access-mode
+    next_gate:
+      - Slices 06 through 12 are implemented and verified in order.
+      - Transcript preview and style preset work remains inactive until slice 13 is explicitly promoted after slice 12 closes.
+  - id: 14-transcript-editor-copy-and-localization
+    phase: P09
+    status: completed
+    blockers:
+      - 13-transcript-preview-and-style-presets
+    next_gate:
+      - Slices 06 through 13 are implemented and verified in order.
+      - Transcript editor copy, locale, and structure work remains inactive until slice 14 is explicitly promoted after slice 13 closes.
+  - id: 15-dashboard-self-registration-and-workbench-refactor
+    phase: P10
+    status: completed
+    blockers:
+      - 14-transcript-editor-copy-and-localization
+    next_gate:
+      - Slices 06 through 14 are implemented and verified in order.
+      - Dashboard self-registration and plugin workbench cleanup remain inactive until slice 15 is explicitly promoted after slice 14 closes.
+  - id: 16-operator-query-contracts-and-filtered-summary
+    phase: P11
+    status: completed
+    blockers:
+      - 15-dashboard-self-registration-and-workbench-refactor
+    next_gate:
+      - Slices 06 through 15 are implemented and verified in order.
+      - Operator query contracts and filtered summary remain inactive until slice 16 is explicitly promoted after slice 15 closes.
+  - id: 17-dashboard-advanced-transcript-filters-and-url-state
+    phase: P11
+    status: completed
+    blockers:
+      - 16-operator-query-contracts-and-filtered-summary
+    next_gate:
+      - Slices 06 through 17 are implemented and verified in order.
+      - Slice 18 may be promoted only as the narrowly scoped stabilization extension for deployment warnings and workbench notices.
+  - id: 18-deployment-warnings-and-workbench-notices
+    phase: P12
+    status: completed
+    blockers:
+      - 17-dashboard-advanced-transcript-filters-and-url-state
+    next_gate:
+      - Startup emits additive deployment warnings for unsafe transcript exposure without blocking plugin readiness.
+      - The plugin-owned dashboard workbench surfaces the same warning state without requiring ot-dashboard registry changes.
+      - Slice 18 verification passes before slice 19 is promoted.
+  - id: 19-private-viewer-access-audit-events
+    phase: P12
+    status: completed
+    blockers:
+      - 18-deployment-warnings-and-workbench-notices
+    next_gate:
+      - Successful private viewer document renders create additive viewer-access audit events with the locked detail fields.
+      - Asset fetches, unauthorized attempts, gone responses, and public-mode requests do not create the new event.
+      - Slice 19 verification passes before the stabilization phase is marked complete.
+  - id: 20-plugin-owned-option-routing-contracts
+    phase: P13
+    status: completed
+    blockers:
+      - 19-private-viewer-access-audit-events
+    next_gate:
+      - Plugin-owned ticket-option transcript routing fields are documented, normalized, and checker-covered entirely inside plugins/ot-html-transcripts/**.
+      - Inherited default, explicit override, and explicit no-channel semantics are locked and verified without src/** edits.
+      - Slice 20 verification passes before slice 21 is promoted.
+  - id: 21-compiler-wrapper-delivery-routing
+    phase: P13
+    status: completed
+    blockers:
+      - 20-plugin-owned-option-routing-contracts
+    next_gate:
+      - Both transcript modes route channel delivery through plugin-owned compiler wrappers only.
+      - Explicit override, inherited default, and explicit no-channel delivery are verified without breaking DM behavior or html compile-result shape.
+      - Slice 21 verification passes before slice 22 is promoted.
+  - id: 22-dashboard-option-editor-routing-controls
+    phase: P13
+    status: completed
+    blockers:
+      - 21-compiler-wrapper-delivery-routing
+    next_gate:
+      - The existing ticket option editor exposes the inherit-versus-override routing controls and preserves the dashboard theme.
+      - Non-ticket options strip the plugin-owned transcript routing block on save and transcript-facing copy reflects the new default-versus-override model.
+      - Locked dashboard and plugin verification passed for the slice. Run the final program verification sweep before marking the reopened phase fully closed.
+  - id: 23-dashboard-auth-store-and-dual-host-foundation
+    phase: P14
+    status: completed
+    blockers:
+      - 22-dashboard-option-editor-routing-controls
+    next_gate:
+      - Dual-host config, durable auth state, and canonical host helpers land without changing transcript authorization behavior yet.
+      - Admin and viewer cookies are separated by host and durable auth state survives restart.
+      - Slice 23 verification passes before slice 24 is promoted.
+  - id: 24-admin-discord-auth-live-rbac-and-route-guards
+    phase: P14
+    status: completed
+    blockers:
+      - 23-dashboard-auth-store-and-dual-host-foundation
+    next_gate:
+      - Discord admin login, seeded owner bootstrap, and live capability enforcement land on the admin host.
+      - Reviewer is denied from admin routes and Editor is narrowed to the locked visual editor scope.
+      - Slice 24 verification passes before slice 25 is promoted.
+  - id: 25-viewer-live-access-and-my-transcripts-service
+    phase: P14
+    status: completed
+    blockers:
+      - 24-admin-discord-auth-live-rbac-and-route-guards
+    next_gate:
+      - Service-owned live transcript viewer authorization requires current guild membership and live staff eligibility.
+      - A service-owned accessible-transcript list contract exists for the future My Transcripts portal.
+      - Slice 25 verification passes before slice 26 is promoted.
+  - id: 26-my-transcripts-portal-and-security-workspace
+    phase: P14
+    status: completed
+    blockers:
+      - 25-viewer-live-access-and-my-transcripts-service
+    next_gate:
+      - Viewer-host My Transcripts and admin-host security workspace land with the locked compact matte-dark styling.
+      - Security saves remain narrowed to non-secret RBAC and host-routing fields.
+      - Slice 26 verification passes before slice 27 is promoted.
+  - id: 27-audit-logging-and-security-hardening
+    phase: P14
+    status: completed
+    blockers:
+      - 26-my-transcripts-portal-and-security-workspace
+    next_gate:
+      - Durable auth/security audit records exist and transcript viewer access events include the locked accessPath classification.
+      - Admin and viewer routes return the locked no-store and privacy headers.
+      - Slice 27 verification passes before slice 28 is promoted.
+  - id: 28-final-auth-access-polish-and-verification
+    phase: P14
+    status: completed
+    blockers:
+      - 27-audit-logging-and-security-hardening
+    next_gate:
+      - Auth, viewer, portal, and security surfaces are visually aligned and documented.
+      - The full final verification sweep passes and phase P14 can be closed.

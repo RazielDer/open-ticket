@@ -1,11 +1,17 @@
 node_modules/
 package-lock.json
 .vscode/
+.env
+.env.*
+!.env.example
 
 devconfig/
 devdatabase/
 plugins/*
 !plugins/example-plugin/
+!plugins/**/
+!plugins/**/*
+plugins/*/config.json
 database/openticket.sqlite
 dist/
 

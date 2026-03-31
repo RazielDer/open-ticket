@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerClass: 'editor-workspace-header-no-logo',
+      headerShowLogo: false,
+      headerActions: dashboardAccess?.tier === 'admin'
+        ? [{ href: assetPath('admin'), label: t('common.admin'), variant: 'secondary' }]
+        : [],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap editor-workspace-page editor-workspace-options-page">
+      <% if (saved) { %>
+        <div class="inline-alert success"><%= t("common.statusSaved") %></div>
+      <% } %>
+
+      <%- include('partials/editor-workspace-header', {
+        eyebrow: '',
+        title: t('options.title'),
+        subtitle: t('options.subtitle'),
+        actions: [],
+        stats: [
+          { label: t('common.file'), value: advancedTools.fileName },
+          { label: t('options.workspace.savedOptionsLabel'), value: String(options.length) }
+        ]
+      }) %>
+
+      <div class="editor-workspace-grid">
+        <aside class="editor-workspace-sidebar">
+          <section class="section-card options-inventory-shell">
+            <div class="section-heading editor-toolbar options-inventory-heading">
+              <div>
+                <h3><%= t("options.workspace.inventoryTitle") %></h3>
+              </div>
+              <div class="card-actions">
+                <button class="btn primary" type="button" id="createOptionButton"><%= t("options.workspace.newButton") %></button>
+              </div>
+            </div>
+            <div class="editor-outline-list options-inventory-list" id="optionInventory">
+              <% if (options.length) { %>
+                <% options.forEach((option, index) => { %>
+                  <button class="editor-outline-link options-inventory-item" type="button" data-option-select data-index="<%= index %>">
+                    <span class="options-inventory-item-copy">
+                      <strong><%= option.name %></strong>
+                      <span class="config-file"><%= option.type %></span>
+                    </span>
+                    <span class="config-file options-inventory-item-id"><%= option.id %></span>
+                  </button>
+                <% }) %>
+              <% } else { %>
+                <div class="empty-panel editor-sidebar-empty">
+                  <h3><%= t("options.emptyTitle") %></h3>
+                  <p><%= t("options.emptyBody") %></p>
+                </div>
+              <% } %>
+            </div>
+          </section>
+
+          <%- include('partials/editor-advanced-tools', { advancedTools }) %>
+        </aside>
+
+        <div class="editor-workspace-main options-workspace-main">
+          <form id="optionForm" class="editor-workspace-stage">
+            <input type="hidden" id="optionEditIndex" value="-1">
+            <input type="hidden" id="optionOriginalId" value="">
+
+            <section class="section-card options-stage-shell">
+              <div class="section-heading editor-toolbar">
+                <div>
+                  <h3 id="optionWorkspaceTitle"><%= t("options.workspace.newDraftTitle") %></h3>
+                </div>
+                <div class="card-actions editor-toolbar-actions">
+                  <button class="btn secondary" type="button" id="duplicateOptionButton"><%= t("options.workspace.duplicateButton") %></button>
+                  <button class="btn subtle" type="button" id="moveOptionUpButton"><%= t("options.workspace.moveUp") %></button>
+                  <button class="btn subtle" type="button" id="moveOptionDownButton"><%= t("options.workspace.moveDown") %></button>
+                  <button class="btn subtle" type="button" id="deleteOptionButton"><%= t("common.delete") %></button>
+                </div>
+              </div>
+
+              <div class="summary-grid options-summary-grid">
+                <article class="summary-card">
+                  <span class="summary-label"><%= t("options.workspace.positionLabel") %></span>
+                  <strong class="summary-value" id="optionOrderPosition"><%= t("options.workspace.unsavedPosition") %></strong>
+                </article>
+                <article class="summary-card" id="ticketQuestionSummaryCard">
+                  <span class="summary-label"><%= t("options.workspace.questionCountLabel") %></span>
+                  <strong class="summary-value" id="assignedQuestionCount">0</strong>
+                </article>
+                <article class="summary-card">
+                  <span class="summary-label"><%= t("options.workspace.panelCountLabel") %></span>
+                  <strong class="summary-value" id="referencingPanelCount">0</strong>
+                </article>
+              </div>
+            </section>
+
+            <div class="options-support-grid">
+              <section class="section-card">
+                <div class="section-heading">
+                  <h3><%= t("options.workspace.identityTitle") %></h3>
+                </div>
+                <div class="form-grid two-up">
+                  <label>
+                    <span class="field-label"><%= t("options.fields.type") %></span>
+                    <select class="select-input" id="optionType">
+                      <option value=""><%= t("options.fields.selectType") %></option>
+                      <% optionTypes.forEach((value) => { %>
+                        <option value="<%= value %>"><%= value %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.id") %></span>
+                    <input class="text-input" id="optionId" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.name") %></span>
+                    <input class="text-input" id="optionName" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.description") %></span>
+                    <input class="text-input" id="optionDescription" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.buttonEmoji") %></span>
+                    <input class="text-input" id="buttonEmoji" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.buttonLabel") %></span>
+                    <input class="text-input" id="buttonLabel" type="text">
+                  </label>
+                  <label id="buttonColorWrap">
+                    <span class="field-label"><%= t("options.fields.buttonColor") %></span>
+                    <select class="select-input" id="buttonColor">
+                      <% buttonColors.forEach((value) => { %>
+                        <option value="<%= value %>"><%= value %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section class="section-card options-dependency-section">
+                <div class="section-heading">
+                  <h3><%= t("options.workspace.dependencyTitle") %></h3>
+                </div>
+                <div class="inline-alert warning" id="optionReferenceWarning" hidden>
+                  <strong><%= t("options.workspace.referenceWarningTitle") %></strong>
+                  <p><%= t("options.workspace.referenceWarningBody") %></p>
+                </div>
+                <div class="card-grid options-dependency-grid">
+                  <article class="item-card" id="assignedQuestionsCard">
+                    <div class="item-card-header">
+                      <div>
+                        <h3><%= t("options.workspace.assignedQuestionsTitle") %></h3>
+                      </div>
+                      <div class="editor-card-meta">
+                        <span class="pill-tag" id="assignedQuestionsCountPill">0</span>
+                      </div>
+                    </div>
+                    <p class="editor-intro" id="assignedQuestionsEmpty"><%= t("options.workspace.assignedQuestionsEmpty") %></p>
+                    <div class="pill-list options-dependency-list" id="assignedQuestionsList"></div>
+                  </article>
+
+                  <article class="item-card">
+                    <div class="item-card-header">
+                      <div>
+                        <h3><%= t("options.workspace.referencingPanelsTitle") %></h3>
+                      </div>
+                      <div class="editor-card-meta">
+                        <span class="pill-tag" id="referencingPanelsCountPill">0</span>
+                      </div>
+                    </div>
+                    <p class="editor-intro" id="referencingPanelsEmpty"><%= t("options.workspace.referencingPanelsEmpty") %></p>
+                    <div class="pill-list options-dependency-list" id="referencingPanelsList"></div>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <section class="section-card option-ticket-section" id="ticketFields" hidden>
+              <div class="section-heading">
+                <h3><%= t("options.sections.ticket") %></h3>
+              </div>
+
+              <div class="option-ticket-layout">
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.ticketChannelTitle") %></h4>
+                  </div>
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.channelPrefix") %></span>
+                      <input class="text-input" id="channelPrefix" type="text">
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.channelSuffix") %></span>
+                      <select class="select-input" id="channelSuffix">
+                        <% channelSuffixes.forEach((value) => { %>
+                          <option value="<%= value %>"><%= value %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.categoryId") %></span>
+                      <input class="text-input" id="channelCategory" type="text">
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.closedCategoryId") %></span>
+                      <input class="text-input" id="closedCategory" type="text">
+                    </label>
+                    <label class="span-2">
+                      <span class="field-label"><%= t("options.fields.backupCategoryId") %></span>
+                      <input class="text-input" id="backupCategory" type="text">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.ticketAutomationTitle") %></h4>
+                  </div>
+                  <div class="form-grid three-up option-ticket-automation-grid">
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autocloseEnabled">
+                      <span><%= t("options.fields.autocloseEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.inactiveHours") %></span>
+                      <input class="text-input" id="autocloseHours" type="number">
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autocloseOnLeave">
+                      <span><%= t("options.fields.autocloseOnLeave") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autocloseDisableOnClaim">
+                      <span><%= t("options.fields.autocloseDisableOnClaim") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autodeleteEnabled">
+                      <span><%= t("options.fields.autodeleteEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.inactiveDays") %></span>
+                      <input class="text-input" id="autodeleteDays" type="number">
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autodeleteOnLeave">
+                      <span><%= t("options.fields.autodeleteOnLeave") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="autodeleteDisableOnClaim">
+                      <span><%= t("options.fields.autodeleteDisableOnClaim") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="limitsEnabled">
+                      <span><%= t("options.fields.limitsEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.globalMaximum") %></span>
+                      <input class="text-input" id="globalMaximum" type="number">
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.userMaximum") %></span>
+                      <input class="text-input" id="userMaximum" type="number">
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="cooldownEnabled">
+                      <span><%= t("options.fields.cooldownEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.cooldownMinutes") %></span>
+                      <input class="text-input" id="cooldownMinutes" type="number">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.questionPickerTitle") %></h4>
+                  </div>
+                  <% if (availableQuestions.length) { %>
+                    <div class="checkbox-grid" id="questionPicker">
+                      <% availableQuestions.forEach((question) => { %>
+                        <label class="checkbox-field">
+                          <input type="checkbox" data-question-id="<%= question.id %>">
+                          <span>
+                            <strong><%= question.name %></strong>
+                            <span class="config-file">
+                              <%= question.id %> · <%= question.type %> · <%= question.required ? t("options.workspace.questionRequired") : t("options.workspace.questionOptional") %>
+                            </span>
+                          </span>
+                        </label>
+                      <% }) %>
+                    </div>
+                  <% } else { %>
+                    <div class="empty-panel">
+                      <h3><%= t("options.workspace.questionPickerEmptyTitle") %></h3>
+                      <p><%= t("options.workspace.questionPickerEmptyBody") %></p>
+                    </div>
+                  <% } %>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.transcriptRoutingTitle") %></h4>
+                  </div>
+                  <div class="checkbox-grid">
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="transcriptUseGlobalDefault" checked>
+                      <span><%= t("options.fields.useGlobalTranscriptDefault") %></span>
+                    </label>
+                  </div>
+                  <label>
+                    <span class="field-label"><%= t("options.fields.transcriptChannels") %></span>
+                    <textarea class="code-area compact" id="transcriptChannels" disabled readonly spellcheck="false"></textarea>
+                    <span
+                      class="field-help"
+                      id="transcriptRoutingHelper"
+                      data-inherited-help="<%= t('options.fields.transcriptRoutingInheritedHelp') %>"
+                      data-override-help="<%= t('options.fields.transcriptRoutingOverrideHelp') %>"
+                    ><%= t("options.fields.transcriptRoutingInheritedHelp") %></span>
+                    <span class="field-help"><%= t("options.fields.transcriptChannelsHelp") %></span>
+                  </label>
+                </section>
+              </div>
+
+              <div class="option-ticket-advanced-grid">
+                <details class="subsection-card editor-disclosure">
+                  <summary>
+                    <h4><%= t("options.workspace.ticketAdvancedTitle") %></h4>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="checkbox-grid">
+                      <label class="checkbox-field">
+                        <input type="checkbox" id="allowBlacklisted">
+                        <span><%= t("options.fields.allowBlacklisted") %></span>
+                      </label>
+                      <label class="checkbox-field">
+                        <input type="checkbox" id="slowModeEnabled">
+                        <span><%= t("options.fields.slowModeEnabled") %></span>
+                      </label>
+                    </div>
+                    <div class="form-grid two-up">
+                      <label>
+                        <span class="field-label"><%= t("options.fields.ticketAdmins") %></span>
+                        <textarea class="code-area compact" id="ticketAdmins"></textarea>
+                      </label>
+                      <label>
+                        <span class="field-label"><%= t("options.fields.readonlyAdmins") %></span>
+                        <textarea class="code-area compact" id="readonlyAdmins"></textarea>
+                      </label>
+                      <label>
+                        <span class="field-label"><%= t("options.fields.claimedCategory") %></span>
+                        <textarea class="code-area compact" id="claimedCategory"></textarea>
+                        <span class="field-help"><%= t("options.fields.claimedCategoryHelp") %></span>
+                      </label>
+                      <label>
+                        <span class="field-label"><%= t("options.fields.channelTopic") %></span>
+                        <textarea class="code-area compact" id="channelTopic"></textarea>
+                      </label>
+                      <label>
+                        <span class="field-label"><%= t("options.fields.slowModeSeconds") %></span>
+                        <input class="text-input" id="slowModeSeconds" type="number">
+                      </label>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="subsection-card editor-disclosure" id="ticketMessageFields">
+                  <summary>
+                    <h4><%= t("options.sections.advancedMessages") %></h4>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="form-grid two-up">
+                      <label>
+                        <span class="field-label"><%= t("options.fields.dmMessageJson") %></span>
+                        <textarea class="code-area compact" id="dmMessageJson"></textarea>
+                      </label>
+                      <label>
+                        <span class="field-label"><%= t("options.fields.ticketMessageJson") %></span>
+                        <textarea class="code-area compact" id="ticketMessageJson"></textarea>
+                      </label>
+                    </div>
+                    <span class="field-help"><%= t("options.fields.messageJsonHelp") %></span>
+                  </div>
+                </details>
+              </div>
+            </section>
+
+            <section class="section-card" id="websiteFields" hidden>
+              <div class="section-heading">
+                <h3><%= t("options.sections.website") %></h3>
+              </div>
+              <label>
+                <span class="field-label"><%= t("options.fields.websiteUrl") %></span>
+                <input class="text-input" id="websiteUrl" type="url">
+              </label>
+            </section>
+
+            <section class="section-card" id="roleFields" hidden>
+              <div class="section-heading">
+                <h3><%= t("options.sections.role") %></h3>
+              </div>
+              <div class="form-grid two-up">
+                <label>
+                  <span class="field-label"><%= t("options.fields.roleIds") %></span>
+                  <textarea class="code-area compact" id="roleIds"></textarea>
+                </label>
+              </div>
+              <details class="subsection-card editor-disclosure">
+                <summary>
+                  <h4><%= t("editor.advancedTitle") %></h4>
+                </summary>
+                <div class="editor-disclosure-body">
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.removeRoleIds") %></span>
+                      <textarea class="code-area compact" id="removeRoleIds"></textarea>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.roleMode") %></span>
+                      <select class="select-input" id="roleMode">
+                        <% roleModes.forEach((value) => { %>
+                          <option value="<%= value %>"><%= value %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="addOnMemberJoin">
+                      <span><%= t("options.fields.addOnMemberJoin") %></span>
+                    </label>
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            <div class="section-card editor-savebar options-savebar">
+              <div class="editor-savebar-copy">
+                <h3><%= t("options.workspace.saveTitle") %></h3>
+              </div>
+              <div class="card-actions sticky-actions editor-savebar-actions">
+                <button class="btn primary" type="submit"><%= t("common.save") %></button>
+              </div>
+            </div>
+          </form>
+
+          <% if (!options.length) { %>
+            <section class="empty-panel">
+              <h3><%= t("options.emptyTitle") %></h3>
+              <p><%= t("options.emptyBody") %></p>
+            </section>
+          <% } %>
+        </div>
+      </div>
+
+      <textarea id="options-data" hidden><%= JSON.stringify(options) %></textarea>
+      <textarea id="available-questions-data" hidden><%= JSON.stringify(availableQuestions) %></textarea>
+      <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
+      <textarea id="page-messages" hidden><%= messages %></textarea>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/config-options.js') %>"></script>
+</body>
+</html>

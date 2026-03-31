@@ -1,0 +1,104 @@
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configDetail.controlsTitle") %></h3>
+  </div>
+  <div class="item-card">
+    <h3><%= areaLabel %></h3>
+    <p class="item-copy"><%= t(`setup.areas.${detail.definition.id}.what`) %></p>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configDetail.tasksTitle") %></h3>
+  </div>
+  <p class="item-copy"><%= t(`setup.areas.${detail.definition.id}.tasks`) %></p>
+  <% if (detail.parityWarnings.length) { %>
+    <div class="list-grid">
+      <% detail.parityWarnings.forEach((warning) => { %>
+        <article class="item-card">
+          <p class="item-copy"><%= warning %></p>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+  <div class="subsection-card">
+    <div class="section-heading">
+      <h4><%= t("configDetail.structureTitle") %></h4>
+    </div>
+    <div class="pill-list">
+      <% detail.sectionLinks.forEach((section) => { %>
+        <span class="pill-tag"><%= section.label %></span>
+      <% }) %>
+    </div>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configDetail.recommendedTitle") %></h3>
+  </div>
+  <p class="item-copy"><%= t("configDetail.recommendedBody") %></p>
+  <div class="card-actions">
+    <a class="btn primary" href="<%= visualHref %>"><%= t("configDetail.visualAction") %></a>
+    <a class="btn secondary" href="<%= rawHref %>"><%= t("configDetail.rawAction") %></a>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configDetail.advancedTitle") %></h3>
+  </div>
+  <p class="item-copy"><%= t("configDetail.advancedBody") %></p>
+  <form method="post" action="<%= reviewAction %>" class="stack-form">
+    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+    <input type="hidden" name="sourceLabel" value="Draft review">
+    <label class="field-label" for="draftJson"><%= t("configDetail.previewLabel") %></label>
+    <textarea id="draftJson" name="candidateText" class="code-area" spellcheck="false" data-json-editor="true"><%= detail.currentText %></textarea>
+    <label class="field-label" for="draftFile"><%= t("configDetail.importLabel") %></label>
+    <input id="draftFile" type="file" accept=".json,application/json" data-load-json-into="#draftJson">
+    <div class="sticky-actions">
+      <button class="btn primary" type="submit"><%= t("configDetail.previewAction") %></button>
+      <a class="btn secondary" href="<%= exportHref %>"><%= t("configDetail.exportAction") %></a>
+      <a class="btn subtle" href="<%= rawHref %>"><%= t("configDetail.rawAction") %></a>
+    </div>
+  </form>
+
+  <div class="subsection-card">
+    <div class="section-heading">
+      <h4><%= t("configDetail.restoreTitle") %></h4>
+    </div>
+    <% if (detail.backupItems.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("configDetail.restoreHeaders.id") %></th>
+              <th><%= t("configDetail.restoreHeaders.created") %></th>
+              <th><%= t("configDetail.restoreHeaders.actions") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% detail.backupItems.forEach((backup) => { %>
+              <tr id="<%= backup.id %>">
+                <td><%= backup.id %></td>
+                <td><%= backup.createdAt %></td>
+                <td>
+                  <div class="sticky-actions">
+                    <a class="btn secondary" href="<%= backup.previewHref %>"><%= t("configDetail.restorePreview") %></a>
+                    <a class="btn subtle" href="<%= backup.restoreHref %>"><%= t("configDetail.restoreReview") %></a>
+                  </div>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("configDetail.restoreEmptyTitle") %></h3>
+        <p><%= t("configDetail.restoreEmptyBody") %></p>
+      </div>
+    <% } %>
+  </div>
+</section>

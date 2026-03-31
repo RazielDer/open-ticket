@@ -1,0 +1,359 @@
+<%
+  const manifestDraft = detail.manifestDraft || {
+    enabled: detail.enabled === true,
+    priority: detail.priority == null ? 0 : detail.priority
+  };
+  const workbenchSections = detail.registrySections.filter((section) => section.type === "workbench");
+  const supplementalSections = detail.registrySections.filter((section) => section.type !== "workbench");
+%>
+
+<div class="plugin-workbench">
+  <div class="plugin-main">
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.overviewTitle") %></h3>
+        <span class="status-pill tone-<%= detail.status.tone %>"><%= detail.status.label %></span>
+      </div>
+      <p class="item-copy"><%= detail.shortDescription || detail.longDescription || detail.id %></p>
+      <div class="summary-grid">
+        <article class="summary-card">
+          <p class="summary-label"><%= t("addOns.detail.overview.source") %></p>
+          <strong class="summary-value"><%= detail.sourceLabel %></strong>
+          <p class="summary-detail"><%= t("addOns.detail.overview.versionDetail", { value: detail.version || t("common.unavailable") }) %></p>
+        </article>
+        <article class="summary-card">
+          <p class="summary-label"><%= t("addOns.detail.overview.authors") %></p>
+          <strong class="summary-value"><%= detail.authorsLabel %></strong>
+          <p class="summary-detail"><%= t("addOns.detail.overview.supportedVersions", { value: detail.supportedVersionsLabel }) %></p>
+        </article>
+        <article class="summary-card">
+          <p class="summary-label"><%= t("addOns.detail.overview.jsonFiles") %></p>
+          <strong class="summary-value"><%= detail.assetCount %></strong>
+          <p class="summary-detail"><%= t("addOns.detail.overview.jsonFilesDetail") %></p>
+        </article>
+        <article class="summary-card">
+          <p class="summary-label"><%= t("addOns.detail.overview.manifest") %></p>
+          <strong class="summary-value"><%= detail.manifestAvailabilityLabel %></strong>
+          <p class="summary-detail"><%= detail.crashReason || t("addOns.detail.overview.noCrashReason") %></p>
+        </article>
+      </div>
+      <% if (detail.warnings.length) { %>
+        <div class="list-grid">
+          <% detail.warnings.forEach((warning) => { %>
+            <article class="item-card">
+              <p class="item-copy"><%= warning %></p>
+            </article>
+          <% }) %>
+        </div>
+      <% } %>
+      <div class="subsection-card">
+        <div class="section-heading">
+          <h4><%= t("addOns.detail.compatibility.quickFactsTitle") %></h4>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong><%= t("addOns.detail.compatibility.status") %>:</strong> <span class="status-pill tone-<%= detail.status.tone %>"><%= detail.status.label %></span></div>
+          <div><strong><%= t("addOns.detail.compatibility.source") %>:</strong> <%= detail.sourceLabel %></div>
+          <div><strong><%= t("addOns.detail.compatibility.version") %>:</strong> <%= detail.version || t("common.unavailable") %></div>
+          <div><strong><%= t("addOns.detail.compatibility.authors") %>:</strong> <%= detail.authorsLabel %></div>
+          <div><strong><%= t("addOns.detail.compatibility.supportedVersions") %>:</strong> <%= detail.supportedVersionsLabel %></div>
+          <div><strong><%= t("addOns.detail.compatibility.crashReason") %>:</strong> <%= detail.crashReasonLabel %></div>
+        </div>
+      </div>
+    </section>
+
+    <% if (workbenchSections.length) { %>
+      <% workbenchSections.forEach((section) => { %>
+        <section class="section-card">
+          <div class="section-heading">
+            <h3><%= section.title %></h3>
+            <% if (section.badge) { %>
+              <span class="status-pill tone-<%= section.badge.tone %>"><%= section.badge.label %></span>
+            <% } %>
+          </div>
+          <% if (section.body) { %>
+            <p class="field-help"><%= section.body %></p>
+          <% } %>
+          <% if (section.summaryItems && section.summaryItems.length) { %>
+            <div class="summary-grid">
+              <% section.summaryItems.forEach((item) => { %>
+                <article class="summary-card">
+                  <p class="summary-label"><%= item.label %></p>
+                  <strong class="summary-value"><%= item.value %></strong>
+                  <p class="summary-detail"><%= item.detail || '' %></p>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+          <% if (section.actions && section.actions.length) { %>
+            <div class="sticky-actions">
+              <% section.actions.forEach((action) => { %>
+                <% if ((action.method || 'get') === 'post') { %>
+                  <form method="post" action="<%= action.href %>" class="inline-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= assetPath('admin/plugins/' + encodeURIComponent(detail.id)) %>">
+                    <button class="btn secondary" type="submit" <% if (action.confirmText) { %>data-confirm-message="<%= action.confirmText %>"<% } %>><%= action.label %></button>
+                  </form>
+                <% } else { %>
+                  <a class="btn secondary" href="<%= action.href %>"><%= action.label %></a>
+                <% } %>
+              <% }) %>
+            </div>
+          <% } %>
+        </section>
+      <% }) %>
+    <% } %>
+
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.advancedTitle") %></h3>
+      </div>
+      <p class="item-copy"><%= t("addOns.detail.advancedBody") %></p>
+    </section>
+
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.manifestTitle") %></h3>
+        <span class="status-pill tone-warning"><%= t("addOns.detail.manifestRestartRequired") %></span>
+      </div>
+      <% if (detail.hasManifest) { %>
+        <form method="post" action="<%= detail.manifestReviewAction %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <div class="form-grid two-up">
+            <label>
+              <span class="field-label"><%= t("addOns.detail.manifestEnabledLabel") %></span>
+              <select class="select-input" name="enabled">
+                <option value="true" <%= manifestDraft.enabled ? 'selected' : '' %>><%= t("addOns.detail.manifestEnabledOption") %></option>
+                <option value="false" <%= !manifestDraft.enabled ? 'selected' : '' %>><%= t("addOns.detail.manifestDisabledOption") %></option>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("addOns.detail.manifestPriorityLabel") %></span>
+              <input class="text-input" type="number" step="1" name="priority" value="<%= manifestDraft.priority %>">
+            </label>
+          </div>
+          <p class="field-help"><%= t("addOns.detail.manifestHelp") %></p>
+          <div class="sticky-actions">
+            <button class="btn primary" type="submit"><%= t("addOns.detail.reviewManifestAction") %></button>
+            <a class="btn secondary" href="<%= detail.manifestExportHref %>"><%= t("addOns.detail.exportManifestAction") %></a>
+          </div>
+        </form>
+      <% } else { %>
+        <div class="empty-panel">
+          <h3><%= t("addOns.detail.manifestEmptyTitle") %></h3>
+          <p><%= t("addOns.detail.manifestEmptyBody") %></p>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.assetsTitle") %></h3>
+        <span class="pill-tag"><%= t("addOns.detail.assetsCount", { count: detail.assetCount }) %></span>
+      </div>
+      <% if (detail.assetItems.length) { %>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><%= t("addOns.detail.assetsHeaders.file") %></th>
+                <th><%= t("addOns.detail.assetsHeaders.kind") %></th>
+                <th><%= t("addOns.detail.assetsHeaders.detectedRoot") %></th>
+                <th><%= t("addOns.detail.assetsHeaders.updated") %></th>
+                <th><%= t("addOns.detail.assetsHeaders.actions") %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% detail.assetItems.forEach((asset) => { %>
+                <tr>
+                  <td>
+                    <strong><%= asset.relativePath %></strong>
+                    <div class="field-help"><%= asset.size == null ? t("addOns.detail.assetsSizeUnknown") : asset.size + ' bytes' %></div>
+                  </td>
+                  <td><%= asset.kind %></td>
+                  <td><%= asset.detectedRootShape %></td>
+                  <td><%= asset.updatedAt ? asset.updatedAt : t("common.unavailable") %></td>
+                  <td>
+                    <div class="sticky-actions">
+                      <a class="btn primary" href="<%= asset.detailHref %>"><%= t("addOns.detail.reviewAssetAction") %></a>
+                      <a class="btn subtle" href="<%= asset.exportHref %>"><%= t("addOns.detail.exportAssetAction") %></a>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="empty-panel">
+          <h3><%= t("addOns.detail.assetsEmptyTitle") %></h3>
+          <p><%= t("addOns.detail.assetsEmptyBody") %></p>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.backupsTitle") %></h3>
+      </div>
+      <form method="post" action="<%= detail.backupCreateAction %>" class="stack-form">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <label>
+          <span class="field-label"><%= t("addOns.detail.backupNoteLabel") %></span>
+          <input class="text-input" type="text" name="note" placeholder="<%= t('addOns.detail.backupNotePlaceholder') %>">
+        </label>
+        <div class="sticky-actions">
+          <button class="btn primary" type="submit"><%= t("addOns.detail.backupCreateAction") %></button>
+        </div>
+      </form>
+
+      <% if (detail.backupItems.length) { %>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><%= t("addOns.detail.backupsHeaders.id") %></th>
+                <th><%= t("addOns.detail.backupsHeaders.created") %></th>
+                <th><%= t("addOns.detail.backupsHeaders.source") %></th>
+                <th><%= t("addOns.detail.backupsHeaders.files") %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% detail.backupItems.forEach((backup) => { %>
+                <tr>
+                  <td><%= backup.id %></td>
+                  <td><%= backup.createdLabel %></td>
+                  <td><%= backup.source %></td>
+                  <td><%= backup.fileCount %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <p class="field-help"><%= t("addOns.detail.backupsRestoreHelp") %></p>
+      <% } else { %>
+        <div class="empty-panel">
+          <h3><%= t("addOns.detail.backupsEmptyTitle") %></h3>
+          <p><%= t("addOns.detail.backupsEmptyBody") %></p>
+        </div>
+      <% } %>
+    </section>
+
+    <% if (supplementalSections.length) { %>
+      <% supplementalSections.forEach((section) => { %>
+        <section class="section-card">
+          <div class="section-heading">
+            <h3><%= section.title %></h3>
+          </div>
+
+          <% if (section.type === 'notice') { %>
+            <div class="inline-alert registry-alert tone-<%= section.tone %>"><%= section.body %></div>
+          <% } %>
+
+          <% if (section.type === 'summary') { %>
+            <div class="summary-grid">
+              <% section.items.forEach((item) => { %>
+                <article class="summary-card">
+                  <p class="summary-label"><%= item.label %></p>
+                  <strong class="summary-value"><%= item.value %></strong>
+                  <p class="summary-detail"><%= item.detail || '' %></p>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+
+          <% if (section.type === 'list') { %>
+            <% if (section.items.length) { %>
+              <div class="list-grid">
+                <% section.items.forEach((item) => { %>
+                  <article class="item-card">
+                    <h3><%= item.label %></h3>
+                    <p class="item-copy"><%= item.detail || '' %></p>
+                  </article>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="empty-panel">
+                <h3><%= t("addOns.detail.registryEmptyTitle") %></h3>
+                <p><%= section.emptyMessage || t("addOns.detail.registryEmptyBody") %></p>
+              </div>
+            <% } %>
+          <% } %>
+
+          <% if (section.type === 'actions') { %>
+            <div class="card-grid">
+              <% section.actions.forEach((action) => { %>
+                <article class="config-card">
+                  <h3><%= action.label %></h3>
+                  <p><%= action.description || t("addOns.detail.registryActionDefault") %></p>
+                  <% if ((action.method || 'get') === 'post') { %>
+                    <form method="post" action="<%= action.href %>" class="sticky-actions">
+                      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                      <input type="hidden" name="returnTo" value="<%= assetPath('admin/plugins/' + encodeURIComponent(detail.id)) %>">
+                      <button class="btn secondary" type="submit" <% if (action.confirmText) { %>data-confirm-message="<%= action.confirmText %>"<% } %>><%= action.label %></button>
+                    </form>
+                  <% } else { %>
+                    <div class="sticky-actions">
+                      <a class="btn secondary" href="<%= action.href %>"><%= action.label %></a>
+                    </div>
+                  <% } %>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        </section>
+      <% }) %>
+    <% } %>
+
+    <% if (Array.isArray(pluginActionCards) && pluginActionCards.length) { %>
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("shell.automationTools") %></h3>
+        </div>
+        <div class="card-grid">
+          <% pluginActionCards.forEach((provider) => { %>
+            <article class="config-card">
+              <p class="config-file"><%= provider.id %></p>
+              <h3><%= provider.title %></h3>
+              <p><%= provider.available ? t("shell.providerReady") : provider.reason %></p>
+              <div class="sticky-actions">
+                <% provider.actions.forEach((action) => { %>
+                  <form method="post" action="<%= action.href %>" class="inline-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= assetPath('admin/plugins/' + encodeURIComponent(detail.id)) %>">
+                    <button class="btn <%= provider.available ? 'secondary' : 'subtle' %>" type="submit" <% if (!provider.available) { %>disabled<% } %> data-confirm-message="<%= action.confirmationText %>"><%= action.label %></button>
+                  </form>
+                <% }) %>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+  </div>
+
+  <aside class="plugin-rail">
+    <section class="section-card">
+      <div class="section-heading">
+        <h3><%= t("addOns.detail.compatibility.title") %></h3>
+      </div>
+      <div class="plugin-fact-list">
+        <div><strong><%= t("addOns.detail.compatibility.requiredPlugins") %>:</strong> <%= detail.requiredPluginsLabel %></div>
+        <div><strong><%= t("addOns.detail.compatibility.incompatiblePlugins") %>:</strong> <%= detail.incompatiblePluginsLabel %></div>
+        <div><strong><%= t("addOns.detail.compatibility.missingDependencies") %>:</strong> <%= detail.missingDependenciesLabel %></div>
+        <div><strong><%= t("addOns.detail.compatibility.missingRequiredPlugins") %>:</strong> <%= detail.missingRequiredPluginsLabel %></div>
+        <div><strong><%= t("addOns.detail.compatibility.activeIncompatiblePlugins") %>:</strong> <%= detail.activeIncompatiblePluginsLabel %></div>
+      </div>
+      <% if (detail.warnings.length) { %>
+        <div class="list-grid">
+          <% detail.warnings.forEach((warning) => { %>
+            <article class="item-card">
+              <p class="item-copy"><%= warning %></p>
+            </article>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <p class="field-help"><%= t("addOns.detail.compatibility.noIssues") %></p>
+      <% } %>
+    </section>
+  </aside>
+</div>

@@ -1,0 +1,27 @@
+<%
+  const actions = Array.isArray(headerActions) ? headerActions : []
+  const headerClasses = ["site-header", typeof headerClass === "string" ? headerClass : ""].filter(Boolean).join(" ")
+%>
+<header class="<%= headerClasses %>">
+  <a class="brand-block" href="<%= assetPath('') %>">
+    <h1 class="brand-title"><%= brand.title %></h1>
+  </a>
+  <% if (actions.length || logoutAction) { %>
+    <nav class="header-nav">
+      <% actions.forEach((action) => { %>
+        <a
+          class="btn <%= action.variant || 'secondary' %>"
+          href="<%= action.href %>"
+          <% if (action.target) { %>target="<%= action.target %>"<% } %>
+          <% if (action.rel) { %>rel="<%= action.rel %>"<% } %>
+        ><%= action.label %></a>
+      <% }) %>
+      <% if (logoutAction) { %>
+        <form method="post" action="<%= logoutAction %>">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <button class="btn subtle" type="submit"><%= t("common.logout") %></button>
+        </form>
+      <% } %>
+    </nav>
+  <% } %>
+</header>

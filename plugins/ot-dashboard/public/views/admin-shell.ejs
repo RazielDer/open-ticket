@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body admin-shell-body <%= pageClass || '' %>" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <% const accessCapabilities = Array.isArray(dashboardAccess?.capabilities) ? dashboardAccess.capabilities : [] %>
+  <a class="skip-link" href="#dashboardMain"><%= t("shell.skipToContent") %></a>
+  <div class="control-shell">
+    <aside class="control-rail">
+      <a class="brand-block rail-brand rail-brand-text" href="<%= assetPath('admin') %>">
+        <div>
+          <h1 class="brand-title"><%= brand.title %></h1>
+        </div>
+      </a>
+      <section class="subsection-card">
+        <p class="config-file"><%= t("shell.primaryNavigation") %></p>
+        <nav class="rail-nav" aria-label="<%= t('shell.primaryNavigation') %>">
+          <% navItems.forEach((item) => { %>
+            <% if (!item.requiredCapability || accessCapabilities.includes(item.requiredCapability)) { %>
+              <a class="rail-link <%= item.active ? 'active' : '' %>" href="<%= item.href %>" <%= item.active ? 'aria-current="page"' : '' %>><%= item.label %></a>
+            <% } %>
+          <% }) %>
+        </nav>
+      </section>
+      <section class="subsection-card">
+        <p class="config-file"><%= t("shell.utilityNavigation") %></p>
+        <div class="rail-stack">
+          <form method="post" action="<%= logoutAction %>">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <button class="btn subtle wide" type="submit"><%= t("common.logout") %></button>
+          </form>
+        </div>
+      </section>
+    </aside>
+
+    <% const overviewLayout = contentView === "sections/overview" %>
+    <div class="control-main">
+      <% if (!overviewLayout) { %>
+        <div class="status-strip tone-<%= statusStrip.tone %>">
+          <span class="status-pill tone-<%= statusStrip.tone %>"><%= statusStrip.attentionLabel %></span>
+          <strong><%= statusStrip.label %></strong>
+          <span><%= statusStrip.updatedLabel %></span>
+          <span><%= statusStrip.detail %></span>
+        </div>
+      <% } %>
+
+      <main id="dashboardMain" class="control-content">
+        <% if (!overviewLayout && !hidePageIntro) { %>
+          <section class="section-card page-intro">
+            <div>
+              <% if (pageEyebrow) { %>
+                <p class="hero-eyebrow"><%= pageEyebrow %></p>
+              <% } %>
+              <h2 class="hero-title compact"><%= pageHeadline %></h2>
+              <% if (pageSubtitle) { %>
+                <p class="hero-subtitle"><%= pageSubtitle %></p>
+              <% } %>
+            </div>
+            <% if (Array.isArray(heroActions) && heroActions.length) { %>
+              <div class="card-actions">
+                <% heroActions.forEach((action) => { %>
+                  <% if (!action.requiredCapability || accessCapabilities.includes(action.requiredCapability)) { %>
+                    <a class="btn <%= action.variant || 'secondary' %>" href="<%= action.href %>" <% if (action.target) { %>target="<%= action.target %>"<% } %> <% if (action.rel) { %>rel="<%= action.rel %>"<% } %>><%= action.label %></a>
+                  <% } %>
+                <% }) %>
+              </div>
+            <% } %>
+          </section>
+        <% } %>
+
+        <% if (pageAlert) { %>
+          <div class="inline-alert <%= pageAlert.tone %>"><%= pageAlert.message %></div>
+        <% } %>
+
+        <% if (!overviewLayout && Array.isArray(summaryCards) && summaryCards.length) { %>
+          <section class="summary-grid">
+            <% summaryCards.forEach((card) => { %>
+              <article class="summary-card summary-card-<%= card.kind %> <%= card.tone ? `tone-${card.tone}` : '' %>">
+                <% if (card.kind === 'status') { %>
+                  <span class="status-pill tone-<%= card.tone || 'muted' %>"><%= card.label %></span>
+                <% } else { %>
+                  <p class="summary-label"><%= card.label %></p>
+                <% } %>
+                <strong class="summary-value"><%= card.value %></strong>
+                <p class="summary-detail"><%= card.detail %></p>
+              </article>
+            <% }) %>
+          </section>
+        <% } %>
+
+        <%- include(contentView) %>
+      </main>
+
+      <%- include('partials/footer') %>
+    </div>
+  </div>
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <% if (includeJsonEditor) { %>
+    <script src="<%= assetPath('js/vendor/codemirror-json.js') %>"></script>
+    <script src="<%= assetPath('js/json-editor.js') %>"></script>
+  <% } %>
+  <script src="<%= assetPath('js/control-center.js') %>"></script>
+</body>
+</html>

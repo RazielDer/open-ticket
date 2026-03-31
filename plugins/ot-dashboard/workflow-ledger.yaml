@@ -1,0 +1,266 @@
+version: 1
+overall_status: completed
+last_updated: 2026-03-31
+active_slice: null
+
+slices:
+  - id: 09-login-first-entry-consolidation
+    phase: P01
+    title: Login-first entry consolidation
+    status: completed
+  - id: 10-login-surface-hierarchy-refinement
+    phase: P02
+    title: Login surface hierarchy refinement
+    status: completed
+  - id: 11-login-brand-normalization
+    phase: P03
+    title: Login brand normalization
+    status: completed
+  - id: 12-login-masthead-wrap-normalization
+    phase: P04
+    title: Login masthead wrap normalization
+    status: completed
+  - id: 13-login-csrf-recovery
+    phase: P05
+    title: Login CSRF recovery
+    status: completed
+  - id: 14-dark-theme-and-admin-home-simplification
+    phase: P06
+    title: Dark theme flattening and admin home simplification
+    status: completed
+  - id: 15-flat-black-admin-shell-refinement
+    phase: P07
+    title: Flat black admin shell refinement
+    status: completed
+  - id: 16-admin-home-daily-work-removal
+    phase: P08
+    title: Admin home daily work removal
+    status: completed
+  - id: 17-admin-home-density-refinement
+    phase: P09
+    title: Admin home density refinement
+    status: completed
+  - id: 18-admin-home-overview-compaction
+    phase: P10
+    title: Admin home overview compaction
+    status: completed
+  - id: 19-setup-page-next-step-removal
+    phase: P11
+    title: Setup page next-step removal
+    status: completed
+  - id: 20-setup-surface-removal
+    phase: P12
+    title: Setup surface removal
+    status: completed
+  - id: 21-shared-editor-workspace-foundation
+    phase: P13
+    title: Shared editor workspace foundation
+    status: completed
+  - id: 22-general-workspace-redesign
+    phase: P14
+    title: General workspace redesign
+    status: completed
+  - id: 23-array-editor-safety-and-reorder
+    phase: P15
+    title: Array editor safety and reorder foundation
+    status: completed
+  - id: 24-options-workspace-redesign
+    phase: P16
+    title: Options workspace redesign
+    status: completed
+  - id: 25-panels-workspace-redesign
+    phase: P17
+    title: Panels workspace redesign
+    status: completed
+  - id: 26-questions-workspace-redesign
+    phase: P18
+    title: Questions workspace redesign
+    status: completed
+  - id: 27-home-card-cutover-and-legacy-route-redirects
+    phase: P19
+    title: Home card cutover and legacy route redirects
+    status: completed
+  - id: 28-shared-workspace-density-and-responsive-advanced-tools
+    phase: P20
+    title: Shared workspace density and responsive advanced tools
+    status: completed
+  - id: 29-workspace-copy-tightening-and-structural-trim
+    phase: P21
+    title: Workspace copy tightening and structural trim
+    status: completed
+  - id: 30-final-visual-alignment-and-density-verification
+    phase: P22
+    title: Final visual alignment and density verification
+    status: completed
+  - id: 31-shared-workspace-proportion-and-control-sizing
+    phase: P23
+    title: Shared workspace proportion and control sizing
+    status: completed
+  - id: 32-editor-card-compaction-and-copy-tuning
+    phase: P24
+    title: Editor card compaction and copy tuning
+    status: completed
+  - id: 33-final-ui-refinement-verification
+    phase: P25
+    title: Final UI refinement verification
+    status: completed
+  - id: 34-add-ons-inventory-shell-and-search-density
+    phase: P26
+    title: Add-ons inventory shell and search density
+    status: completed
+  - id: 35-add-ons-card-hierarchy-and-copy-refinement
+    phase: P27
+    title: Add-ons card hierarchy and copy refinement
+    status: completed
+  - id: 36-final-add-ons-inventory-verification
+    phase: P28
+    title: Final add-ons inventory verification
+    status: completed
+  - id: 37-add-ons-inventory-grouping-and-layout-decluttering
+    phase: P29
+    title: Add-ons inventory grouping and layout decluttering
+    status: completed
+  - id: 38-add-ons-metadata-trim-and-row-compaction
+    phase: P30
+    title: Add-ons metadata trim and row compaction
+    status: completed
+  - id: 39-final-add-ons-decluttering-verification
+    phase: P31
+    title: Final add-ons decluttering verification
+    status: completed
+  - id: 40-transcript-operations-shell-and-filter-structure
+    phase: P32
+    title: Transcript operations shell and filter structure
+    status: completed
+  - id: 41-transcript-records-and-summary-decluttering
+    phase: P33
+    title: Transcript records and summary decluttering
+    status: completed
+  - id: 42-final-transcript-operations-verification
+    phase: P34
+    title: Final transcript operations verification
+    status: completed
+  - id: 43-transcript-summary-and-shell-compaction
+    phase: P35
+    title: Transcript summary and shell compaction
+    status: completed
+  - id: 44-transcript-records-toolbar-and-operations-balance
+    phase: P36
+    title: Transcript records toolbar and operations balance
+    status: completed
+  - id: 45-final-transcript-layout-verification
+    phase: P37
+    title: Final transcript layout verification
+    status: completed
+  - id: 46-transcript-shell-and-filter-streamlining
+    phase: P38
+    title: Transcript shell and filter streamlining
+    status: completed
+  - id: 47-transcript-records-and-operations-density
+    phase: P39
+    title: Transcript records and operations density
+    status: completed
+  - id: 48-final-transcript-surface-polish-verification
+    phase: P40
+    title: Final transcript surface polish verification
+    status: completed
+  - id: 49-admin-surface-page-fill-width-restoration
+    phase: P41
+    title: Admin surface page fill width restoration
+    status: completed
+  - id: 50-final-admin-surface-page-fill-verification
+    phase: P42
+    title: Final admin surface page fill verification
+    status: completed
+  - id: 51-tickets-surface-retirement-and-safe-redirect
+    phase: P43
+    title: Tickets surface retirement and safe redirect
+    status: completed
+  - id: 52-final-tickets-surface-retirement-verification
+    phase: P44
+    title: Final tickets surface retirement verification
+    status: completed
+  - id: 53-general-workspace-structure-and-density-rebalance
+    phase: P45
+    title: General workspace structure and density rebalance
+    status: completed
+  - id: 54-final-general-workspace-layout-verification
+    phase: P46
+    title: Final general workspace layout verification
+    status: completed
+  - id: 55-options-workspace-structure-and-visibility-fix
+    phase: P47
+    title: Options workspace structure and visibility fix
+    status: completed
+  - id: 56-final-options-workspace-layout-verification
+    phase: P48
+    title: Final options workspace layout verification
+    status: completed
+  - id: 57-panels-workspace-structure-and-flow-rebalance
+    phase: P49
+    title: Panels workspace structure and flow rebalance
+    status: completed
+  - id: 58-final-panels-workspace-layout-verification
+    phase: P50
+    title: Final panels workspace layout verification
+    status: completed
+  - id: 59-questions-workspace-structure-and-flow-rebalance
+    phase: P51
+    title: Questions workspace structure and flow rebalance
+    status: completed
+  - id: 60-final-questions-workspace-layout-verification
+    phase: P52
+    title: Final questions workspace layout verification
+    status: completed
+  - id: 61-general-workspace-space-and-copy-trim
+    phase: P53
+    title: General workspace space and copy trim
+    status: completed
+  - id: 62-final-general-workspace-space-and-copy-trim-verification
+    phase: P54
+    title: Final general workspace space and copy trim verification
+    status: completed
+  - id: 63-options-workspace-space-and-copy-trim
+    phase: P55
+    title: Options workspace space and copy trim
+    status: completed
+  - id: 64-final-options-workspace-space-and-copy-trim-verification
+    phase: P56
+    title: Final options workspace space and copy trim verification
+    status: completed
+  - id: 65-panels-workspace-space-and-copy-trim
+    phase: P57
+    title: Panels workspace space and copy trim
+    status: completed
+  - id: 66-final-panels-workspace-space-and-copy-trim-verification
+    phase: P58
+    title: Final panels workspace space and copy trim verification
+    status: completed
+  - id: 67-questions-workspace-space-and-copy-trim
+    phase: P59
+    title: Questions workspace space and copy trim
+    status: completed
+  - id: 68-final-questions-workspace-space-and-copy-trim-verification
+    phase: P60
+    title: Final questions workspace space and copy trim verification
+    status: completed
+  - id: 69-shared-brand-favicon-and-footer-cleanup
+    phase: P61
+    title: Shared brand favicon and footer cleanup
+    status: completed
+  - id: 70-auth-surface-simplification-and-health-shortcut-removal
+    phase: P62
+    title: Auth surface simplification and health shortcut removal
+    status: completed
+  - id: 71-final-brand-and-auth-surface-cleanup-verification
+    phase: P63
+    title: Final brand and auth surface cleanup verification
+    status: completed
+  - id: 72-global-admin-roles-json-repair-and-legacy-recovery
+    phase: P64
+    title: Global admin roles JSON repair and legacy recovery
+    status: completed
+  - id: 73-final-global-admin-roles-json-repair-verification
+    phase: P65
+    title: Final global admin roles JSON repair verification
+    status: completed

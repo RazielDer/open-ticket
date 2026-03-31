@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerClass: 'editor-workspace-header-no-logo',
+      headerShowLogo: false,
+      headerActions: dashboardAccess?.tier === 'admin'
+        ? [{ href: assetPath('admin'), label: t('common.admin'), variant: 'secondary' }]
+        : [],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap editor-workspace-page editor-workspace-questions-page">
+      <% if (saved) { %>
+        <div class="inline-alert success"><%= t("common.statusSaved") %></div>
+      <% } %>
+
+      <%- include('partials/editor-workspace-header', {
+        eyebrow: '',
+        title: t('questions.title'),
+        subtitle: t('questions.subtitle'),
+        actions: [],
+        stats: [
+          { label: t('common.file'), value: advancedTools.fileName },
+          { label: t('questions.workspace.savedQuestionsLabel'), value: String(questions.length) }
+        ]
+      }) %>
+
+      <div class="editor-workspace-grid">
+        <aside class="editor-workspace-sidebar">
+          <section class="section-card questions-inventory-shell">
+            <div class="section-heading questions-inventory-heading">
+              <div>
+                <h3><%= t("questions.workspace.inventoryTitle") %></h3>
+              </div>
+              <div class="card-actions">
+                <button class="btn primary" type="button" id="createQuestionButton"><%= t("questions.workspace.newButton") %></button>
+              </div>
+            </div>
+            <div class="editor-outline-list questions-inventory-list" id="questionInventory">
+              <% if (questions.length) { %>
+                <% questions.forEach((question, index) => { %>
+                  <button class="editor-outline-link questions-inventory-item" type="button" data-question-select data-index="<%= index %>">
+                    <span class="questions-inventory-copy">
+                      <strong><%= question.name %></strong>
+                      <span class="config-file"><%= question.type %></span>
+                    </span>
+                    <span class="config-file questions-inventory-id"><%= question.id %></span>
+                  </button>
+                <% }) %>
+              <% } else { %>
+                <div class="empty-panel editor-sidebar-empty">
+                  <h3><%= t("questions.emptyTitle") %></h3>
+                  <p><%= t("questions.emptyBody") %></p>
+                </div>
+              <% } %>
+            </div>
+          </section>
+
+          <%- include('partials/editor-advanced-tools', { advancedTools }) %>
+        </aside>
+
+        <div class="editor-workspace-main">
+          <form id="questionForm" class="editor-workspace-stage questions-workspace-main">
+            <input type="hidden" id="questionEditIndex" value="-1">
+            <input type="hidden" id="questionOriginalId" value="">
+
+            <section class="section-card questions-stage-shell">
+              <div class="section-heading editor-toolbar">
+                <div>
+                  <h3 id="questionWorkspaceTitle"><%= t("questions.workspace.newDraftTitle") %></h3>
+                </div>
+                <div class="card-actions editor-toolbar-actions">
+                  <button class="btn secondary" type="button" id="duplicateQuestionButton"><%= t("questions.workspace.duplicateButton") %></button>
+                  <button class="btn subtle" type="button" id="moveQuestionUpButton"><%= t("questions.workspace.moveUp") %></button>
+                  <button class="btn subtle" type="button" id="moveQuestionDownButton"><%= t("questions.workspace.moveDown") %></button>
+                  <button class="btn subtle" type="button" id="deleteQuestionButton"><%= t("common.delete") %></button>
+                </div>
+              </div>
+
+              <div class="summary-grid questions-summary-grid">
+                <article class="summary-card">
+                  <span class="summary-label"><%= t("questions.workspace.positionLabel") %></span>
+                  <strong class="summary-value" id="questionOrderPosition"><%= t("questions.workspace.unsavedPosition") %></strong>
+                </article>
+                <article class="summary-card">
+                  <span class="summary-label"><%= t("questions.workspace.typeLabel") %></span>
+                  <strong class="summary-value" id="questionTypeSummary"><%= questionTypes[0] %></strong>
+                </article>
+                <article class="summary-card">
+                  <span class="summary-label"><%= t("questions.workspace.usageCountLabel") %></span>
+                  <strong class="summary-value" id="questionUsageCount">0</strong>
+                </article>
+              </div>
+            </section>
+
+            <div class="questions-two-column-grid questions-detail-grid">
+              <section class="section-card questions-usage-card">
+                <div class="section-heading">
+                  <h3><%= t("questions.workspace.usageTitle") %></h3>
+                </div>
+                <div class="inline-alert warning" id="questionReferenceWarning" hidden>
+                  <strong><%= t("questions.workspace.referenceWarningTitle") %></strong>
+                  <p><%= t("questions.workspace.referenceWarningBody") %></p>
+                </div>
+                <article class="questions-usage-panel">
+                  <div class="questions-usage-panel-heading">
+                    <h4><%= t("questions.workspace.usedByOptionsTitle") %></h4>
+                    <span class="pill-tag" id="questionUsageCountPill">0</span>
+                  </div>
+                  <p class="editor-intro" id="usedByOptionsEmpty"><%= t("questions.workspace.usedByOptionsEmpty") %></p>
+                  <div class="pill-list questions-usage-list" id="usedByOptionsList"></div>
+                </article>
+              </section>
+
+              <section class="section-card questions-identity-card">
+                <div class="section-heading">
+                  <h3><%= t("questions.workspace.identityTitle") %></h3>
+                </div>
+                <div class="form-grid two-up">
+                  <label>
+                    <span class="field-label"><%= t("questions.fields.id") %></span>
+                    <input class="text-input" id="questionId" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("questions.fields.name") %></span>
+                    <input class="text-input" id="questionName" type="text">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("questions.fields.type") %></span>
+                    <select class="select-input" id="questionType">
+                      <% questionTypes.forEach((value) => { %>
+                        <option value="<%= value %>"><%= value %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label class="checkbox-field">
+                    <input type="checkbox" id="questionRequired">
+                    <span><%= t("questions.fields.required") %></span>
+                  </label>
+                  <label class="span-2">
+                    <span class="field-label"><%= t("questions.fields.placeholder") %></span>
+                    <input class="text-input" id="questionPlaceholder" type="text">
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <details class="section-card editor-disclosure">
+              <summary>
+                <h3><%= t("editor.advancedTitle") %></h3>
+              </summary>
+              <div class="editor-disclosure-body">
+                <div class="form-grid two-up">
+                  <label class="checkbox-field">
+                    <input type="checkbox" id="lengthEnabled">
+                    <span><%= t("questions.fields.lengthEnabled") %></span>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("questions.fields.minLength") %></span>
+                    <input class="text-input" id="minLength" type="number">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("questions.fields.maxLength") %></span>
+                    <input class="text-input" id="maxLength" type="number">
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <div class="section-card editor-savebar questions-savebar">
+              <div class="editor-savebar-copy">
+                <h3><%= t("questions.workspace.saveTitle") %></h3>
+              </div>
+              <div class="card-actions sticky-actions editor-savebar-actions">
+                <button class="btn primary" type="submit"><%= t("common.save") %></button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <textarea id="questions-data" hidden><%= JSON.stringify(questions) %></textarea>
+      <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
+      <textarea id="page-messages" hidden><%= messages %></textarea>
+      <textarea id="page-contracts" hidden><%= contracts %></textarea>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/config-questions.js') %>"></script>
+</body>
+</html>

@@ -1,0 +1,352 @@
+<% if (!transcriptDetail) { %>
+  <section class="section-card">
+    <div class="empty-panel">
+      <h3><%= t("transcripts.detail.unavailableTitle") %></h3>
+      <p><%= t("transcripts.detail.unavailableBody") %></p>
+      <div class="sticky-actions">
+        <a class="btn primary" href="<%= assetPath('admin/transcripts') %>"><%= t("transcripts.detail.backAction") %></a>
+        <a class="btn secondary" href="<%= assetPath('visual/transcripts') %>"><%= t("transcripts.detail.configAction") %></a>
+      </div>
+    </div>
+  </section>
+<% } else { %>
+  <div class="transcript-workspace">
+    <div class="transcript-main">
+      <% if (transcriptDetail.accessNotices && transcriptDetail.accessNotices.length) { %>
+        <section class="section-card">
+          <div class="entry-stack">
+            <% transcriptDetail.accessNotices.forEach((notice) => { %>
+              <div class="inline-alert <%= notice.tone %>">
+                <strong><%= notice.title %>:</strong> <%= notice.message %>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.accessTitle") %></h3>
+          <span class="status-pill tone-<%= transcriptDetail.transcript.statusBadge.tone %>"><%= transcriptDetail.transcript.statusBadge.label %></span>
+        </div>
+        <% if (transcriptDetail.transcript.publicUrl) { %>
+          <p><a href="<%= transcriptDetail.transcript.publicUrl %>" target="_blank" rel="noopener"><%= transcriptDetail.transcript.publicUrl %></a></p>
+        <% } else { %>
+          <p class="field-help"><%= t("transcripts.detail.noPublicUrl") %></p>
+        <% } %>
+        <% if (transcriptDetail.transcript.statusReason) { %>
+          <p class="field-help"><strong><%= t("transcripts.detail.statusReasonLabel") %>:</strong> <%= transcriptDetail.transcript.statusReason %></p>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.integrity.title") %></h3>
+          <span class="status-pill tone-<%= transcriptDetail.integrity.badge.tone %>"><%= transcriptDetail.integrity.badge.label %></span>
+        </div>
+
+        <% if (!transcriptDetail.integrity.available) { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.integrity.unavailableTitle") %></h3>
+            <p><%= transcriptDetail.integrity.warningMessage %></p>
+          </div>
+        <% } else { %>
+          <p class="field-help"><%= t("transcripts.detail.integrity.scannedAt", { scannedAt: transcriptDetail.integrity.scannedAtLabel }) %></p>
+          <div class="plugin-fact-list">
+            <% transcriptDetail.integrity.facts.forEach((fact) => { %>
+              <div><strong><%= fact.label %>:</strong> <%= fact.value %></div>
+            <% }) %>
+          </div>
+          <p class="field-help"><strong><%= t("transcripts.detail.integrity.repairableActionsLabel") %>:</strong> <%= transcriptDetail.integrity.repairableActionsLabel %></p>
+
+          <% if (transcriptDetail.integrity.issues.length) { %>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><%= t("transcripts.detail.integrity.table.severity") %></th>
+                    <th><%= t("transcripts.detail.integrity.table.code") %></th>
+                    <th><%= t("transcripts.detail.integrity.table.message") %></th>
+                    <th><%= t("transcripts.detail.integrity.table.repairableActions") %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% transcriptDetail.integrity.issues.forEach((issue) => { %>
+                    <tr>
+                      <td><span class="status-pill tone-<%= issue.severityTone %>"><%= issue.severityLabel %></span></td>
+                      <td><code><%= issue.code %></code></td>
+                      <td><%= issue.message %></td>
+                      <td><%= issue.repairableActionsLabel %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } else { %>
+            <div class="empty-panel">
+              <h3><%= t("transcripts.detail.integrity.emptyTitle") %></h3>
+              <p><%= t("transcripts.detail.integrity.emptyBody") %></p>
+            </div>
+          <% } %>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.events.title") %></h3>
+          <span class="status-pill tone-<%= transcriptDetail.events.badge.tone %>"><%= transcriptDetail.events.badge.label %></span>
+        </div>
+
+        <% if (!transcriptDetail.events.available) { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.events.unavailableTitle") %></h3>
+            <p><%= transcriptDetail.events.warningMessage %></p>
+          </div>
+        <% } else if (transcriptDetail.events.items.length) { %>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><%= t("transcripts.detail.events.table.time") %></th>
+                  <th><%= t("transcripts.detail.events.table.type") %></th>
+                  <th><%= t("transcripts.detail.events.table.reason") %></th>
+                  <th><%= t("transcripts.detail.events.table.details") %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% transcriptDetail.events.items.forEach((event) => { %>
+                  <tr>
+                    <td><%= event.createdLabel %></td>
+                    <td><%= event.typeLabel %></td>
+                    <td><%= event.reasonLabel %></td>
+                    <td><%= event.detailsLabel %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pagination-bar">
+            <p class="pagination-summary"><%= t("transcripts.detail.events.paginationSummary", { start: transcriptDetail.events.pageStart, end: transcriptDetail.events.pageEnd, total: transcriptDetail.events.total }) %></p>
+            <div class="sticky-actions">
+              <% if (transcriptDetail.events.previousHref) { %>
+                <a class="btn secondary" href="<%= transcriptDetail.events.previousHref %>"><%= t("common.previous") %></a>
+              <% } else { %>
+                <span class="btn subtle disabled"><%= t("common.previous") %></span>
+              <% } %>
+
+              <% if (transcriptDetail.events.nextHref) { %>
+                <a class="btn secondary" href="<%= transcriptDetail.events.nextHref %>"><%= t("common.next") %></a>
+              <% } else { %>
+                <span class="btn subtle disabled"><%= t("common.next") %></span>
+              <% } %>
+            </div>
+          </div>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.events.emptyTitle") %></h3>
+            <p><%= t("transcripts.detail.events.emptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.linksTitle") %></h3>
+          <span class="pill-tag"><%= t("transcripts.detail.linksCount", { count: transcriptDetail.links.length }) %></span>
+        </div>
+        <% if (transcriptDetail.links.length) { %>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><%= t("transcripts.detail.linksHeaders.status") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.slug") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.publicUrl") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.created") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.expires") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.expired") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.revoked") %></th>
+                  <th><%= t("transcripts.detail.linksHeaders.reason") %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% transcriptDetail.links.forEach((link) => { %>
+                  <tr>
+                    <td><span class="status-pill tone-<%= link.statusBadge.tone %>"><%= link.statusBadge.label %></span></td>
+                    <td><code><%= link.slug %></code></td>
+                    <td>
+                      <% if (link.publicUrl) { %>
+                        <a href="<%= link.publicUrl %>" target="_blank" rel="noopener"><%= link.publicUrl %></a>
+                      <% } else { %>
+                        <span class="field-help"><%= t("transcripts.detail.linksUnavailable") %></span>
+                      <% } %>
+                    </td>
+                    <td><%= link.createdLabel %></td>
+                    <td><%= link.expiresLabel %></td>
+                    <td><%= link.expiredLabel %></td>
+                    <td><%= link.revokedLabel %></td>
+                    <td><%= link.reason || t("transcripts.detail.linksNoReason") %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.linksEmptyTitle") %></h3>
+            <p><%= t("transcripts.detail.linksEmptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.participantsTitle") %></h3>
+          <span class="pill-tag"><%= t("transcripts.detail.participantsCount", { count: transcriptDetail.participants.length }) %></span>
+        </div>
+        <% if (transcriptDetail.participants.length) { %>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><%= t("transcripts.detail.participantsHeaders.role") %></th>
+                  <th><%= t("transcripts.detail.participantsHeaders.displayName") %></th>
+                  <th><%= t("transcripts.detail.participantsHeaders.userId") %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% transcriptDetail.participants.forEach((participant) => { %>
+                  <tr>
+                    <td><span class="status-pill tone-muted"><%= participant.role %></span></td>
+                    <td><strong><%= participant.displayName %></strong></td>
+                    <td><code><%= participant.userId %></code></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.participantsEmptyTitle") %></h3>
+            <p><%= t("transcripts.detail.participantsEmptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.assetsTitle") %></h3>
+          <span class="pill-tag"><%= t("transcripts.detail.assetsCount", { count: transcriptDetail.assets.length }) %></span>
+        </div>
+        <% if (transcriptDetail.assets.length) { %>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><%= t("transcripts.detail.assetsHeaders.status") %></th>
+                  <th><%= t("transcripts.detail.assetsHeaders.asset") %></th>
+                  <th><%= t("transcripts.detail.assetsHeaders.mimeType") %></th>
+                  <th><%= t("transcripts.detail.assetsHeaders.size") %></th>
+                  <th><%= t("transcripts.detail.assetsHeaders.archivePath") %></th>
+                  <th><%= t("transcripts.detail.assetsHeaders.notes") %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% transcriptDetail.assets.forEach((asset) => { %>
+                  <tr>
+                    <td><span class="status-pill tone-<%= asset.statusBadge.tone %>"><%= asset.statusBadge.label %></span></td>
+                    <td>
+                      <strong><%= asset.assetName %></strong>
+                      <% if (asset.sourceUrl) { %>
+                        <div class="field-help"><a href="<%= asset.sourceUrl %>" target="_blank" rel="noopener"><%= asset.sourceUrl %></a></div>
+                      <% } %>
+                    </td>
+                    <td><%= asset.mimeType || t("transcripts.detail.assetsUnknownMime") %></td>
+                    <td><%= asset.byteSizeLabel %></td>
+                    <td><code><%= asset.archiveRelativePath || t("transcripts.detail.assetsUnavailable") %></code></td>
+                    <td><%= asset.reason || t("transcripts.detail.assetsNoReason") %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("transcripts.detail.assetsEmptyTitle") %></h3>
+            <p><%= t("transcripts.detail.assetsEmptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+    </div>
+
+    <aside class="transcript-rail">
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.factsTitle") %></h3>
+        </div>
+        <div class="transcript-fact-list">
+          <div><strong><%= t("transcripts.detail.facts.id") %>:</strong> <code><%= transcriptDetail.transcript.id %></code></div>
+          <div><strong><%= t("transcripts.detail.facts.ticketId") %>:</strong> <%= transcriptDetail.transcript.ticketId || t("common.unavailable") %></div>
+          <div><strong><%= t("transcripts.detail.facts.channelId") %>:</strong> <%= transcriptDetail.transcript.channelId || t("common.unavailable") %></div>
+          <div><strong><%= t("transcripts.detail.facts.guildId") %>:</strong> <%= transcriptDetail.transcript.guildId || t("common.unavailable") %></div>
+          <div><strong><%= t("transcripts.detail.facts.creatorId") %>:</strong> <%= transcriptDetail.transcript.creatorId || t("common.unavailable") %></div>
+          <div><strong><%= t("transcripts.detail.facts.deleterId") %>:</strong> <%= transcriptDetail.transcript.deleterId || t("common.unavailable") %></div>
+          <div><strong><%= t("transcripts.detail.facts.activeSlug") %>:</strong> <code><%= transcriptDetail.transcript.activeSlug || t("common.unavailable") %></code></div>
+          <div><strong><%= t("transcripts.detail.facts.created") %>:</strong> <%= transcriptDetail.transcript.createdLabel %></div>
+          <div><strong><%= t("transcripts.detail.facts.updated") %>:</strong> <%= transcriptDetail.transcript.updatedLabel %></div>
+          <div><strong><%= t("transcripts.detail.facts.messages") %>:</strong> <%= transcriptDetail.transcript.messageCount %></div>
+          <div><strong><%= t("transcripts.detail.facts.attachments") %>:</strong> <%= transcriptDetail.transcript.attachmentCount %></div>
+          <div><strong><%= t("transcripts.detail.facts.warnings") %>:</strong> <%= transcriptDetail.transcript.warningCount %></div>
+          <div><strong><%= t("transcripts.detail.facts.archiveSize") %>:</strong> <%= transcriptDetail.transcript.totalBytesLabel %></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("transcripts.detail.operationsTitle") %></h3>
+        </div>
+        <div class="stack-form">
+          <form method="post" action="<%= transcriptDetail.transcript.exportAction %>" class="stack-form">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <p class="field-help"><%= t("transcripts.detail.operations.exportHelp") %></p>
+            <button class="btn primary" type="submit" <%= transcriptDetail.transcript.canExport ? '' : 'disabled' %>><%= t("transcripts.detail.operations.exportAction") %></button>
+            <% if (transcriptDetail.transcript.exportUnavailableMessage) { %>
+              <p class="field-help"><%= transcriptDetail.transcript.exportUnavailableMessage %></p>
+            <% } %>
+          </form>
+
+          <form method="post" action="<%= transcriptDetail.transcript.revokeAction %>" class="stack-form">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <label>
+              <span class="field-label"><%= t("transcripts.detail.operations.revokeLabel") %></span>
+              <input class="text-input" type="text" name="reason" placeholder="<%= t('transcripts.detail.operations.revokePlaceholder') %>">
+            </label>
+            <p class="field-help"><%= t("transcripts.detail.operations.revokeHelp") %></p>
+            <button class="btn secondary" type="submit" <%= transcriptDetail.transcript.canRevoke ? '' : 'disabled' %> data-confirm-message="<%= t('transcripts.detail.operations.revokeConfirm') %>"><%= t("transcripts.detail.operations.revokeAction") %></button>
+          </form>
+
+          <form method="post" action="<%= transcriptDetail.transcript.reissueAction %>" class="stack-form">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <label>
+              <span class="field-label"><%= t("transcripts.detail.operations.reissueLabel") %></span>
+              <input class="text-input" type="text" name="reason" placeholder="<%= t('transcripts.detail.operations.reissuePlaceholder') %>">
+            </label>
+            <p class="field-help"><%= t("transcripts.detail.operations.reissueHelp") %></p>
+            <button class="btn primary" type="submit" <%= transcriptDetail.transcript.canReissue ? '' : 'disabled' %> data-confirm-message="<%= t('transcripts.detail.operations.reissueConfirm') %>"><%= t("transcripts.detail.operations.reissueAction") %></button>
+          </form>
+
+          <form method="post" action="<%= transcriptDetail.transcript.deleteAction %>" class="stack-form">
+            <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+            <label>
+              <span class="field-label"><%= t("transcripts.detail.operations.deleteLabel") %></span>
+              <input class="text-input" type="text" name="reason" placeholder="<%= t('transcripts.detail.operations.deletePlaceholder') %>">
+            </label>
+            <p class="field-help"><%= t("transcripts.detail.operations.deleteHelp") %></p>
+            <button class="btn danger" type="submit" <%= transcriptDetail.transcript.canDelete ? '' : 'disabled' %> data-confirm-message="<%= t('transcripts.detail.operations.deleteConfirm') %>"><%= t("transcripts.detail.operations.deleteAction") %></button>
+          </form>
+        </div>
+      </section>
+    </aside>
+  </div>
+<% } %>

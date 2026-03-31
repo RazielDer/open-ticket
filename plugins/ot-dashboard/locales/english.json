@@ -1,0 +1,1677 @@
+{
+  "common": {
+    "overview": "Home",
+    "admin": "Admin",
+    "health": "Health",
+    "login": "Sign in",
+    "logout": "Log out",
+    "save": "Save",
+    "cancel": "Cancel",
+    "continue": "Continue",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "backToAdmin": "Back to admin",
+    "visualEditor": "Visual editor",
+    "rawEditor": "Advanced JSON",
+    "statusSaved": "Saved successfully.",
+    "goToAdmin": "Open admin",
+    "confirmAction": "Confirm action",
+    "closeDialog": "Close dialog",
+    "search": "Search",
+    "status": "Status",
+    "actions": "Actions",
+    "idLabel": "ID",
+    "created": "Created",
+    "updated": "Updated",
+    "sourceLabel": "Source",
+    "versionLabel": "Version",
+    "file": "File",
+    "kind": "Kind",
+    "unknown": "Unknown",
+    "unavailable": "Unavailable",
+    "yes": "Yes",
+    "no": "No",
+    "notApplicable": "n/a",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "nav": {
+    "home": "Home",
+    "setup": "Setup",
+    "transcripts": "Transcripts",
+    "addOns": "Add-ons",
+    "advanced": "Advanced"
+  },
+  "shell": {
+    "skipToContent": "Skip to main content",
+    "brandSubtitle": "Manage setup, transcripts, add-ons, and advanced tools from one place.",
+    "primaryNavigation": "Primary navigation",
+    "utilityNavigation": "Utilities",
+    "publicLanding": "Public landing",
+    "automationTools": "Automation tools",
+    "providerReady": "Registered and ready for guarded actions.",
+    "statusHeading": "System health",
+    "statusDetails": "{plugins} add-ons, {tickets} tracked tickets",
+    "statusUpdated": "Updated {capturedAt}",
+    "status": {
+      "ready": "Ready",
+      "starting": "Starting",
+      "degraded": "Needs attention",
+      "unavailable": "Unavailable"
+    }
+  },
+  "flash": {
+    "invalidPassword": "Invalid password.",
+    "loggedOut": "Signed out.",
+    "rateLimited": "Too many login attempts. Try again in {minutes} minute(s).",
+    "csrfExpired": "The sign-in page expired. Try again.",
+    "discordNotReady": "Discord admin sign-in is not ready on this host yet.",
+    "discordStateExpired": "The Discord sign-in attempt expired. Start again.",
+    "discordCodeMissing": "Discord sign-in did not return a usable code.",
+    "discordAuthFailed": "Discord sign-in could not be completed.",
+    "adminAccessDenied": "Your Discord account does not currently have admin-host access."
+  },
+  "landing": {
+    "eyebrow": "Open Ticket dashboard",
+    "title": "Open the dashboard and keep the first step simple.",
+    "subtitle": "Sign in to manage setup, transcripts, add-ons, and advanced tools from one restrained dashboard surface.",
+    "primaryAction": "Open admin",
+    "supportTitle": "Before you sign in",
+    "supportBody": "Dashboard access uses Discord sign-in on this host. After sign-in, Home, Transcripts, Add-ons, and Advanced stay on the authenticated rail, while setup workspaces open from Home."
+  },
+  "login": {
+    "title": "Sign in",
+    "eyebrow": "Admin host",
+    "headline": "Sign in",
+    "subtitle": "Use Discord sign-in with current Editor or Admin access on the admin host.",
+    "heroAlt": "Era of the Fallen Sun dinosaur crest",
+    "discordAction": "Continue with Discord",
+    "breakglassNotice": "Breakglass stays secondary, admin-host only, and disabled by default unless you explicitly enable it."
+  },
+  "admin": {
+    "title": "Dashboard admin",
+    "headline": "Configuration editors",
+    "subtitle": "Use the visual editor for guided updates or switch to advanced JSON when you need direct control.",
+    "cards": {
+      "general": {
+        "title": "General settings",
+        "description": "Bot token, language, status, system behavior, permissions, limits, and message delivery controls."
+      },
+      "options": {
+        "title": "Ticket options",
+        "description": "Ticket, website, and role options with round-trip-safe editing for live enum values and nested settings."
+      },
+      "panels": {
+        "title": "Panels",
+        "description": "Panel embeds, selected options, dropdown layouts, and option descriptions for ticket entry points."
+      },
+      "questions": {
+        "title": "Questions",
+        "description": "Question definitions, placeholders, required flags, and response length controls."
+      },
+      "transcripts": {
+        "title": "Transcripts",
+        "description": "Delivery targets, transcript modes, text layouts, HTML styling, and favicon behavior."
+      }
+    }
+  },
+  "home": {
+    "title": "Home",
+    "eyebrow": "Dashboard home",
+    "headline": "Home",
+    "subtitle": "Check system status and review setup from one place.",
+    "summary": {
+      "availability": "System health",
+      "availabilityDetail": "Updated {capturedAt}",
+      "setup": "Setup",
+      "setupDetail": "{ready} of {total} areas ready",
+      "addOns": "Add-ons",
+      "addOnsDetail": "{count} need attention",
+      "tickets": "Tickets",
+      "ticketsDetail": "{count} recent events since startup"
+    },
+    "nextStepTitle": "Next step",
+    "setupStatusTitle": "Setup areas",
+    "warningsTitle": "Warnings",
+    "warningsEmptyTitle": "No warnings right now",
+    "warningsEmptyBody": "The dashboard did not detect any current runtime warnings for this snapshot.",
+    "nextStep": {
+      "general": {
+        "title": "Finish the General settings",
+        "actionLabel": "Open General workspace",
+        "reasons": {
+          "missing_server_id": "Add the server ID so Open Ticket knows which Discord server this dashboard is managing.",
+          "missing_command_mode": "Enable slash commands, text commands, or both so the ticket system can actually receive requests.",
+          "missing_token": "Add a bot token or enable environment-token loading before the bot can sign in."
+        }
+      },
+      "options": {
+        "title": "Add your first ticket option",
+        "actionLabel": "Open Options workspace",
+        "reasons": {
+          "empty": "Create at least one option so members have something to open from a panel."
+        }
+      },
+      "panels": {
+        "title": "Publish a panel",
+        "actionLabel": "Open Panels workspace",
+        "reasons": {
+          "empty": "Create a panel after your options are ready so members can start opening tickets."
+        }
+      },
+      "transcripts": {
+        "title": "Review transcript settings",
+        "actionLabel": "Open transcript tools",
+        "reasons": {
+          "invalid_mode": "Transcript delivery is enabled, but the configured mode is missing or invalid.",
+          "html_integration_unavailable": "HTML transcript mode is enabled, but the transcript integration is not ready yet."
+        }
+      },
+      "questions": {
+        "title": "Add intake questions when you need them",
+        "actionLabel": "Open Questions workspace",
+        "reasons": {
+          "empty_optional": "Questions are optional. Add them when you want users to answer prompts before a ticket is created."
+        }
+      },
+      "operations": {
+        "title": "Daily work is ready",
+        "actionLabel": "Open Transcripts",
+        "reasons": {
+          "daily_operations": "Core setup is in place. Move into transcripts, add-ons, and advanced tools as needed."
+        }
+      }
+    }
+  },
+  "setup": {
+    "card": {
+      "controlsLabel": "What it controls",
+      "whyNowLabel": "Why it matters now",
+      "nextTaskLabel": "Next task"
+    },
+    "states": {
+      "needsSetup": "Needs setup",
+      "needsAttention": "Needs attention",
+      "optional": "Optional",
+      "ready": "Ready"
+    },
+    "progress": {
+      "ready": "Ready",
+      "needsSetup": "Need setup",
+      "needsAttention": "Need attention",
+      "optional": "Optional"
+    },
+    "areas": {
+      "general": {
+        "label": "General",
+        "what": "Bot connection, server targeting, command modes, logs, limits, and core behavior.",
+        "tasks": "Set the server ID, choose command modes, and provide a token or enable environment-token loading.",
+        "primaryAction": "Open General workspace",
+        "reasons": {
+          "missing_server_id": "Add the Discord server ID.",
+          "missing_command_mode": "Enable at least one command mode.",
+          "missing_token": "Add a token or enable token-from-environment.",
+          "configured": "The main connection and command settings are in place."
+        }
+      },
+      "options": {
+        "label": "Options",
+        "what": "Ticket types, channels, limits, and role behavior members can use.",
+        "tasks": "Create the first ticket option before you build panels.",
+        "primaryAction": "Open Options workspace",
+        "reasons": {
+          "empty": "No options are configured yet.",
+          "configured": "At least one option is ready to use."
+        }
+      },
+      "panels": {
+        "label": "Panels",
+        "what": "The entry panels members use to open tickets.",
+        "tasks": "Create a panel after your options exist so members can start opening tickets.",
+        "primaryAction": "Open Panels workspace",
+        "reasons": {
+          "empty": "No panels are configured yet.",
+          "configured": "At least one panel is ready to publish."
+        }
+      },
+      "questions": {
+        "label": "Questions",
+        "what": "Optional intake questions shown before a ticket opens.",
+        "tasks": "Add questions only if you want users to answer prompts before creating a ticket.",
+        "primaryAction": "Open Questions workspace",
+        "reasons": {
+          "empty_optional": "Questions are optional and currently empty.",
+          "configured": "Questions are available to reuse across options."
+        }
+      },
+      "transcripts": {
+        "label": "Transcripts",
+        "what": "Transcript delivery, destinations, and transcript styling.",
+        "tasks": "Review transcript delivery after your main ticket flow is in place.",
+        "primaryAction": "Open transcript settings",
+        "reasons": {
+          "disabled": "Transcript delivery is currently disabled.",
+          "invalid_mode": "Transcript delivery is enabled, but the mode is missing or invalid.",
+          "configured": "Transcript delivery is enabled with a valid mode."
+        }
+      }
+    }
+  },
+  "configDetail": {
+    "eyebrow": "Setup detail",
+    "headline": "{area} setup",
+    "subtitle": "See what this area controls, complete the common tasks, and use advanced tools only when you need them.",
+    "controlsTitle": "What this area controls",
+    "tasksTitle": "Common tasks",
+    "recommendedTitle": "Recommended editor",
+    "recommendedBody": "Use the visual editor for the common settings in this area. The raw editor stays available for full-fidelity JSON work.",
+    "visualAction": "Open visual editor",
+    "rawAction": "Open raw JSON",
+    "advancedTitle": "Advanced tools",
+    "advancedBody": "Preview JSON changes, import a draft, export the current file, restore from backup, or move into the raw editor.",
+    "previewLabel": "Draft JSON",
+    "importLabel": "Import JSON file",
+    "previewAction": "Preview changes",
+    "exportAction": "Export current file",
+    "restoreTitle": "Restore from backup",
+    "restoreHeaders": {
+      "id": "ID",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "restorePreview": "Preview backup",
+    "restoreReview": "Restore review",
+    "restoreEmptyTitle": "No backups yet",
+    "restoreEmptyBody": "Backup history will appear here after the next guarded backup or apply flow.",
+    "structureTitle": "Current structure"
+  },
+  "configReview": {
+    "addedPaths": "Added paths",
+    "removedPaths": "Removed paths",
+    "changedPaths": "Changed paths",
+    "reviewSource": "Review source",
+    "impactTitle": "Impact summary",
+    "diffTitle": "Diff preview",
+    "backAction": "Back to draft"
+  },
+  "addOns": {
+    "title": "Add-ons",
+    "eyebrow": "Add-on library",
+    "headline": "Add-ons",
+    "subtitle": "Review add-on state here. Open a workbench only when you need manifest, JSON, or backup tools.",
+    "inventoryTitle": "Add-ons",
+    "inventoryBody": "{count} add-on(s) in this project.",
+    "inventoryCount": "{count} add-on(s)",
+    "searchLabel": "Find an add-on",
+    "searchPlaceholder": "Search id, author, or JSON file",
+    "emptyTitle": "No add-ons found",
+    "emptyBody": "The dashboard did not detect any plugins for this project root.",
+    "filteredEmptyTitle": "No add-ons match this search",
+    "filteredEmptyBody": "Try a plugin ID, author name, or JSON file path.",
+    "previewTitle": "JSON preview",
+    "previewMore": "+{count} more",
+    "noJsonPreview": "No editable JSON files",
+    "openAction": "Open",
+    "manifestAction": "Manifest",
+    "byAuthor": "By {authors}",
+    "jsonCountNone": "No JSON",
+    "jsonCountSingle": "1 JSON file",
+    "jsonCountPlural": "{count} JSON files",
+    "authorsUnknown": "Unknown",
+    "supportedVersionsNone": "None declared",
+    "sources": {
+      "manifest": "Manifest only",
+      "runtime": "Runtime only",
+      "runtimeAndManifest": "Manifest + runtime"
+    },
+    "status": {
+      "running": "Running",
+      "needsAttention": "Needs attention",
+      "disabled": "Disabled",
+      "installedNotLoaded": "Installed, not loaded"
+    },
+    "detail": {
+      "eyebrow": "Add-on detail",
+      "subtitle": "Review the add-on purpose and status first, then move into advanced tools for manifests, JSON files, backups, and diagnostics.",
+      "overviewTitle": "Purpose and status",
+      "overview": {
+        "source": "Source",
+        "versionDetail": "Version {value}",
+        "authors": "Authors",
+        "supportedVersions": "Supported versions: {value}",
+        "jsonFiles": "JSON files",
+        "jsonFilesDetail": "Editable files discovered for this add-on.",
+        "manifest": "Manifest",
+        "manifestAvailable": "Available",
+        "manifestUnavailable": "Unavailable",
+        "noCrashReason": "No crash reason reported."
+      },
+      "advancedTitle": "Advanced tools",
+      "advancedBody": "Manifest changes, plugin JSON assets, backups, and plugin-owned actions stay available here for experienced operators.",
+      "manifestTitle": "Manifest settings",
+      "manifestRestartRequired": "Restart required after apply",
+      "manifestEnabledLabel": "Enabled",
+      "manifestPriorityLabel": "Priority",
+      "manifestEnabledOption": "Enabled",
+      "manifestDisabledOption": "Disabled",
+      "manifestHelp": "Only `enabled` and `priority` are patched. All other `plugin.json` fields stay untouched apart from formatting normalization.",
+      "reviewManifestAction": "Review manifest changes",
+      "exportManifestAction": "Export plugin.json",
+      "manifestEmptyTitle": "No manifest available",
+      "manifestEmptyBody": "This plugin does not currently expose a readable `plugin.json` file for structured manifest editing.",
+      "assetsTitle": "JSON files",
+      "assetsCount": "{count} file(s)",
+      "assetsHeaders": {
+        "file": "File",
+        "kind": "Kind",
+        "detectedRoot": "Detected root",
+        "updated": "Updated",
+        "actions": "Actions"
+      },
+      "assetsSizeUnknown": "Unknown size",
+      "reviewAssetAction": "Review JSON",
+      "exportAssetAction": "Export",
+      "assetsEmptyTitle": "No editable JSON assets discovered",
+      "assetsEmptyBody": "The dashboard only exposes JSON files outside `plugin.json`, `locales`, `public`, `dist`, `node_modules`, and dot-directories.",
+      "backupsTitle": "Backups",
+      "backupNoteLabel": "Backup note",
+      "backupNotePlaceholder": "Optional note for this plugin snapshot",
+      "backupCreateAction": "Create plugin backup",
+      "backupsHeaders": {
+        "id": "ID",
+        "created": "Created",
+        "source": "Source",
+        "files": "Files"
+      },
+      "backupsRestoreHelp": "Restore stays file-scoped. Open an asset page to review a backup copy against the live file before apply.",
+      "backupsEmptyTitle": "No plugin backups yet",
+      "backupsEmptyBody": "Creating a plugin backup captures `plugin.json`, every editable JSON asset, and `metadata.json` under the runtime-owned dashboard backup tree.",
+      "transcriptWorkspaceTitle": "Transcript workspace",
+      "transcriptWorkspaceBody": "Configured mode: {mode}. {message}",
+      "openWorkspaceAction": "Open transcript workspace",
+      "openTranscriptConfigAction": "Open transcript settings",
+      "compatibility": {
+        "quickFactsTitle": "Quick facts",
+        "title": "Compatibility and dependencies",
+        "status": "Status",
+        "source": "Source",
+        "version": "Version",
+        "authors": "Authors",
+        "supportedVersions": "Supported versions",
+        "crashReason": "Crash reason",
+        "requiredPlugins": "Required plugins",
+        "incompatiblePlugins": "Incompatible plugins",
+        "missingDependencies": "Missing dependencies",
+        "missingRequiredPlugins": "Missing required plugins",
+        "activeIncompatiblePlugins": "Active incompatible plugins",
+        "noCrashReason": "None reported",
+        "noneMissing": "None missing",
+        "noneActive": "None active",
+        "noIssues": "No additional diagnostics were detected from the merged manifest and runtime view."
+      },
+      "registryEmptyTitle": "No items",
+      "registryEmptyBody": "This plugin section did not return any items.",
+      "registryActionDefault": "Plugin-provided action."
+    }
+  },
+  "advanced": {
+    "title": "Advanced",
+    "eyebrow": "Advanced tools",
+    "headline": "System status and maintenance",
+    "subtitle": "Runtime, backups, advanced JSON editors, and plugin maintenance stay available here without crowding the primary workflow.",
+    "cards": {
+      "systemStatus": {
+        "title": "System status",
+        "description": "Open the live runtime snapshot and guarded automation tools."
+      },
+      "backups": {
+        "title": "Backups & restore",
+        "description": "Review runtime-owned backups and restore previews."
+      },
+      "transcriptConfig": {
+        "title": "Transcript settings",
+        "description": "Open transcript setup or the transcript workspace without losing the beginner-first primary nav."
+      }
+    },
+    "actions": {
+      "openSystemStatus": "Open system status",
+      "openBackups": "Open backups & restore",
+      "openTranscriptWorkspace": "Open transcript workspace",
+      "openTranscriptSettings": "Open transcript settings"
+    },
+    "sections": {
+      "security": {
+        "title": "Security workspace",
+        "description": "Manage non-secret host routing and RBAC entries without exposing credentials or low-level auth tuning.",
+        "links": {
+          "workspace": "Open security workspace",
+          "evidence": "Open backups & restore"
+        }
+      },
+      "systemStatus": {
+        "title": "System status",
+        "description": "Open the live runtime snapshot and the guarded automation tools that work against the running bot.",
+        "links": {
+          "runtime": "Open system status",
+          "transcripts": "Open transcript workspace"
+        }
+      },
+      "backups": {
+        "title": "Backups and restore",
+        "description": "Review runtime-owned backup inventory and restore previews before you apply changes.",
+        "links": {
+          "inventory": "Open backups & restore",
+          "setup": "Open Home"
+        }
+      },
+      "editors": {
+        "title": "Advanced JSON editors",
+        "description": "Open raw JSON for a specific managed file without changing the POST contracts behind the visual editors.",
+        "items": {
+          "general": "Edit the raw General configuration file.",
+          "options": "Edit the raw Options configuration file.",
+          "panels": "Edit the raw Panels configuration file.",
+          "questions": "Edit the raw Questions configuration file.",
+          "transcripts": "Edit the raw Transcripts configuration file."
+        }
+      },
+      "plugins": {
+        "title": "Plugin maintenance",
+        "description": "Open plugin inventory and plugin-specific workbenches for manifest, backup, and JSON asset work.",
+        "links": {
+          "inventory": "Open Add-ons",
+          "transcriptWorkbench": "Open transcript add-on workbench"
+        }
+      },
+      "diagnostics": {
+        "title": "Runtime diagnostics links",
+        "description": "Use these links when you need health, runtime, or backup diagnostics without returning to the default beginner workflow.",
+        "links": {
+          "health": "Open health check",
+          "systemStatus": "Open system status",
+          "backups": "Open backups & restore"
+        }
+      }
+    }
+  },
+  "security": {
+    "title": "Security workspace",
+    "eyebrow": "Security workspace",
+    "headline": "Review host routing and RBAC",
+    "subtitle": "Only non-secret host routing and RBAC fields are editable here. Secrets stay read-only, and runtime backup plus audit records are created before apply.",
+    "backAction": "Back to Advanced",
+    "summary": {
+      "adminHost": "Admin host",
+      "adminHostDetail": "Canonical URL for the admin host.",
+      "viewerHost": "Viewer host",
+      "viewerHostDetail": "Canonical URL for the viewer host.",
+      "owners": "Owner IDs",
+      "ownersDetail": "Seeded owner overrides for admin access.",
+      "warnings": "Warnings",
+      "warningsDetail": "Current dashboard exposure and readiness checks."
+    },
+    "sections": {
+      "routing": {
+        "title": "Host routing",
+        "description": "Set the canonical admin host, canonical viewer host, and trusted reverse-proxy hop count."
+      },
+      "rbac": {
+        "title": "RBAC",
+        "description": "Map owner IDs plus reviewer, editor, and admin role or user IDs."
+      },
+      "breakglass": {
+        "title": "Breakglass",
+        "description": "Enable or disable breakglass recovery without exposing the stored password hash.",
+        "help": "The emergency password hash stays read-only. Only the enabled flag is editable here."
+      },
+      "secrets": {
+        "title": "Secret readiness",
+        "description": "These statuses are read-only. Secret values never appear in the browser or the auth store."
+      }
+    },
+    "fields": {
+      "publicBaseUrl": "Admin host URL",
+      "viewerPublicBaseUrl": "Viewer host URL",
+      "trustProxyHops": "trustProxyHops",
+      "ownerUserIds": "Owner user IDs",
+      "reviewerRoleIds": "Reviewer role IDs",
+      "editorRoleIds": "Editor role IDs",
+      "adminRoleIds": "Admin role IDs",
+      "reviewerUserIds": "Reviewer user IDs",
+      "editorUserIds": "Editor user IDs",
+      "adminUserIds": "Admin user IDs",
+      "breakglassEnabled": "Enable breakglass fallback",
+      "listHelp": "Enter one ID per line or separate values with commas."
+    },
+    "secrets": {
+      "ready": "Ready",
+      "missing": "Missing",
+      "disabled": "Disabled",
+      "discord": {
+        "title": "Discord OAuth",
+        "readyDetail": "Discord client id and client secret are both present.",
+        "missingDetail": "Discord client id or client secret is missing."
+      },
+      "session": {
+        "title": "Session secret",
+        "readyDetail": "A session secret is present and meets the minimum length guidance.",
+        "missingDetail": "The session secret is missing, too short, or still using a placeholder."
+      },
+      "breakglass": {
+        "title": "Breakglass hash",
+        "readyDetail": "Breakglass is enabled and a password hash is configured.",
+        "missingDetail": "Breakglass is enabled but no password hash is configured.",
+        "disabledDetail": "Breakglass is disabled."
+      }
+    },
+    "savebar": {
+      "title": "Apply guarded security changes",
+      "body": "Saving creates a runtime backup, a workspace record, and an auth-store audit row before the plugin config is updated."
+    },
+    "messages": {
+      "preApplyBackup": "Pre-apply backup for dashboard security workspace",
+      "saved": "Saved security settings. Backup {backupId} created."
+    }
+  },
+  "editor": {
+    "title": "Advanced JSON editor",
+    "subtitle": "Edit the raw JSON directly. Invalid JSON will be rejected.",
+    "saveShortcut": "Press Ctrl+S or Cmd+S to save.",
+    "unsaved": "You have unsaved changes.",
+    "notFound": "Configuration file not found",
+    "invalidJson": "Invalid JSON: {message}",
+    "commonTitle": "Common settings",
+    "commonBody": "Start with the fields most admins usually change.",
+    "guidedTitle": "Routine path first",
+    "guidedBody": "Use the visual editor for the settings most admins change often, then move into deeper controls only when the routine path is not enough.",
+    "rawTitle": "Keep full JSON close by",
+    "rawBody": "Open the raw editor when you need exact file-level control, imports, or a full-fidelity review of the managed JSON.",
+    "inventoryTitle": "Current items",
+    "inventoryBody": "Review live items before editing.",
+    "advancedTitle": "Advanced settings",
+    "advancedBody": "Open the remaining config surface only when you need expert control.",
+    "workspace": {
+      "navigationTitle": "Sections",
+      "generalNavigationBody": "Jump to a section.",
+      "saveBarBody": "Save General settings."
+    },
+    "advancedTools": {
+      "title": "Advanced tools",
+      "body": "Keep raw JSON, export, backup, review, and restore close without making them the primary path.",
+      "rawAction": "Open raw JSON",
+      "exportAction": "Export current file",
+      "backupTitle": "Create backup",
+      "backupBody": "Capture the current managed file before a broader change.",
+      "backupNoteLabel": "Backup note",
+      "backupNotePlaceholder": "Optional note for this snapshot",
+      "backupAction": "Create backup",
+      "reviewTitle": "Review JSON before apply",
+      "reviewBody": "Paste or adjust a draft here, then open the guarded diff review before anything writes to disk.",
+      "reviewLabel": "Draft JSON",
+      "reviewAction": "Preview changes",
+      "restoreTitle": "Restore from backup",
+      "restoreBody": "Preview a backup copy against the live file before you apply it.",
+      "restoreAction": "Preview backup",
+      "restoreEmptyTitle": "No backups yet",
+      "restoreEmptyBody": "Backup history appears here after the next guarded backup or apply flow."
+    }
+  },
+  "general": {
+    "title": "General configuration",
+    "subtitle": "Core bot settings.",
+    "saveError": "Error saving config: {message}",
+    "workspace": {
+      "sectionsLabel": "Workspace sections",
+      "navigationTitle": "Sections",
+      "connectionNav": "Connection",
+      "statusNav": "Status",
+      "logsNav": "Logs",
+      "limitsNav": "Limits",
+      "advancedNav": "Advanced",
+      "commandModesLabel": "Command entry",
+      "commandModesBoth": "Slash + text",
+      "commandModesSlash": "Slash only",
+      "commandModesText": "Text only",
+      "commandModesDisabled": "Disabled",
+      "saveTitle": "Save changes"
+    },
+    "sections": {
+      "connection": "Connection and command mode",
+      "connectionBody": "Set token, server, language, and command entry.",
+      "basic": "Basic settings",
+      "status": "Status",
+      "statusBody": "Optional bot presence.",
+      "advanced": "Advanced behavior",
+      "advancedBody": "Keep rare flags in collapsed groups.",
+      "identity": "Identity and visual defaults",
+      "identityBody": "Admins, color, and emoji defaults.",
+      "system": "System flags",
+      "systemBody": "Rare behavior flags.",
+      "logs": "Logs",
+      "logsBody": "Optional log channel.",
+      "limits": "Limits",
+      "limitsBody": "Default ticket caps.",
+      "channelTopic": "Channel topic",
+      "channelTopicBody": "Ticket facts written into the topic.",
+      "permissions": "Permissions",
+      "permissionsBody": "Per-command role gates.",
+      "messages": "Message delivery",
+      "messagesBody": "DM and log delivery toggles."
+    },
+    "fields": {
+      "token": "Bot token",
+      "mainColor": "Main color",
+      "language": "Language",
+      "prefix": "Command prefix",
+      "serverId": "Server ID",
+      "commandModes": "Command modes",
+      "globalAdmins": "Global admin roles",
+      "globalAdminsHelp": "Store Discord role IDs as a JSON array of quoted strings, for example [\"123456789012345678\"].",
+      "globalAdminsRecoveredWarning": "The saved value matched the known legacy line-split corruption pattern. Review the repaired role-ID JSON below, then save to rewrite it cleanly.",
+      "globalAdminsInvalidSavedWarning": "The saved value is invalid and could not be safely repaired. Review the raw JSON below, convert it to a JSON array of quoted Discord role IDs, then save.",
+      "globalAdminsErrorInvalidJson": "Enter valid JSON for this field. Use a JSON array of quoted Discord role IDs.",
+      "globalAdminsErrorNotArray": "Enter a JSON array of quoted Discord role IDs.",
+      "globalAdminsErrorNumber": "Discord role IDs must be quoted JSON strings. Numeric JSON IDs are rejected to avoid snowflake precision loss.",
+      "globalAdminsErrorEmptyString": "Remove empty entries from the role-ID array before saving.",
+      "globalAdminsErrorNonString": "Every global admin entry must be a quoted Discord role ID string.",
+      "globalAdminsErrorInvalidRoleId": "Every global admin entry must be a Discord role ID with 17 to 20 digits.",
+      "slashCommands": "Enable slash commands",
+      "textCommands": "Enable text commands",
+      "tokenFromEnv": "Read token from environment",
+      "statusEnabled": "Enable custom status",
+      "statusType": "Status type",
+      "statusMode": "Presence mode",
+      "statusText": "Status text",
+      "statusState": "Status state",
+      "emojiStyle": "Emoji style",
+      "pinEmoji": "Pin emoji",
+      "logsEnabled": "Enable logs",
+      "logsChannel": "Log channel ID",
+      "limitsEnabled": "Enable limits",
+      "globalMaximum": "Global maximum",
+      "userMaximum": "User maximum"
+    }
+  },
+  "options": {
+    "title": "Options configuration",
+    "subtitle": "Manage ticket, website, and role options.",
+    "emptyTitle": "No options configured",
+    "emptyBody": "Create your first option to populate the panel editors.",
+    "sections": {
+      "ticket": "Ticket settings",
+      "advancedMessages": "Advanced ticket messages",
+      "website": "Website settings",
+      "role": "Role settings"
+    },
+    "workspace": {
+      "savedOptionsLabel": "Saved options",
+      "inventoryTitle": "Option inventory",
+      "inventoryBody": "Choose an option or start a draft.",
+      "newButton": "New option",
+      "editorBody": "Edit the selected option with questions and panel usage in view.",
+      "newDraftTitle": "New unsaved option",
+      "duplicateButton": "Duplicate",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "positionLabel": "Order",
+      "unsavedPosition": "Unsaved",
+      "positionBody": "Saved order still controls panel entry order.",
+      "questionCountLabel": "Questions",
+      "questionCountBody": "Reuse shared questions here.",
+      "panelCountLabel": "Panels",
+      "panelCountBody": "Panel references block ID changes and delete.",
+      "identityTitle": "Identity and button",
+      "identityBody": "Set the name, ID, and button label first.",
+      "dependencyTitle": "Dependencies and usage",
+      "dependencyBody": "Question assignments and panel references stay visible here.",
+      "assignedQuestionsTitle": "Assigned questions",
+      "assignedQuestionsBody": "These questions will be asked when this option is selected.",
+      "assignedQuestionsEmpty": "No questions are assigned to this option.",
+      "referencingPanelsTitle": "Referencing panels",
+      "referencingPanelsBody": "These panels currently include this option.",
+      "referencingPanelsEmpty": "No panels currently reference this option.",
+      "referenceWarningTitle": "Panel references are active",
+      "referenceWarningBody": "This option is still live on one or more panels. Remove those panel references before changing its ID or deleting it.",
+      "ticketBody": "Configure ticket channels, automation, transcripts, and question assignment.",
+      "ticketChannelTitle": "Channel setup",
+      "ticketChannelBody": "Set the ticket naming and category routing.",
+      "ticketAutomationTitle": "Automation and limits",
+      "ticketAutomationBody": "Keep inactivity, limits, and cooldown controls together.",
+      "questionPickerTitle": "Question assignment",
+      "questionPickerBody": "Use the structured picker so coverage stays visible while you edit.",
+      "questionPickerEmptyTitle": "No reusable questions yet",
+      "questionPickerEmptyBody": "Add questions in the Questions workspace before assigning them to ticket options here.",
+      "questionRequired": "required",
+      "questionOptional": "optional",
+      "transcriptRoutingTitle": "Transcript delivery routing",
+      "transcriptRoutingBody": "Choose whether this option inherits the default transcript route or uses explicit channel IDs.",
+      "ticketAdvancedTitle": "Advanced ticket behavior",
+      "ticketAdvancedBody": "Keep low-frequency ticket controls and channel metadata together.",
+      "messagesBody": "Use raw JSON only when you need nested embed, field, or ping control.",
+      "websiteBody": "Keep the destination URL accurate and the button copy clear.",
+      "roleBody": "Keep the role list, mode, and remove-on-add behavior together.",
+      "saveTitle": "Save changes",
+      "saveBarBody": "Save option changes."
+    },
+    "fields": {
+      "type": "Type",
+      "selectType": "Select a type",
+      "id": "ID",
+      "name": "Name",
+      "description": "Description",
+      "buttonEmoji": "Button emoji",
+      "buttonLabel": "Button label",
+      "buttonColor": "Button color",
+      "allowBlacklisted": "Allow blacklisted users to create this option",
+      "ticketAdmins": "Ticket admins",
+      "readonlyAdmins": "Readonly admins",
+      "questionIds": "Question IDs",
+      "channelPrefix": "Channel prefix",
+      "channelSuffix": "Channel suffix",
+      "categoryId": "Category ID",
+      "closedCategoryId": "Closed category ID",
+      "backupCategoryId": "Backup category ID",
+      "useGlobalTranscriptDefault": "Use global transcript default",
+      "transcriptChannels": "Explicit transcript channel IDs",
+      "transcriptChannelsHelp": "Enter comma-separated, newline-separated, or JSON-array channel IDs. Leaving this empty while inheritance is off disables transcript channel posting for this option.",
+      "transcriptRoutingInheritedHelp": "This option inherits the default transcript channel from the Transcripts workspace when channel delivery is enabled there.",
+      "transcriptRoutingOverrideHelp": "This option sends transcript-ready posts only to the explicit channel IDs listed here, even if the global transcript channel toggle is off.",
+      "claimedCategory": "Claimed category mappings",
+      "claimedCategoryHelp": "Use a JSON array of {\"user\",\"category\"} objects.",
+      "channelTopic": "Channel topic",
+      "cooldownEnabled": "Enable cooldown",
+      "cooldownMinutes": "Cooldown minutes",
+      "autocloseEnabled": "Enable autoclose",
+      "inactiveHours": "Inactive hours",
+      "autocloseOnLeave": "Close when the ticket creator leaves",
+      "autocloseDisableOnClaim": "Disable autoclose when claimed",
+      "autodeleteEnabled": "Enable autodelete",
+      "inactiveDays": "Inactive days",
+      "autodeleteOnLeave": "Delete when the ticket creator leaves",
+      "autodeleteDisableOnClaim": "Disable autodelete when claimed",
+      "limitsEnabled": "Enable limits",
+      "globalMaximum": "Global maximum",
+      "userMaximum": "User maximum",
+      "slowModeEnabled": "Enable slow mode",
+      "slowModeSeconds": "Slow mode seconds",
+      "dmMessageJson": "DM message JSON",
+      "ticketMessageJson": "Ticket message JSON",
+      "messageJsonHelp": "Use JSON to edit the full nested message config, including embeds, fields, and ping settings.",
+      "websiteUrl": "URL",
+      "roleIds": "Role IDs",
+      "removeRoleIds": "Remove-on-add role IDs",
+      "roleMode": "Mode",
+      "addOnMemberJoin": "Add on member join"
+    },
+    "labels": {
+      "noDescription": "No description provided."
+    },
+    "modal": {
+      "addTitle": "Add option",
+      "editTitle": "Edit option",
+      "openButton": "Add option"
+    },
+    "flash": {
+      "deleteConfirm": "Delete this option?",
+      "deleteSuccess": "Option deleted.",
+      "saveSuccess": "Option saved.",
+      "validationType": "Choose an option type.",
+      "validationName": "Enter an option name.",
+      "validationUrl": "Website options need a valid URL.",
+      "validationClaimedCategory": "Claimed category mappings must be a valid JSON array of user/category objects.",
+      "validationButtonColor": "Choose a valid button color.",
+      "validationChannelSuffix": "Choose a valid channel suffix.",
+      "validationRoleMode": "Choose a valid role mode.",
+      "validationMessageJson": "Advanced message settings must be valid JSON objects."
+    }
+  },
+  "panels": {
+    "title": "Panels configuration",
+    "subtitle": "Build ticket panels.",
+    "emptyTitle": "No panels configured",
+    "emptyBody": "Create a panel after adding one or more options.",
+    "sections": {
+      "embed": "Embed",
+      "settings": "Panel settings"
+    },
+    "workspace": {
+      "inventoryTitle": "Panel inventory",
+      "savedPanelsLabel": "Saved panels",
+      "inventoryBody": "Select a panel or start a new draft.",
+      "newButton": "New panel",
+      "editorBody": "Edit the selected panel with option selection and preview feedback in view.",
+      "newDraftTitle": "New unsaved panel",
+      "duplicateButton": "Duplicate",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "positionLabel": "Order",
+      "unsavedPosition": "Unsaved",
+      "positionBody": "Saved order still controls entry order.",
+      "modeLabel": "Mode",
+      "modeBody": "Switch between buttons and dropdown mode here.",
+      "optionCountLabel": "Options",
+      "optionCountBody": "Selected options stay visible in the picker and preview.",
+      "buttonsMode": "Buttons",
+      "dropdownMode": "Dropdown",
+      "dropdownWarningTitle": "Dropdown compatibility",
+      "identityTitle": "Identity and entry copy",
+      "identityBody": "Set the ID, name, entry mode, and member copy first.",
+      "pickerTitle": "Option picker",
+      "pickerBody": "Choose options with emoji, type, and description still visible.",
+      "pickerEmptyTitle": "No reusable options yet",
+      "pickerEmptyBody": "Create options in the Options workspace before building panels here.",
+      "previewTitle": "Preview",
+      "previewBody": "Keep the member-facing result visible while you edit.",
+      "selectedOptionsTitle": "Selected options",
+      "selectedOptionsBody": "These options publish with this panel.",
+      "selectedOptionsEmpty": "No options are selected for this panel yet.",
+      "memberPreviewTitle": "Member preview",
+      "embedSummaryEmpty": "No embed summary configured.",
+      "noPlaceholder": "No placeholder set",
+      "placeholderLabel": "Placeholder",
+      "embedBody": "Keep the main embed title, description, and color visible before opening deeper embed fields.",
+      "advancedBody": "Open low-frequency embed fields and description layout switches here.",
+      "saveTitle": "Save changes",
+      "saveBarBody": "Save panel changes."
+    },
+    "fields": {
+      "id": "ID",
+      "name": "Name",
+      "useDropdown": "Use dropdown",
+      "optionIds": "Option IDs",
+      "text": "Text",
+      "embedEnabled": "Enable embed",
+      "embedTitle": "Embed title",
+      "embedDescription": "Embed description",
+      "embedColor": "Embed color",
+      "embedUrl": "Embed URL",
+      "imageUrl": "Image URL",
+      "thumbnailUrl": "Thumbnail URL",
+      "footerText": "Footer text",
+      "showTimestamp": "Show timestamp",
+      "dropdownPlaceholder": "Dropdown placeholder",
+      "describeLayout": "Options description layout",
+      "describeCustomTitle": "Custom description title",
+      "maxTicketsText": "Max-tickets warning in text",
+      "maxTicketsEmbed": "Max-tickets warning in embed",
+      "describeInText": "Describe options in text",
+      "describeInFields": "Describe options in embed fields",
+      "describeInDescription": "Describe options in embed description"
+    },
+    "labels": {
+      "noPreview": "No preview text configured."
+    },
+    "modal": {
+      "addTitle": "Add panel",
+      "editTitle": "Edit panel",
+      "openButton": "Add panel"
+    },
+    "flash": {
+      "deleteConfirm": "Delete this panel?",
+      "deleteSuccess": "Panel deleted.",
+      "saveSuccess": "Panel saved.",
+      "validationOptions": "Select at least one option.",
+      "validationDropdownOptions": "Dropdown panels can only include ticket options.",
+      "validationUnknownOptions": "Panels can only include existing option IDs.",
+      "validationLayout": "Choose a valid options description layout.",
+      "availableOptions": "Available options",
+      "dropdownHint": "Dropdown panels only support ticket options."
+    }
+  },
+  "questions": {
+    "title": "Questions configuration",
+    "subtitle": "Manage reusable intake questions.",
+    "emptyTitle": "No questions configured",
+    "emptyBody": "Create a question to reuse it across ticket options.",
+    "workspace": {
+      "inventoryTitle": "Questions",
+      "savedQuestionsLabel": "Saved questions",
+      "newButton": "New question",
+      "newDraftTitle": "New question",
+      "duplicateButton": "Duplicate",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "positionLabel": "Order",
+      "unsavedPosition": "New draft",
+      "typeLabel": "Type",
+      "usageCountLabel": "In use",
+      "usageTitle": "Usage",
+      "usedByOptionsTitle": "Options",
+      "usedByOptionsEmpty": "No options currently reference this question.",
+      "referenceWarningTitle": "Option references are active",
+      "referenceWarningBody": "This question is still used by one or more options. Deleting it or changing its ID will be blocked until those option references are removed.",
+      "identityTitle": "Question details",
+      "saveTitle": "Save changes"
+    },
+    "fields": {
+      "id": "ID",
+      "name": "Name",
+      "type": "Type",
+      "required": "Required",
+      "placeholder": "Placeholder",
+      "lengthEnabled": "Enable length limits",
+      "minLength": "Minimum length",
+      "maxLength": "Maximum length"
+    },
+    "labels": {
+      "noPlaceholder": "No placeholder configured.",
+      "required": "Required",
+      "lengthSummary": "{min}-{max} chars"
+    },
+    "modal": {
+      "addTitle": "Add question",
+      "editTitle": "Edit question",
+      "openButton": "Add question"
+    },
+    "flash": {
+      "deleteConfirm": "Delete this question?",
+      "deleteSuccess": "Question deleted.",
+      "saveSuccess": "Question saved.",
+      "validationId": "Enter a question ID.",
+      "validationIdFormat": "Question IDs may only contain letters, numbers, and supported accented characters.",
+      "validationIdLength": "Question IDs must be between 3 and 40 characters.",
+      "validationName": "Enter a question label.",
+      "validationNameLength": "Question names must be between 3 and 45 characters.",
+      "validationPlaceholderLength": "Question placeholders must be at most 100 characters.",
+      "validationMinimum": "Minimum length must stay between 0 and 1024.",
+      "validationMaximum": "Maximum length must stay between 1 and 1024.",
+      "validationLength": "Minimum length cannot exceed maximum length."
+    }
+  },
+  "transcripts": {
+    "title": "Transcripts configuration",
+    "subtitle": "Control transcript delivery defaults, preview, and styling.",
+    "htmlModeWarning": "HTML transcript mode is enabled, but the transcript integration is not ready. {reason}",
+    "workspaceAction": "Open transcript workspace",
+    "preview": {
+      "title": "HTML preview and presets",
+      "body": "Apply a built-in style draft, then refresh the preview iframe to inspect the current HTML transcript look without saving first.",
+      "applyPresetAction": "Apply preset",
+      "resetAction": "Reset style to saved values",
+      "refreshAction": "Refresh preview",
+      "iframeTitle": "HTML transcript preview",
+      "unavailableTitle": "Preview is unavailable",
+      "unavailableService": "Preview is unavailable until the transcript service is healthy and connected to the dashboard runtime.",
+      "unavailableUnsupported": "This transcript service build does not expose style presets or HTML preview rendering yet.",
+      "unavailableError": "The transcript preview could not be rendered right now. You can still save transcript settings normally.",
+      "presets": {
+        "discord-classic": {
+          "label": "Discord Classic",
+          "description": "Keeps the familiar Discord charcoal and gold transcript look."
+        },
+        "midnight-cyan": {
+          "label": "Midnight Cyan",
+          "description": "Cool blue contrast with a brighter operational accent."
+        },
+        "ember-slate": {
+          "label": "Ember Slate",
+          "description": "Warmer dark neutrals with orange emphasis for alert-heavy archives."
+        },
+        "forest-ledger": {
+          "label": "Forest Ledger",
+          "description": "Muted greens tuned for softer long-form reading."
+        }
+      }
+    },
+    "editor": {
+      "introTitle": "Transcript editor workflow",
+      "introBody": "Review delivery defaults first, then tune text output, preview presets, and HTML appearance before you save. Ticket option overrides live in the Options workspace.",
+      "advancedBody": "Open the embed-only transcript options after the main delivery and appearance choices are set.",
+      "sections": {
+        "delivery": "Transcript delivery",
+        "text": "Text transcript output",
+        "preview": "HTML preview and presets",
+        "appearance": "HTML appearance",
+        "advanced": "Advanced transcript options"
+      },
+      "fields": {
+        "generalEnabled": "Enable transcripts",
+        "generalEnableChannel": "Send to a channel",
+        "generalEnableCreatorDM": "Send a DM to the creator",
+        "generalEnableParticipantDM": "Send a DM to participants",
+        "generalEnableActiveAdminDM": "Send a DM to the active admin",
+        "generalEnableEveryAdminDM": "Send a DM to every admin",
+        "generalChannel": "Default transcript channel ID",
+        "generalChannelHelp": "Ticket options that keep transcript inheritance enabled use this channel when transcript channel delivery is turned on.",
+        "generalMode": "Mode",
+        "textLayout": "Layout",
+        "textFileMode": "File mode",
+        "textCustomFileName": "Custom file name",
+        "textIncludeStats": "Include stats",
+        "textIncludeIds": "Include IDs",
+        "textIncludeEmbeds": "Include embeds",
+        "textIncludeFiles": "Include files",
+        "textIncludeBotMessages": "Include bot messages",
+        "backgroundEnable": "Enable custom background",
+        "backgroundColor": "Background color",
+        "backgroundImage": "Background image URL",
+        "headerEnable": "Enable custom header",
+        "headerBackground": "Header background",
+        "headerAccent": "Header accent",
+        "headerText": "Header text",
+        "statsEnable": "Enable custom stats",
+        "statsBackground": "Stats background",
+        "statsKeyText": "Stats key text",
+        "statsValueText": "Stats value text",
+        "statsHideBackground": "Stats hidden background",
+        "statsHideText": "Stats hidden text",
+        "faviconEnable": "Enable custom favicon",
+        "faviconImage": "Favicon image URL",
+        "embedColor": "Embed color",
+        "embedListAllParticipants": "List all participants",
+        "embedIncludeTicketStats": "Include ticket stats"
+      },
+      "enums": {
+        "mode": {
+          "html": "HTML transcript",
+          "text": "Text transcript"
+        },
+        "textLayout": {
+          "simple": "Simple",
+          "normal": "Normal",
+          "detailed": "Detailed"
+        },
+        "fileMode": {
+          "custom": "Custom file name",
+          "channel-name": "Channel name",
+          "channel-id": "Channel ID",
+          "user-name": "User name",
+          "user-id": "User ID"
+        }
+      },
+      "preview": {
+        "title": "HTML preview and presets",
+        "body": "Apply a built-in style draft, then refresh the preview iframe to inspect the current HTML transcript look without saving first.",
+        "applyPresetAction": "Apply preset",
+        "resetAction": "Reset style to saved values",
+        "refreshAction": "Refresh preview",
+        "iframeTitle": "HTML transcript preview",
+        "unavailableTitle": "Preview is unavailable",
+        "unavailableService": "Preview is unavailable until the transcript service is healthy and connected to the dashboard runtime.",
+        "unavailableUnsupported": "This transcript service build does not expose style presets or HTML preview rendering yet.",
+        "unavailableError": "The transcript preview could not be rendered right now. You can still save transcript settings normally."
+      },
+      "presets": {
+        "discord-classic": {
+          "label": "Discord Classic",
+          "description": "Keeps the familiar Discord charcoal and gold transcript look."
+        },
+        "midnight-cyan": {
+          "label": "Midnight Cyan",
+          "description": "Cool blue contrast with a brighter operational accent."
+        },
+        "ember-slate": {
+          "label": "Ember Slate",
+          "description": "Warmer dark neutrals with orange emphasis for alert-heavy archives."
+        },
+        "forest-ledger": {
+          "label": "Forest Ledger",
+          "description": "Muted greens tuned for softer long-form reading."
+        }
+      }
+    },
+    "access": {
+      "privateModeTitle": "Private transcript mode",
+      "privateModeBody": "Canonical transcript links now point to the dashboard viewer and require Discord sign-in from the transcript creator or a stored participant.",
+      "viewerLinkWarningTitle": "Viewer links cannot be issued",
+      "viewerRouteWarningTitle": "Viewer routes are not ready"
+    },
+    "viewer": {
+      "notReady": "Dashboard transcript viewer is not ready.",
+      "portal": {
+        "title": "My Transcripts",
+        "headline": "My Transcripts",
+        "subtitle": "Only transcript archives you can open right now appear on the viewer host.",
+        "summary": {
+          "available": "Available now",
+          "availableDetail": "Service-owned accessible transcript rows.",
+          "membership": "Guild status",
+          "tier": "Live staff tier",
+          "tierDetail": "Reviewer, Editor, or Admin when live RBAC resolves."
+        },
+        "membership": {
+          "member": "Current member",
+          "missing": "Membership missing",
+          "unresolved": "Membership unresolved"
+        },
+        "tiers": {
+          "reviewer": "Reviewer",
+          "editor": "Editor",
+          "admin": "Admin",
+          "none": "No live tier"
+        },
+        "revalidated": "Revalidated {ageSeconds}s ago",
+        "inventoryTitle": "Currently accessible transcripts",
+        "inventoryCount": "{count} transcript(s)",
+        "ticketLabel": "Ticket",
+        "channelLabel": "Channel",
+        "openAction": "Open",
+        "table": {
+          "transcript": "Transcript",
+          "ticketChannel": "Ticket and channel",
+          "activity": "Created and updated",
+          "access": "Access"
+        },
+        "accessPath": {
+          "creator": "Creator",
+          "staff": "Recorded admin staff",
+          "owner": "Owner override"
+        },
+        "emptyTitle": "No accessible transcripts",
+        "emptyBody": "Only creator-owned archives and current recorded-admin staff assignments appear here.",
+        "failClosedNotice": "Current guild membership could not be confirmed, so the portal stays empty until live access checks succeed again.",
+        "ownerOverrideNotice": "Owner override does not populate My Transcripts. Use the admin host transcript workspace for global inventory."
+      },
+      "login": {
+        "title": "Transcript viewer",
+        "headline": "Sign in to view this transcript",
+        "subtitle": "Private transcripts require Discord sign-in and a current guild-membership check before the archive can load.",
+        "action": "Sign in with Discord",
+        "errors": {
+          "state": "The Discord viewer sign-in state expired or did not match. Please try again.",
+          "code": "Discord did not return a valid viewer sign-in code. Please try again.",
+          "auth": "Discord viewer sign-in could not be completed. Please try again.",
+          "access": "Your Discord account does not currently have viewer-host access."
+        }
+      }
+    },
+    "page": {
+      "eyebrow": "Transcript operations",
+      "headline": "Review transcript archives",
+      "subtitle": "Search transcript records, inspect archived details, and open advanced transcript actions only on the detail page.",
+      "workspaceTitle": "Transcripts",
+      "workspaceBody": "Review transcript archives here. Single-record actions stay on transcript detail pages, and bulk tools stay with the table below.",
+      "summary": {
+        "integrityLabel": "Integrity",
+        "retentionLabel": "Retention",
+        "retentionEnabled": "Enabled",
+        "retentionDisabled": "Disabled",
+        "integrityDetail": "{error} errors, {warning} warnings, {repairable} repairable",
+        "retentionDetail": "{totalCandidates} candidates, startup {startupState}",
+        "unavailableDetail": "Read-only operations data is unavailable."
+      },
+      "filtersTitle": "Find transcript records",
+      "filters": {
+        "summary": "Search and narrow the transcript record list.",
+        "activeCount": "{count} active",
+        "moreTitle": "More filters",
+        "moreBody": "IDs, date range, sort, and page size.",
+        "searchLabel": "Search",
+        "searchPlaceholder": "Transcript id, ticket id, channel id, slug, or reason",
+        "statusLabel": "Status",
+        "integrityLabel": "Integrity",
+        "retentionLabel": "Retention",
+        "creatorIdLabel": "Creator ID",
+        "creatorIdPlaceholder": "Exact transcript creator id",
+        "channelIdLabel": "Channel ID",
+        "channelIdPlaceholder": "Exact transcript channel id",
+        "createdFromLabel": "Created from",
+        "createdToLabel": "Created to",
+        "sortLabel": "Sort",
+        "statusAll": "All statuses",
+        "status": {
+          "building": "Building",
+          "active": "Active",
+          "partial": "Partial",
+          "revoked": "Revoked",
+          "deleted": "Deleted",
+          "failed": "Failed"
+        },
+        "integrityAll": "All integrity states",
+        "integrityHealthy": "Healthy",
+        "integrityWarning": "Warning",
+        "integrityError": "Error",
+        "integrityRepairable": "Repairable",
+        "integritySkipped": "Skipped",
+        "retentionAll": "All retention states",
+        "retentionCandidate": "Candidate",
+        "retentionNotCandidate": "Not a candidate",
+        "sortOptions": {
+          "created-desc": "Newest created",
+          "created-asc": "Oldest created",
+          "updated-desc": "Recently updated",
+          "updated-asc": "Least recently updated"
+        },
+        "rowsLabel": "Rows per page",
+        "applyAction": "Apply filters",
+        "resetAction": "Reset filters",
+        "clearAction": "Clear filters"
+      },
+      "filteredSummaryTitle": "Filtered summary",
+      "filteredSummary": {
+        "total": "Total",
+        "active": "Active",
+        "partial": "Partial",
+        "revoked": "Revoked",
+        "deleted": "Deleted",
+        "failed": "Failed",
+        "building": "Building"
+      },
+      "activeFiltersTitle": "Active filters",
+      "activeFilters": {
+        "search": "Search",
+        "status": "Status",
+        "integrity": "Integrity",
+        "retention": "Retention",
+        "creatorId": "Creator ID",
+        "channelId": "Channel ID",
+        "createdFrom": "Created from",
+        "createdTo": "Created to",
+        "sort": "Sort"
+      },
+      "inventoryTitle": "Transcript records",
+      "inventoryCount": "{count} transcript(s)",
+      "emptyUnavailableBody": "Records appear here after the transcript runtime reconnects.",
+      "publicLinkAction": "Open link",
+      "table": {
+        "select": "Select",
+        "status": "Status",
+        "transcript": "Transcript",
+        "archive": "Archive",
+        "access": "Access",
+        "ticket": "Ticket",
+        "channel": "Channel",
+        "created": "Created",
+        "createdMeta": "Created {value}",
+        "messages": "Messages",
+        "messagesMeta": "{count} messages",
+        "attachments": "Attachments",
+        "attachmentsMeta": "{count} attachments",
+        "warnings": "Warnings",
+        "warningsMeta": "{count} warnings",
+        "publicLink": "Public link",
+        "actions": "Actions"
+      },
+      "publicLinkUnavailable": "Unavailable",
+      "openAction": "Open",
+      "paginationShowing": "Showing {start}-{end} of {total}",
+      "emptyTitle": "No transcript records to show",
+      "emptyBody": "Try clearing the search, widening the status filter, or wait for the next transcript archive to finish.",
+      "configAction": "Open transcript settings",
+      "addOnAction": "Open transcript add-on",
+      "bulk": {
+        "title": "Bulk actions",
+        "selectionSummary": "{count} selected",
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Optional reason for revoke or delete actions",
+        "help": "Current page only. Eligibility still depends on each transcript record.",
+        "revokeAction": "Revoke selected",
+        "deleteAction": "Delete selected",
+        "exportAction": "Export selected",
+        "revokeConfirm": "Revoke every selected active transcript link now?",
+        "deleteConfirm": "Delete every selected eligible transcript archive now?",
+        "unsupported": "This transcript service build does not expose bulk actions or export downloads yet."
+      },
+      "operations": {
+        "title": "Operations overview",
+        "badges": {
+          "available": "Available",
+          "unavailable": "Unavailable"
+        },
+        "unavailableTitle": "Read-only operations data is unavailable",
+        "unavailableUnsupported": "This transcript service build does not expose retention preview or integrity summary reads yet.",
+        "unavailableError": "The transcript service is healthy for archive management, but the read-only operations overview could not be loaded.",
+        "unavailableCompact": "This overview fills in when the transcript service can answer read-only archive checks again.",
+        "integrity": {
+          "title": "Integrity overview",
+          "scannedAt": "Scanned {scannedAt}",
+          "healthy": "Healthy",
+          "warning": "Warnings",
+          "error": "Errors",
+          "repairable": "Repairable",
+          "skipped": "Skipped"
+        },
+        "retention": {
+          "title": "Retention overview",
+          "enabledLabel": "Retention",
+          "startupLabel": "Startup sweep",
+          "windowsLabel": "Configured windows",
+          "startupOn": "on",
+          "startupOff": "off",
+          "startupDetail": "Uses the configured startup sweep behavior.",
+          "windowsValue": "failed {failedDays}d, revoked {revokedDays}d, deleted {deletedDays}d",
+          "windowsDetail": "Configured in the transcript service retention policy.",
+          "maxPerRun": "{count} per run",
+          "candidatesCount": "{count} candidate(s)",
+          "disabledTitle": "Retention is disabled",
+          "disabledBody": "Retention preview is available, but automatic archive sweeping is currently turned off.",
+          "emptyTitle": "No retention candidates",
+          "emptyBody": "The transcript service did not report any current retention candidates for the configured windows.",
+          "ageValue": "{count} day(s)",
+          "windowValue": "{count} day(s)",
+          "table": {
+            "transcript": "Transcript",
+            "status": "Status",
+            "updated": "Updated",
+            "age": "Age",
+            "window": "Window",
+            "archiveSize": "Archive size"
+          }
+        }
+      }
+    },
+    "detail": {
+      "eyebrow": "Transcript detail",
+      "unavailableTitle": "Transcript detail is unavailable",
+      "unavailableBody": "The transcript service is not ready, so the dashboard cannot load transcript detail or mutation controls right now.",
+      "subtitleUnavailable": "The dashboard could not resolve the transcript service, so transcript detail and mutation controls are disabled until the integration recovers.",
+      "headline": "Transcript {id}",
+      "subtitle": "Review transcript status, current link access, participant coverage, mirrored assets, and guarded revoke/reissue/delete actions backed by the transcript service.",
+      "backAction": "Back to transcripts",
+      "configAction": "Open transcript settings",
+      "pluginAction": "Open plugin workbench",
+      "summary": {
+        "status": "Status",
+        "messages": "Messages",
+        "messagesDetail": "{count} attachments mirrored or recorded",
+        "warnings": "Warnings",
+        "warningsDetail": "Archive size {size}",
+        "updated": "Updated",
+        "updatedDetail": "Created {created}",
+        "integrity": "Integrity",
+        "integrityDetail": "{count} issue(s), {repairable} repairable action(s)",
+        "integrityUnavailableDetail": "Read-only integrity data is unavailable.",
+        "noStatusReason": "No additional status reason recorded."
+      },
+      "accessTitle": "Current public access",
+      "noPublicUrl": "This transcript does not currently expose an active public URL.",
+      "statusReasonLabel": "Status reason",
+      "integrity": {
+        "title": "Integrity",
+        "unavailableTitle": "Integrity data is unavailable",
+        "unavailableUnsupported": "This transcript service build does not expose per-transcript integrity scans yet.",
+        "unavailableError": "The transcript service could not load integrity data for this transcript right now.",
+        "unavailableMissing": "The transcript service returned no integrity report for this transcript.",
+        "scannedAt": "Scanned {scannedAt}",
+        "repairableActionsLabel": "Repairable actions",
+        "repairableNone": "None recorded",
+        "emptyTitle": "No integrity issues",
+        "emptyBody": "The transcript service reported a healthy integrity scan with no issues for this archive.",
+        "health": {
+          "healthy": "Healthy",
+          "warning": "Warning",
+          "error": "Error",
+          "skipped": "Skipped"
+        },
+        "severity": {
+          "warning": "Warning",
+          "error": "Error"
+        },
+        "facts": {
+          "archiveSafe": "Archive path safe",
+          "archivePresent": "Archive present",
+          "documentPresent": "Document present",
+          "htmlPresent": "HTML present"
+        },
+        "table": {
+          "severity": "Severity",
+          "code": "Code",
+          "message": "Message",
+          "repairableActions": "Repairable actions"
+        }
+      },
+      "events": {
+        "title": "Event history",
+        "unavailableTitle": "Event history is unavailable",
+        "unavailableUnsupported": "This transcript service build does not expose transcript event history yet.",
+        "unavailableError": "The transcript service could not load transcript event history right now.",
+        "badges": {
+          "available": "Available"
+        },
+        "paginationSummary": "Showing {start}-{end} of {total}",
+        "emptyTitle": "No transcript events",
+        "emptyBody": "The transcript service did not return any recorded events for this transcript.",
+        "reasonEmpty": "None recorded",
+        "detailsEmpty": "No details",
+        "table": {
+          "time": "Time",
+          "type": "Type",
+          "reason": "Reason",
+          "details": "Details"
+        },
+        "types": {
+          "buildStarted": "Build started",
+          "buildSucceeded": "Build succeeded",
+          "buildPartial": "Build partial",
+          "buildFailed": "Build failed",
+          "viewerAccessed": "Viewer accessed transcript",
+          "archiveSwept": "Archive swept",
+          "integrityRepaired": "Integrity repaired",
+          "exportPrepared": "Export prepared",
+          "linkExpired": "Link expired",
+          "linkRevoked": "Link revoked",
+          "linkReissued": "Link reissued",
+          "transcriptDeleted": "Transcript deleted",
+          "recoveryMarkedFailed": "Recovery marked failed"
+        }
+      },
+      "linksTitle": "Link history",
+      "linksCount": "{count} link(s)",
+      "linksHeaders": {
+        "status": "Status",
+        "slug": "Slug",
+        "publicUrl": "Public URL",
+        "created": "Created",
+        "expires": "Expires",
+        "expired": "Expired",
+        "revoked": "Revoked",
+        "reason": "Reason"
+      },
+      "linksStatuses": {
+        "expired": "Expired"
+      },
+      "linksUnavailable": "Unavailable",
+      "linksNoReason": "None recorded",
+      "linksEmptyTitle": "No link history recorded",
+      "linksEmptyBody": "The transcript service did not return any stored links for this transcript.",
+      "participantsTitle": "Participants",
+      "participantsCount": "{count} participant(s)",
+      "participantsHeaders": {
+        "role": "Role",
+        "displayName": "Display name",
+        "userId": "User ID"
+      },
+      "participantsEmptyTitle": "No participant records",
+      "participantsEmptyBody": "The transcript service did not return any stored participants for this transcript.",
+      "assetsTitle": "Mirrored assets",
+      "assetsCount": "{count} asset(s)",
+      "assetsHeaders": {
+        "status": "Status",
+        "asset": "Asset",
+        "mimeType": "Mime type",
+        "size": "Size",
+        "archivePath": "Archive path",
+        "notes": "Notes"
+      },
+      "assetsUnknownMime": "Unknown",
+      "assetsUnavailable": "Unavailable",
+      "assetsNoReason": "None recorded",
+      "assetsEmptyTitle": "No asset records",
+      "assetsEmptyBody": "The transcript service did not return any mirrored asset metadata for this transcript.",
+      "factsTitle": "Transcript facts",
+      "facts": {
+        "id": "ID",
+        "ticketId": "Ticket ID",
+        "channelId": "Channel ID",
+        "guildId": "Guild ID",
+        "creatorId": "Creator ID",
+        "deleterId": "Deleter ID",
+        "activeSlug": "Active slug",
+        "created": "Created",
+        "updated": "Updated",
+        "messages": "Messages",
+        "attachments": "Attachments",
+        "warnings": "Warnings",
+        "archiveSize": "Archive size"
+      },
+      "operationsTitle": "Operations",
+      "operations": {
+        "exportHelp": "Download a staged ZIP export for this transcript without changing its current public link state.",
+        "exportAction": "Download export",
+        "exportUnavailable": "This transcript service build does not expose direct transcript export downloads yet.",
+        "revokeLabel": "Revoke reason",
+        "revokePlaceholder": "Optional reason for revoking the active link",
+        "revokeHelp": "Use this when the current public link should stop working but the archive itself should remain available for later review.",
+        "revokeAction": "Revoke active link",
+        "revokeConfirm": "Revoke the active transcript link now?",
+        "reissueLabel": "Reissue reason",
+        "reissuePlaceholder": "Optional reason for generating a new slug",
+        "reissueHelp": "Use this when the archive stays valid but the public URL should rotate to a fresh slug.",
+        "reissueAction": "Reissue public link",
+        "reissueConfirm": "Create a new public transcript link and supersede the old one?",
+        "deleteLabel": "Delete reason",
+        "deletePlaceholder": "Optional reason for deleting this archive",
+        "deleteHelp": "Use this only when the archive itself must be removed and every public link should stop working immediately.",
+        "deleteAction": "Delete archive",
+        "deleteConfirm": "Delete this transcript archive and invalidate every link?"
+      }
+    },
+    "sections": {
+      "general": "General delivery",
+      "embed": "Embed settings",
+      "text": "Text transcript style",
+      "html": "HTML transcript style"
+    }
+  },
+  "systemStatusPage": {
+    "title": "System status",
+    "eyebrow": "System status",
+    "headline": "Review live runtime health",
+    "subtitle": "Check the runtime snapshot, health signals, and guarded automation tools from the running dashboard.",
+    "backAction": "Back to Advanced",
+    "summary": {
+      "processStart": "Process start",
+      "processStartDetail": "Node process boot time",
+      "readyTime": "Ready time",
+      "readyTimeDetail": "Bot ready-for-usage timestamp",
+      "checker": "Checker",
+      "checkerDetail": "{errors} errors, {warnings} warnings",
+      "recentActivity": "Recent activity",
+      "recentActivityDetail": "Capped in-memory ticket events"
+    },
+    "checkerStates": {
+      "unknown": "Unknown",
+      "valid": "Valid",
+      "invalid": "Invalid"
+    },
+    "snapshotTitle": "Runtime snapshot",
+    "snapshotBody": "Inspect the live runtime snapshot first, then use maintenance actions only when the runtime looks safe.",
+    "maintenanceTitle": "Maintenance actions",
+    "maintenanceBody": "These guarded actions run against the live runtime and return you to this Advanced page after completion.",
+    "snapshotRows": {
+      "availability": "Availability",
+      "processStart": "Process start",
+      "readyTime": "Ready time",
+      "checkerResult": "Checker result",
+      "configInventory": "Config inventory",
+      "managedFiles": "{count} managed files"
+    },
+    "warningsTitle": "Warnings",
+    "warningsEmptyTitle": "No system warnings right now",
+    "warningsEmptyBody": "The runtime snapshot did not report any degraded warnings."
+  },
+  "backupsPage": {
+    "title": "Backups & restore",
+    "eyebrow": "Backups & restore",
+    "headline": "Review backups before you restore anything",
+    "subtitle": "Use this page for runtime-owned backup inventory, restore previews, and verification guidance.",
+    "backAction": "Back to Advanced",
+    "inventoryTitle": "Backup inventory",
+    "inventoryBody": "Review runtime-owned backups here before you open a restore preview or apply any recovery step.",
+    "table": {
+      "id": "ID",
+      "created": "Created",
+      "source": "Source",
+      "configs": "Configs"
+    },
+    "inventoryEmptyTitle": "No backups recorded",
+    "inventoryEmptyBody": "Create a backup from a guarded setup or plugin flow to populate this list.",
+    "restoreTitle": "Restore preview",
+    "restoreBody": "Previewing backup {backupId} for {fileName}.",
+    "restoreAction": "Open restore review",
+    "verificationTitle": "Verification guidance",
+    "verificationNoteTitle": "Verification note",
+    "verificationNoteBody": "{state} at {path}.",
+    "verificationLastUpdate": "Last update: {updatedAt}",
+    "verificationCommandsTitle": "Required commands",
+    "verificationPresent": "Present",
+    "verificationMissing": "Missing"
+  },
+  "pluginAsset": {
+    "eyebrow": "Plugin JSON asset",
+    "subtitle": "Edit this plugin-owned JSON file inline, review changes before apply, export the current file, or restore a file-scoped snapshot from a plugin backup.",
+    "backAction": "Back to plugin",
+    "reviewTitle": "Draft and review",
+    "detectedRoot": "Detected root",
+    "draftLabel": "Draft JSON",
+    "importLabel": "Import JSON file",
+    "reviewAction": "Review changes",
+    "exportAction": "Export current file",
+    "help": "Applying this reviewed JSON writes directly to the plugin asset on disk. Restart is required unless the plugin exposes an explicit live action for the affected behavior.",
+    "backupsTitle": "Recent backups for this file",
+    "backupsHeaders": {
+      "id": "ID",
+      "created": "Created",
+      "source": "Source",
+      "actions": "Actions"
+    },
+    "restoreReviewAction": "Restore review",
+    "backupsEmptyTitle": "No file backups yet",
+    "backupsEmptyBody": "Create a plugin backup from the plugin workbench to restore this asset from a runtime-owned snapshot."
+  },
+  "routeMessages": {
+    "priorityInvalid": "Priority must be a valid number.",
+    "backupCreated": "Created backup {id}.",
+    "pluginBackupCreated": "Created plugin backup {id}.",
+    "backupOrConfigurationNotFound": "Backup or configuration not found.",
+    "pluginNotFound": "Plugin not found.",
+    "pluginAssetNotFound": "Plugin asset not found.",
+    "transcriptNotFound": "Transcript not found.",
+    "reviewTokenExpired": "The review token is missing or expired.",
+    "configDraftSource": "Draft review",
+    "configReviewPageTitle": "Review {fileName}",
+    "configReviewEyebrow": "Pre-save review",
+    "configReviewHeadline": "Review {fileName} before apply",
+    "configReviewSubtitle": "The diff below compares the current managed config to the reviewed candidate. Confirm only when the impact summary matches your intent.",
+    "configReviewApply": "Apply reviewed config",
+    "configReviewConfirm": "Apply this reviewed config to the source-of-truth file now?",
+    "configReviewErrorEyebrow": "Config detail",
+    "configReviewErrorHeadline": "{fileName} review workspace",
+    "configReviewErrorSubtitle": "Fix the draft below and review again.",
+    "configRestoreSource": "Backup {backupId}",
+    "configRestorePageTitle": "Restore {fileName}",
+    "configRestoreEyebrow": "Restore preview",
+    "configRestoreHeadline": "Preview restore for {fileName}",
+    "configRestoreSubtitle": "This review compares the live config against the selected backup artifact. Confirm to restore the backup contents into the source-of-truth file.",
+    "configPreApplyBackup": "Pre-apply backup for {fileName}",
+    "configApplySuccess": "Applied {fileName}.",
+    "manifestReviewSource": "Manifest review",
+    "manifestReviewPageTitle": "Review plugin.json",
+    "manifestReviewEyebrow": "Manifest review",
+    "manifestReviewHeadline": "Review {id} manifest changes",
+    "manifestReviewSubtitle": "This review patches only `enabled` and `priority` in `plugin.json`. Applying the reviewed manifest writes to disk and requires a bot restart to take effect.",
+    "manifestReviewApply": "Apply manifest changes",
+    "manifestReviewConfirm": "Apply this reviewed manifest to plugin.json now?",
+    "manifestReviewErrorEyebrow": "Plugin workbench",
+    "manifestReviewErrorSubtitle": "Fix the manifest draft below and review again.",
+    "manifestApplySuccess": "Applied plugin.json. Restart required for manifest changes to take effect.",
+    "pluginAssetReviewSource": "Plugin asset review",
+    "pluginAssetReviewPageTitle": "Review {path}",
+    "pluginAssetReviewEyebrow": "Plugin asset review",
+    "pluginAssetReviewHeadline": "Review {path} before apply",
+    "pluginAssetReviewSubtitle": "The diff below compares the live plugin asset against the reviewed candidate. Applying the reviewed JSON writes to disk and requires a bot restart unless the plugin exposes an explicit live action.",
+    "pluginAssetReviewApply": "Apply reviewed asset",
+    "pluginAssetReviewConfirm": "Apply this reviewed JSON to the plugin asset now?",
+    "pluginAssetReviewErrorEyebrow": "Plugin JSON asset",
+    "pluginAssetReviewErrorSubtitle": "Fix the draft below and review again.",
+    "pluginAssetApplySuccess": "Applied {path}. Restart required unless the plugin exposes an explicit live action.",
+    "pluginAssetRestoreSource": "Plugin backup {backupId}",
+    "pluginAssetRestorePageTitle": "Restore {path}",
+    "pluginAssetRestoreEyebrow": "Restore preview",
+    "pluginAssetRestoreHeadline": "Preview restore for {path}",
+    "pluginAssetRestoreSubtitle": "This restore preview compares the live plugin asset against the selected backup copy. Restoring stays file-scoped and does not roll the entire plugin back.",
+    "pluginAssetRestoreConfirm": "Restore this backup copy into the live plugin asset now?"
+  },
+  "footer": {}
+}

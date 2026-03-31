@@ -1,0 +1,492 @@
+<%
+  const hasActiveFilters = transcriptList.activeFilters.length > 0
+  const advancedFilterCount = [
+    transcriptList.request.creatorId,
+    transcriptList.request.channelId,
+    transcriptList.request.createdFrom,
+    transcriptList.request.createdTo,
+    transcriptList.request.sort !== 'created-desc' ? transcriptList.request.sort : '',
+    transcriptList.request.limitProvided ? String(transcriptList.request.limit) : ''
+  ].filter(Boolean).length
+  const showFilteredSummary = transcriptList.total > 0 || hasActiveFilters
+  const workspaceStatus = transcriptList.integration.state !== 'ready'
+    ? {
+        tone: transcriptList.integration.badge.tone,
+        label: transcriptList.integration.badge.label,
+        message: transcriptList.integration.message
+      }
+    : !transcriptList.operations.available
+      ? {
+          tone: transcriptList.operations.badge.tone,
+        label: transcriptList.operations.badge.label,
+        message: transcriptList.operations.warningMessage
+      }
+      : null
+  const workspaceSummaryCards = transcriptList.summaryCards.slice(1)
+  const primarySummaryCard = workspaceSummaryCards[0] || null
+  const secondarySummaryCards = workspaceSummaryCards.slice(1)
+%>
+
+<section class="section-card transcript-workspace-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("transcripts.page.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("transcripts.page.workspaceBody") %></p>
+    </div>
+    <div class="transcript-workspace-actions">
+      <a class="transcript-workspace-link" href="<%= transcriptList.configHref %>"><%= t("transcripts.page.configAction") %></a>
+      <a class="transcript-workspace-link subtle" href="<%= transcriptList.pluginHref %>"><%= t("transcripts.page.addOnAction") %></a>
+    </div>
+  </div>
+
+  <% if (workspaceStatus) { %>
+    <div class="transcript-workspace-status tone-<%= workspaceStatus.tone %>">
+      <span class="status-pill tone-<%= workspaceStatus.tone %>"><%= workspaceStatus.label %></span>
+      <p class="item-copy"><%= workspaceStatus.message %></p>
+    </div>
+  <% } %>
+
+  <% if (transcriptList.accessNotices && transcriptList.accessNotices.length) { %>
+    <div class="entry-stack transcript-access-notices">
+      <% transcriptList.accessNotices.forEach((notice) => { %>
+        <div class="inline-alert <%= notice.tone %>">
+          <strong><%= notice.title %>:</strong> <%= notice.message %>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+
+  <% if (primarySummaryCard) { %>
+    <div class="transcript-header-overview" aria-label="<%= t('transcripts.page.workspaceTitle') %>">
+      <article class="transcript-header-metric primary tone-<%= primarySummaryCard.tone %>">
+        <p class="transcript-metric-label"><%= primarySummaryCard.label %></p>
+        <div class="transcript-metric-content">
+          <strong class="transcript-metric-value"><%= primarySummaryCard.value %></strong>
+          <p class="transcript-metric-detail"><%= primarySummaryCard.detail %></p>
+        </div>
+      </article>
+
+      <% if (secondarySummaryCards.length) { %>
+        <div class="transcript-header-facts">
+          <% secondarySummaryCards.forEach((card) => { %>
+            <article class="transcript-header-fact tone-<%= card.tone %>">
+              <p class="transcript-metric-label"><%= card.label %></p>
+              <strong class="transcript-fact-value"><%= card.value %></strong>
+              <p class="transcript-fact-detail"><%= card.detail %></p>
+            </article>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell" data-responsive-disclosure="transcript-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("transcripts.page.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("transcripts.page.filters.summary") %></p>
+    </div>
+    <div class="transcript-filter-badges">
+      <% if (hasActiveFilters) { %>
+        <span class="pill-tag"><%= t("transcripts.page.filters.activeCount", { count: transcriptList.activeFilters.length }) %></span>
+      <% } %>
+      <span class="status-pill tone-<%= transcriptList.integration.badge.tone %>"><%= transcriptList.integration.badge.label %></span>
+    </div>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= transcriptList.filterAction %>" class="stack-form">
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label"><%= t("transcripts.page.filters.searchLabel") %></span>
+          <input class="text-input" type="search" name="q" value="<%= transcriptList.request.search %>" placeholder="<%= t('transcripts.page.filters.searchPlaceholder') %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("transcripts.page.filters.statusLabel") %></span>
+          <select class="select-input" name="status">
+            <% transcriptList.request.statusOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= transcriptList.request.status === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("transcripts.page.filters.integrityLabel") %></span>
+          <select class="select-input" name="integrity">
+            <% transcriptList.request.integrityOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= transcriptList.request.integrity === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("transcripts.page.filters.retentionLabel") %></span>
+          <select class="select-input" name="retention">
+            <% transcriptList.request.retentionOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= transcriptList.request.retention === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <details class="editor-disclosure transcript-filter-advanced" <%= advancedFilterCount ? 'open' : '' %>>
+        <summary class="transcript-filter-advanced-summary">
+          <div>
+            <h4><%= t("transcripts.page.filters.moreTitle") %></h4>
+            <p class="item-copy"><%= t("transcripts.page.filters.moreBody") %></p>
+          </div>
+          <% if (advancedFilterCount) { %>
+            <span class="pill-tag"><%= t("transcripts.page.filters.activeCount", { count: advancedFilterCount }) %></span>
+          <% } %>
+        </summary>
+        <div class="editor-disclosure-body">
+          <div class="form-grid three-up transcript-filter-grid transcript-filter-grid-advanced">
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.creatorIdLabel") %></span>
+              <input class="text-input" type="text" name="creatorId" value="<%= transcriptList.request.creatorId %>" placeholder="<%= t('transcripts.page.filters.creatorIdPlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.channelIdLabel") %></span>
+              <input class="text-input" type="text" name="channelId" value="<%= transcriptList.request.channelId %>" placeholder="<%= t('transcripts.page.filters.channelIdPlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.createdFromLabel") %></span>
+              <input class="text-input" type="date" name="createdFrom" value="<%= transcriptList.request.createdFrom %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.createdToLabel") %></span>
+              <input class="text-input" type="date" name="createdTo" value="<%= transcriptList.request.createdTo %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.sortLabel") %></span>
+              <select class="select-input" name="sort">
+                <% transcriptList.request.sortOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= transcriptList.request.sort === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("transcripts.page.filters.rowsLabel") %></span>
+              <select class="select-input" name="limit">
+                <% transcriptList.request.limitOptions.forEach((value) => { %>
+                  <option value="<%= value %>" <%= transcriptList.request.limit === value ? 'selected' : '' %>><%= value %></option>
+                <% }) %>
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("transcripts.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= transcriptList.clearFiltersHref %>"><%= t("transcripts.page.filters.clearAction") %></a>
+        </div>
+
+        <% if (hasActiveFilters) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("transcripts.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% transcriptList.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="section-card transcript-records-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("transcripts.page.inventoryTitle") %></h3>
+
+      <% if (showFilteredSummary) { %>
+        <div class="transcript-records-summary">
+          <p class="transcript-inline-label"><%= t("transcripts.page.filteredSummaryTitle") %></p>
+          <div class="transcript-summary-strip" aria-label="<%= t('transcripts.page.filteredSummaryTitle') %>">
+            <% transcriptList.filteredSummary.cards.forEach((card) => { %>
+              <article class="transcript-summary-token tone-<%= card.tone %>">
+                <p class="transcript-summary-token-label"><%= card.label %></p>
+                <strong class="transcript-summary-token-value"><%= card.value %></strong>
+              </article>
+            <% }) %>
+          </div>
+        </div>
+      <% } %>
+    </div>
+    <span class="pill-tag"><%= t("transcripts.page.inventoryCount", { count: transcriptList.total }) %></span>
+  </div>
+
+  <% if (transcriptList.bulkActions && transcriptList.items.length) { %>
+    <form id="transcript-bulk-actions" method="post" action="<%= transcriptList.bulkActions.revokeAction %>" class="transcript-bulk-toolbar transcript-records-section">
+      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+      <input type="hidden" name="returnTo" value="<%= transcriptList.bulkActions.returnTo %>">
+      <div class="transcript-bulk-toolbar-copy">
+        <div class="transcript-bulk-heading">
+          <h4><%= t("transcripts.page.bulk.title") %></h4>
+          <span class="pill-tag" data-selected-count><%= t("transcripts.page.bulk.selectionSummary", { count: 0 }) %></span>
+        </div>
+        <p class="field-help"><%= t("transcripts.page.bulk.help") %></p>
+      </div>
+      <label class="transcript-bulk-reason">
+        <span class="field-label"><%= t("transcripts.page.bulk.reasonLabel") %></span>
+        <input class="text-input" type="text" name="reason" placeholder="<%= t('transcripts.page.bulk.reasonPlaceholder') %>">
+      </label>
+      <div class="sticky-actions transcript-bulk-actions">
+        <button class="btn secondary" type="submit" formaction="<%= transcriptList.bulkActions.revokeAction %>" data-bulk-submit data-confirm-message="<%= t('transcripts.page.bulk.revokeConfirm') %>" disabled><%= t("transcripts.page.bulk.revokeAction") %></button>
+        <button class="btn danger" type="submit" formaction="<%= transcriptList.bulkActions.deleteAction %>" data-bulk-submit data-confirm-message="<%= t('transcripts.page.bulk.deleteConfirm') %>" disabled><%= t("transcripts.page.bulk.deleteAction") %></button>
+        <button class="btn primary" type="submit" formaction="<%= transcriptList.bulkActions.exportAction %>" data-bulk-submit disabled><%= t("transcripts.page.bulk.exportAction") %></button>
+      </div>
+    </form>
+  <% } %>
+
+  <% if (transcriptList.items.length) { %>
+    <div class="table-wrap">
+      <table class="data-table transcript-records-table">
+        <thead>
+          <tr>
+            <% if (transcriptList.bulkActions) { %>
+              <th>
+                <label class="field-help">
+                  <input type="checkbox" data-select-all-rows>
+                  <span><%= t("transcripts.page.table.select") %></span>
+                </label>
+              </th>
+            <% } %>
+            <th><%= t("transcripts.page.table.transcript") %></th>
+            <th><%= t("transcripts.page.table.status") %></th>
+            <th><%= t("transcripts.page.table.archive") %></th>
+            <th><%= t("transcripts.page.table.access") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% transcriptList.items.forEach((item) => { %>
+            <tr data-filter-item="<%= item.searchText %>">
+              <% if (transcriptList.bulkActions) { %>
+                <td>
+                  <input
+                    type="checkbox"
+                    name="transcriptIds"
+                    value="<%= item.selection.value %>"
+                    form="transcript-bulk-actions"
+                    data-row-select
+                    data-can-bulk-revoke="<%= item.selection.canBulkRevoke ? 'true' : 'false' %>"
+                    data-can-bulk-delete="<%= item.selection.canBulkDelete ? 'true' : 'false' %>"
+                    data-can-export="<%= item.selection.canExport ? 'true' : 'false' %>"
+                  >
+                </td>
+              <% } %>
+              <td class="transcript-record-cell">
+                <strong class="transcript-record-title"><%= item.id %></strong>
+                <div class="field-help"><%= item.updatedLabel %></div>
+                <dl class="transcript-record-meta">
+                  <div>
+                    <dt><%= t("transcripts.page.table.ticket") %></dt>
+                    <dd><%= item.ticketId || t("common.unavailable") %></dd>
+                  </div>
+                  <div>
+                    <dt><%= t("transcripts.page.table.channel") %></dt>
+                    <dd><%= item.channelId || t("common.unavailable") %></dd>
+                  </div>
+                </dl>
+              </td>
+              <td><span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span></td>
+              <td class="transcript-archive-cell">
+                <div class="transcript-archive-meta">
+                  <p class="field-help"><%= t("transcripts.page.table.createdMeta", { value: item.createdLabel }) %></p>
+                  <div class="transcript-count-strip">
+                    <span class="transcript-count-chip"><%= t("transcripts.page.table.messagesMeta", { count: item.messageCount }) %></span>
+                    <span class="transcript-count-chip"><%= t("transcripts.page.table.attachmentsMeta", { count: item.attachmentCount }) %></span>
+                    <span class="transcript-count-chip"><%= t("transcripts.page.table.warningsMeta", { count: item.warningCount }) %></span>
+                  </div>
+                </div>
+              </td>
+              <td class="transcript-access-cell">
+                <div class="transcript-access-links">
+                  <a class="transcript-table-link" href="<%= item.detailHref %>"><%= t("transcripts.page.openAction") %></a>
+                  <% if (item.publicUrl) { %>
+                    <a class="transcript-table-link" href="<%= item.publicUrl %>" target="_blank" rel="noopener"><%= t("transcripts.page.publicLinkAction") %></a>
+                  <% } else { %>
+                    <span class="field-help"><%= t("transcripts.page.publicLinkUnavailable") %></span>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar">
+      <p class="pagination-summary"><%= t("transcripts.page.paginationShowing", { start: transcriptList.pageStart, end: transcriptList.pageEnd, total: transcriptList.total }) %></p>
+      <div class="sticky-actions">
+        <% if (transcriptList.previousHref) { %>
+          <a class="btn secondary" href="<%= transcriptList.previousHref %>"><%= t("common.previous") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.previous") %></span>
+        <% } %>
+
+        <% transcriptList.pageLinks.forEach((pageLink) => { %>
+          <a class="btn <%= pageLink.active ? 'primary' : 'subtle' %>" href="<%= pageLink.href %>"><%= pageLink.page %></a>
+        <% }) %>
+
+        <% if (transcriptList.nextHref) { %>
+          <a class="btn secondary" href="<%= transcriptList.nextHref %>"><%= t("common.next") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.next") %></span>
+        <% } %>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("transcripts.page.emptyTitle") %></h3>
+      <p><%= transcriptList.integration.state === 'ready' ? t("transcripts.page.emptyBody") : t("transcripts.page.emptyUnavailableBody") %></p>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-operations-shell" data-responsive-disclosure="transcript-operations" open>
+  <summary class="transcript-operations-summary">
+    <div>
+      <h3><%= t("transcripts.page.operations.title") %></h3>
+    </div>
+    <span class="status-pill tone-<%= transcriptList.operations.badge.tone %>"><%= transcriptList.operations.badge.label %></span>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <% if (!transcriptList.operations.available) { %>
+      <div class="subsection-card transcript-operations-empty">
+        <p class="item-copy"><%= t("transcripts.page.operations.unavailableCompact") %></p>
+      </div>
+    <% } else { %>
+      <div class="transcript-operations-grid">
+        <section class="transcript-operations-panel transcript-integrity-panel">
+          <div class="section-heading transcript-section-heading-compact transcript-operations-panel-heading">
+            <h4><%= t("transcripts.page.operations.integrity.title") %></h4>
+            <p class="field-help"><%= t("transcripts.page.operations.integrity.scannedAt", { scannedAt: transcriptList.operations.integrity.scannedAtLabel }) %></p>
+          </div>
+          <div class="transcript-summary-strip transcript-summary-strip-operations" aria-label="<%= t('transcripts.page.operations.integrity.title') %>">
+            <% transcriptList.operations.integrity.counts.forEach((item) => { %>
+              <article class="transcript-summary-token tone-<%= item.tone %>">
+                <p class="transcript-summary-token-label"><%= item.label %></p>
+                <strong class="transcript-summary-token-value"><%= item.value %></strong>
+              </article>
+            <% }) %>
+          </div>
+        </section>
+
+        <section class="transcript-operations-panel transcript-retention-panel">
+          <div class="section-heading transcript-section-heading-compact">
+            <h4><%= t("transcripts.page.operations.retention.title") %></h4>
+            <span class="pill-tag"><%= t("transcripts.page.operations.retention.candidatesCount", { count: transcriptList.operations.retention.totalCandidates }) %></span>
+          </div>
+          <div class="transcript-fact-strip transcript-retention-summary">
+            <article class="transcript-fact-item tone-muted">
+              <p class="transcript-metric-label"><%= t("transcripts.page.operations.retention.enabledLabel") %></p>
+              <strong class="transcript-fact-value"><%= transcriptList.operations.retention.enabledLabel %></strong>
+              <p class="transcript-fact-detail"><%= t("transcripts.page.operations.retention.maxPerRun", { count: transcriptList.operations.retention.maxTranscriptsPerRunLabel }) %></p>
+            </article>
+            <article class="transcript-fact-item tone-muted">
+              <p class="transcript-metric-label"><%= t("transcripts.page.operations.retention.startupLabel") %></p>
+              <strong class="transcript-fact-value"><%= transcriptList.operations.retention.startupLabel %></strong>
+              <p class="transcript-fact-detail"><%= t("transcripts.page.operations.retention.startupDetail") %></p>
+            </article>
+            <article class="transcript-fact-item tone-muted">
+              <p class="transcript-metric-label"><%= t("transcripts.page.operations.retention.windowsLabel") %></p>
+              <strong class="transcript-fact-value"><%= transcriptList.operations.retention.windowsLabel %></strong>
+              <p class="transcript-fact-detail"><%= t("transcripts.page.operations.retention.windowsDetail") %></p>
+            </article>
+          </div>
+
+          <% if (!transcriptList.operations.retention.enabled) { %>
+            <div class="empty-panel">
+              <h3><%= t("transcripts.page.operations.retention.disabledTitle") %></h3>
+              <p><%= t("transcripts.page.operations.retention.disabledBody") %></p>
+            </div>
+          <% } else if (transcriptList.operations.retention.candidates.length) { %>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><%= t("transcripts.page.operations.retention.table.transcript") %></th>
+                    <th><%= t("transcripts.page.operations.retention.table.status") %></th>
+                    <th><%= t("transcripts.page.operations.retention.table.updated") %></th>
+                    <th><%= t("transcripts.page.operations.retention.table.age") %></th>
+                    <th><%= t("transcripts.page.operations.retention.table.window") %></th>
+                    <th><%= t("transcripts.page.operations.retention.table.archiveSize") %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% transcriptList.operations.retention.candidates.forEach((candidate) => { %>
+                    <tr>
+                      <td><a href="<%= candidate.detailHref %>"><%= candidate.transcriptId %></a></td>
+                      <td><span class="status-pill tone-<%= candidate.statusBadge.tone %>"><%= candidate.statusBadge.label %></span></td>
+                      <td><%= candidate.updatedLabel %></td>
+                      <td><%= candidate.ageLabel %></td>
+                      <td><%= candidate.windowLabel %></td>
+                      <td><%= candidate.archiveSizeLabel %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } else { %>
+            <div class="empty-panel">
+              <h3><%= t("transcripts.page.operations.retention.emptyTitle") %></h3>
+              <p><%= t("transcripts.page.operations.retention.emptyBody") %></p>
+            </div>
+          <% } %>
+        </section>
+      </div>
+    <% } %>
+  </div>
+</details>
+
+<% if (transcriptList.bulkActions && transcriptList.items.length) { %>
+  <script>
+    (() => {
+      const root = document.getElementById('transcript-bulk-actions')
+      if (!root) return
+
+      const checkboxes = Array.from(document.querySelectorAll('input[data-row-select][form="transcript-bulk-actions"]'))
+      const selectAll = document.querySelector('input[data-select-all-rows]')
+      const selectedCount = root.querySelector('[data-selected-count]')
+      const submitButtons = Array.from(root.querySelectorAll('[data-bulk-submit]'))
+
+      const update = () => {
+        const checked = checkboxes.filter((checkbox) => checkbox.checked)
+        const count = checked.length
+
+        if (selectedCount) {
+          selectedCount.textContent = <%- JSON.stringify(t("transcripts.page.bulk.selectionSummary", { count: "__COUNT__" })) %>.replace('__COUNT__', String(count))
+        }
+
+        submitButtons.forEach((button) => {
+          button.disabled = count === 0
+        })
+
+        if (selectAll) {
+          selectAll.checked = count > 0 && count === checkboxes.length
+          selectAll.indeterminate = count > 0 && count < checkboxes.length
+        }
+      }
+
+      if (selectAll) {
+        selectAll.addEventListener('change', () => {
+          checkboxes.forEach((checkbox) => {
+            checkbox.checked = selectAll.checked
+          })
+          update()
+        })
+      }
+
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', update)
+      })
+
+      update()
+    })()
+  </script>
+<% } %>

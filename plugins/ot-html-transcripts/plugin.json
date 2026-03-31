@@ -1,0 +1,25 @@
+{
+    "name": "OT HTML Transcripts",
+    "id": "ot-html-transcripts",
+    "version": "0.1.0",
+    "startFile": "index.ts",
+    "supportedVersions": ["OTv4.1.x"],
+
+    "enabled": true,
+    "priority": 0,
+    "events": [],
+
+    "npmDependencies": ["sqlite3"],
+    "requiredPlugins": [],
+    "incompatiblePlugins": [],
+
+    "details": {
+        "author": "Codex",
+        "contributors": [],
+        "shortDescription": "Local HTML transcript archive, renderer, and public host for Open Ticket.",
+        "longDescription": "Replaces the external Open Ticket HTML transcript service with a plugin-local archive builder, SQLite index, and public transcript host.",
+        "imageUrl": "",
+        "projectUrl": "",
+        "tags": ["transcripts", "html", "archive", "sqlite", "local-hosting"]
+    }
+}

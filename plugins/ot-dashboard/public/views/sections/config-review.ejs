@@ -1,0 +1,69 @@
+<section class="summary-grid">
+  <article class="summary-card">
+    <p class="summary-label"><%= t("configReview.addedPaths") %></p>
+    <strong class="summary-value"><%= review.impact.added %></strong>
+    <p class="summary-detail">New keys or array values introduced.</p>
+  </article>
+  <article class="summary-card">
+    <p class="summary-label"><%= t("configReview.removedPaths") %></p>
+    <strong class="summary-value"><%= review.impact.removed %></strong>
+    <p class="summary-detail">Existing keys or values removed.</p>
+  </article>
+  <article class="summary-card">
+    <p class="summary-label"><%= t("configReview.changedPaths") %></p>
+    <strong class="summary-value"><%= review.impact.changed %></strong>
+    <p class="summary-detail">Existing values modified in-place.</p>
+  </article>
+  <article class="summary-card">
+    <p class="summary-label"><%= t("configReview.reviewSource") %></p>
+    <strong class="summary-value"><%= reviewToken.slice(0, 8) %></strong>
+    <p class="summary-detail">Session-backed review token.</p>
+  </article>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configReview.impactTitle") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Path</th><th>Change</th><th>Before</th><th>After</th></tr>
+      </thead>
+      <tbody>
+        <% review.impact.highlights.forEach((item) => { %>
+          <tr>
+            <td><%= item.path %></td>
+            <td><%= item.change %></td>
+            <td><%= item.before %></td>
+            <td><%= item.after %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("configReview.diffTitle") %></h3>
+  </div>
+  <div class="diff-table">
+    <% review.diffLines.forEach((line) => { %>
+      <div class="diff-row diff-<%= line.type %>">
+        <span class="diff-lno"><%= line.leftLineNumber || '' %></span>
+        <span class="diff-lno"><%= line.rightLineNumber || '' %></span>
+        <code><%= line.text %></code>
+      </div>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <form method="post" action="<%= applyAction %>" class="sticky-actions">
+    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+    <input type="hidden" name="reviewToken" value="<%= reviewToken %>">
+    <button class="btn primary" type="submit" data-confirm-message="<%= applyConfirmMessage || 'Apply this reviewed config to the source-of-truth file now?' %>"><%= applyLabel || 'Apply reviewed config' %></button>
+    <a class="btn secondary" href="<%= backHref %>"><%= t("configReview.backAction") %></a>
+  </form>
+</section>

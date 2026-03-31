@@ -1,0 +1,344 @@
+version: 2
+task:
+  key: ot_html_transcripts_enhancement_kernel_v2
+  title: OT HTML Transcripts enhancement roadmap
+  status: completed
+  mode: implementation
+  roots:
+    - plugins/ot-html-transcripts
+    - plugins/ot-dashboard
+  source_specs:
+    - workflow.md
+    - evidence/planning-basis.md
+    - evidence/phase-01-02-foundation.md
+    - evidence/phase-03-05-completion.md
+    - evidence/per-option-routing-plugin-only-basis.md
+    - evidence/phase-14-stricter-access-and-portal-basis.md
+  updated_at: 2026-03-29
+
+constraints:
+  write_scope:
+    - plugins/ot-html-transcripts/**
+    - plugins/ot-dashboard/**
+  forbidden_writes:
+    - src/**
+    - config/**
+    - database/**
+    - any path outside plugins/ot-html-transcripts/**
+    - any path outside plugins/ot-dashboard/**
+  hard_stop_conditions:
+    - A required change lands outside plugins/ot-html-transcripts/** or plugins/ot-dashboard/**.
+    - Multi-instance, shared-storage, or distributed-locking requirements appear in the active slice.
+    - The active slice cannot preserve the html compiler return contract or the current transcript success/failure UX.
+  repo_contracts:
+    - Preserve config/transcripts.json as the source of truth for transcript mode, recipients, enablement, htmlTranscriptStyle, and the global/default transcript channel.
+    - Preserve the compile result shape { url:string, availableUntil:Date } for the html compiler.
+    - Preserve delete-ticket, transcript-ready, transcript-error, retry, continue, and visit-button behavior unless a future slice explicitly scopes an additive dashboard-only change.
+    - Do not call t.dj-dj.be or any external HTML transcript API when this plugin is active.
+    - Preserve text transcript contents, file output, and ready-message copy; only plugin-owned channel-delivery routing may change in the reopened phase.
+    - Expose all plugin-to-plugin transcript access through the ot-html-transcripts:service class, never SQLite direct reads.
+    - Do not modify any main Open Ticket repo files outside the two plugin directories.
+    - Keep per-option transcript routing plugin-owned under additive options.json fields rather than core config typings or src/** loaders.
+
+decisions:
+  - v1 local transcript service work in slices 01 through 05 is complete and becomes historical context for v2.
+  - ot-html-transcripts remains the primary planning root; ot-dashboard is a support consumer and admin surface only.
+  - The roadmap cadence is one master roadmap plus one active implementation slice, one queued implementation-ready next slice, one dependency-blocked following slice, one additional downstream implementation-ready slice, one additional trailing implementation-ready slice, one additional access/privacy implementation-ready slice, one additional private-view implementation-ready slice, one additional transcript-UX implementation-ready slice, one additional transcript-editor implementation-ready slice, one additional cleanup/integration implementation-ready slice, one additional operator-query implementation-ready slice, and one additional operator-query dashboard implementation-ready slice when each blocked predecessor is already locked.
+  - By default, compact state into the kernel after each implemented slice and return to planning before promoting the next slice.
+  - The first enhancement wave prioritizes operations hardening before access controls or transcript UX polish.
+  - The first active enhancement slice is backend-first and does not modify ot-dashboard.
+  - Slice 07 retention policy is locked as the queued next slice and becomes active only after slice 06 is implemented and verified.
+  - Slice 08 integrity, repair, and export policy is locked as the prepared following slice and remains blocked until slices 06 and 07 are implemented and verified.
+  - Slice 09 dashboard operations summary and detail policy is locked as the prepared downstream slice and remains blocked until slices 06 through 08 are implemented and verified in order.
+  - Slice 10 dashboard filters, bulk actions, and direct export policy is locked as the prepared trailing slice and remains blocked until slices 06 through 09 are implemented and verified in order.
+  - Slice 11 link policy and expiry is implemented and verified as the first access/privacy control slice.
+  - Slice 12 dashboard private access mode is implemented and verified as the final access-and-privacy slice before transcript editor tooling work begins.
+  - Slice 13 transcript preview and style preset policy is implemented and verified as the first transcript-editor tooling slice.
+  - Slice 14 transcript editor copy and localization policy is implemented and verified as the second transcript-editor tooling slice.
+  - Slice 15 dashboard self-registration and workbench refactor is implemented and verified as the integration-cleanup slice that moves transcript workbench ownership into the plugin registration path.
+  - The post-cleanup phase prioritizes richer operator search and query refinement inside the existing transcript workspace before broader reporting surfaces, named saved views, or new analytics pages.
+  - Slice 16 operator query contracts and filtered summary is implemented and verified as the service-owned query refinement slice for exact creator/channel filters, created-date range filtering, stable sort modes, and filtered summary counts.
+  - Slice 17 dashboard advanced transcript filters and URL state is implemented and verified as the dashboard consumer completion slice for advanced filters, filtered-summary rendering, and durable transcript workspace URL-state.
+  - A post-P11 stabilization phase is justified, but it stays narrowly limited to transcript deployment guardrails and private-view auditability rather than new analytics, saved views, reporting pages, or multi-node architecture work.
+  - When the active slice and the prepared next slice are both fully locked and the user explicitly approves sequential execution, the implementer may continue directly into the prepared next slice after updating kernel state and passing the prior slice verification.
+  - Slice 18 deployment warnings and workbench notices is implemented and verified as the deployment guardrails stabilization slice.
+  - Slice 19 private viewer access audit events is implemented and verified as the final stabilization slice for successful private viewer document audit history.
+  - Phase P13 reopens the workflow only for plugin-owned per-option transcript channel routing that remains entirely inside plugins/ot-html-transcripts/** and plugins/ot-dashboard/**.
+  - The reopened routing contract is persisted only as additive ticket-option fields under options.json: transcripts.useGlobalDefault:boolean and transcripts.channels:string[].
+  - Missing plugin-owned routing fields must resolve as useGlobalDefault=true and channels=[].
+  - useGlobalDefault=true inherits the global/default transcript channel only when transcripts.general.enableChannel is true and transcripts.general.channel is non-empty.
+  - useGlobalDefault=false with one or more channels routes to the explicit per-option list even when transcripts.general.enableChannel is false.
+  - useGlobalDefault=false with an empty channel list disables transcript channel posting for that option.
+  - The reopened phase must preserve html compile-result shape, DM recipient behavior, text transcript contents, file output, and ready-message copy while changing only plugin-owned channel routing behavior.
+  - Compiler routing for the reopened phase must be implemented by plugin-owned wrappers loaded from afterTranscriptCompilersLoaded rather than core createTranscript changes.
+  - The dashboard editor must expose inherit-versus-override controls only inside the existing ticket option editor and must strip the plugin-owned transcript block from non-ticket options on save.
+  - The user has explicitly approved sequential execution across slices 20 through 22 once each prior slice is implemented, verified, and the kernel state is updated.
+  - Phase P14 reopens the workflow for plugin-owned dashboard auth, viewer access, and transcript privacy hardening that remains entirely inside plugins/ot-html-transcripts/** and plugins/ot-dashboard/**.
+  - Deployment target for P14 is split-host: publicBaseUrl is the admin-host canonical URL, viewerPublicBaseUrl is the viewer-host canonical URL, and the application must not trust Cloudflare Access headers as its only authorization source.
+  - P14 access tiers are locked to Reviewer, Editor, and Admin, with Reviewer limited to the viewer host, Editor limited to the visual Options/Panels/Questions editors, and Admin retaining full admin, transcript, and security authority.
+  - The viewer-host My Transcripts portal is the only browser discovery surface for creators and non-admin staff; the global transcript workspace remains Admin-only.
+  - Current main-guild membership is required for all viewer-host access, and staff transcript access additionally requires stored transcript participant role admin plus live Reviewer-or-higher eligibility at request time.
+  - Stored transcript participant role participant never grants web viewer access by itself under P14.
+  - Admin and viewer authorization must be revalidated on every authorized request through the running bot with cache freshness capped at 60 seconds and fail-closed behavior on stale lookup failure.
+  - Dashboard auth, viewer auth, OAuth state, and login throttling must move to a durable SQLite store at runtime/ot-dashboard/auth.sqlite with separate host-only admin and viewer cookies and session regeneration on login and logout.
+  - The admin security workspace is Admin-only, lives inside the existing admin shell and Advanced flow, and may edit only non-secret RBAC and host-routing fields.
+  - P14 UI additions must preserve the existing matte dark dashboard language with no glow, no redundant copy, and no roomy layout drift from the current login, viewer-login, admin-shell, and editor surfaces.
+  - The user has explicitly approved sequential execution across slices 23 through 28 once each prior slice is implemented, verified, and the kernel state is updated.
+
+repo_grounded_clarifications:
+  - The shipped service already exposes transcript list/detail and lifecycle actions, so future dashboard work must extend the service rather than bypass it.
+  - ot-dashboard already has transcript workspace routes and a runtime API, but those are deferred until the roadmap reaches dashboard-consumer slices.
+  - The current recovery path only returns counts, so per-transcript recovery audit requires additive repository and recovery changes inside the plugin.
+  - ot-dashboard already has transcript workspace routes, view models, EJS sections, and route tests, so slice 09 can stay additive inside the existing dashboard transcript workspace without new navigation.
+  - The current dashboard bridge validates only the base transcript service methods, so operations-read capability detection must layer on top of base readiness instead of replacing it.
+  - ot-dashboard already uses authenticated POST transcript mutations with CSRF protection, so slice 10 should extend that route pattern for bulk actions and direct export downloads rather than introducing client-only mutation logic.
+  - The current public transcript contract is still slug-based and the HTTP server already treats non-active links as gone, so slice 11 must preserve slug routes while extending link state rather than introducing signed or private routes.
+  - The current link schema, service hydration, and dashboard bridge expose no expiry metadata, so slice 11 must update storage, service projections, and dashboard compatibility in tandem.
+  - ot-dashboard currently has only local password admin auth, no explicit publicBaseUrl, and no Discord OAuth surface, so slice 12 must add its private viewer gate wholly inside the plugin tree instead of assuming shared core auth features.
+  - The dashboard runtime API currently exposes only registration helpers, so slice 12 must add a read-only public URL builder before ot-html-transcripts can issue dashboard-hosted canonical viewer URLs.
+  - ot-html-transcripts still owns the public slug routes through its own HTTP server, so slice 12 must explicitly transfer canonical route ownership to ot-dashboard in private mode without changing the compile result contract.
+  - Slice 13 is implemented and verified. The transcript visual editor now exposes built-in style presets and an authenticated preview iframe while keeping preview draft-only and preserving the persisted transcript config shape.
+  - Slice 14 is implemented and verified. The transcript editor now uses locale-backed copy, localized enum labels, and a transcript-specific layout while preserving route contracts, form field names, and persisted transcript config shape.
+  - Slice 15 is implemented and verified. The transcript workbench now self-registers through the dashboard runtime API, and the plugin-detail route/template special-casing has been removed in favor of registry-owned workbench sections.
+  - Slice 16 is implemented and verified. The transcript service now accepts exact creator/channel filters, created-date range bounds, stable operator sorts, and returns `matchingSummary` for the fully filtered pre-pagination result set.
+  - Slice 17 is implemented and verified. The dashboard transcript workspace now exposes advanced creator/channel/date/sort filters, filtered summary cards, active-filter chips, durable list/detail return URLs, and sanitized detail back navigation while remaining a service-only consumer.
+  - "`ot-dashboard` loads before `ot-html-transcripts` because its plugin priority is higher, so the dashboard runtime API is available during transcript-plugin bootstrap whenever the dashboard plugin is installed."
+  - "`ot-html-transcripts` can read `opendiscord:transcripts` config directly through the runtime, so slice 15 did not need a new dashboard-owned config-reading hook just to project configured mode in the workbench."
+  - Slice 10 explicitly deferred creator, channel, and date-range filters to a later dashboard slice, so the next phase should extend the existing operator list rather than invent a separate analytics surface.
+  - The transcript workspace list model already carries `creatorId`, `channelId`, `createdAt`, `updatedAt`, filter parsing, and URL-state helpers, so post-cleanup search refinement can stay additive inside `/admin/transcripts`.
+  - The current transcript workspace already preserves query params for pagination and mutation flows, so a later search-refinement slice should extend those existing URL-state helpers instead of introducing persisted saved views.
+  - The transcript plugin already initializes its service during bootstrap and logs readiness, so deployment warnings can be surfaced at startup without new runtime dependencies or dashboard-owned startup hooks.
+  - The transcript plugin already owns its dashboard workbench provider, so additive deployment notices can be rendered on the plugin detail page without extending `ot-dashboard` registry contracts.
+  - Private viewer authorization already resolves creator and participant access from stored transcript metadata before document rendering, so successful viewer document opens can emit additive audit events without changing asset-route semantics or public-mode behavior.
+  - The dashboard transcript detail page already renders localized transcript event labels with raw fallback behavior, so a new private-view access event can remain additive by extending the existing event label map and locale file.
+  - Slice 18 is implemented and verified. The transcript plugin now emits additive deployment warnings at startup and surfaces the same warnings in the plugin-owned dashboard workbench without changing route, checker, or compiler contracts.
+  - Slice 19 is implemented and verified. Successful private viewer document renders now append `viewer-accessed` events with locked viewer details, while asset fetches, unauthorized requests, gone responses, and public-mode requests remain event-free.
+  - Core transcript channel posting still flows through the static `opendiscord:transcripts` post path in `src/actions/createTranscript.ts`, so plugins-only routing must suppress duplicate channel posts by returning DM messages only after plugin-owned direct delivery.
+  - "`afterTranscriptCompilersLoaded` exposes both built-in compiler entries, so the plugin can wrap `opendiscord:text-compiler` as well as continue replacing `opendiscord:html-compiler` without editing `src/**`."
+  - The core options checker tolerates unknown object keys, so additive plugin-owned `transcripts` fields can live under ticket options without widening main-repo config typings.
+  - "`plugins/ot-dashboard/server/config-service.ts` deep-merges unknown option fields today, so the dashboard can persist the plugin-owned routing block without base-repo changes as long as non-ticket saves strip it back out."
+  - The dashboard option editor already has ticket-only sections plus list parsing helpers, so the new transcript routing UI can stay inside the current themed editor using existing section-card, form-grid, helper-copy, checkbox, and textarea patterns.
+  - "`plugins/ot-dashboard/server/auth.ts` still uses the default express-session MemoryStore and an in-memory login rate limiter keyed by request IP, so P14 must add a durable plugin-owned auth store before the new Discord auth surface is production-ready."
+  - "`plugins/ot-dashboard/server/dashboard-config.ts` currently models only one publicBaseUrl plus a viewerAuth.discord block, so P14 must evolve config parsing and readiness logic for a split admin/viewer host model and shared Discord auth settings."
+  - The current viewer OAuth callback in `plugins/ot-dashboard/server/routes/viewer.ts` sets viewer session state without regenerating the session, so P14 must apply the same session-fixation hardening to viewer auth as to admin auth.
+  - Private viewer authorization in `plugins/ot-html-transcripts/service/transcript-service-core.ts` currently trusts stored creator/admin participant metadata and does not require current guild membership or live staff-tier revalidation.
+  - The dashboard already ships compact style anchors in `login.ejs`, `transcript-viewer-login.ejs`, `admin-shell.ejs`, `sections/advanced.ejs`, and `sections/transcripts.ejs`, so P14 can add new auth and security pages without inventing a new visual language.
+  - The Advanced workspace already provides a stable Admin-only home for extra operational tooling, so the P14 security workspace can live there without adding a new primary navigation section.
+  - No viewer-host `/me/transcripts` route or service-owned accessible-transcript list exists today, so fulfilling “only transcripts they are supposed to see” for non-admin staff requires additive service and viewer-route work in P14.
+  - "`resolveDashboardTrustProxy` currently hardcodes loopback bind to trust one proxy hop and otherwise trusts none, so P14 must add an explicit configuration override for split-host reverse-proxy deployments."
+  - Slice 27 is implemented and verified. Dashboard auth now persists auth/security audit records in auth.sqlite, admin and viewer auth flows write durable login/security events, and authorized requests revalidate live guild membership before falling back to fresh cache.
+  - Slice 28 is implemented and verified. Final auth/access copy and operator docs are aligned with the shipped split-host Discord auth model, the stale password-era and pre-viewerAccess test assertions were corrected inside plugin scope, and the full four-command P14 verification sweep now passes.
+
+execution_defaults:
+  planning_cadence: roadmap-plus-next-slice
+  implementation_mode: single-agent, sequential; user-approved back-to-back execution is allowed when the prepared next slice is already locked and kernel state is updated between slices
+  promotion_rule: The active slice must be implementation-ready. One inactive next slice may also be fully specified, one additional following slice may be fully specified when it remains explicitly blocked on the queued next slice, one additional downstream slice may be fully specified when it remains explicitly blocked on the prepared following slice, one additional trailing slice may be fully specified when it remains explicitly blocked on the prepared downstream slice, one additional access/privacy slice may be fully specified when it remains explicitly blocked on the prepared trailing slice, one additional private-view slice may be fully specified when it remains explicitly blocked on the prepared access slice, one additional transcript-UX slice may be fully specified when it remains explicitly blocked on the prepared private-view slice, one additional transcript-editor slice may be fully specified when it remains explicitly blocked on the prepared transcript-UX slice, one additional cleanup/integration slice may be fully specified when it remains explicitly blocked on the prepared transcript-editor slice, one additional operator-query slice may be fully specified when it remains explicitly blocked on the prepared cleanup slice, and one additional operator-query dashboard slice may be fully specified when it remains explicitly blocked on the prepared operator-query slice.
+
+phases:
+  - id: P01
+    title: v1 scaffold and repo-contract alignment
+    status: completed
+    depends_on: []
+    slices:
+      - 01-scaffold-contracts
+    outputs:
+      - Plugin folder structure
+      - Manifest and config/checker contract
+      - Type declarations and bootstrap skeleton
+      - README describing operator setup and current limitations
+  - id: P02
+    title: v1 service, SQLite, queue, and recovery foundation
+    status: completed
+    depends_on:
+      - P01
+    slices:
+      - 02-service-storage-recovery
+    outputs:
+      - ot-html-transcripts:service class
+      - SQLite schema and repository layer
+      - Queue limiter and archive path helpers
+      - Startup recovery and health summary state
+  - id: P03
+    title: v1 collection, DTO parity, and asset mirroring
+    status: completed
+    depends_on:
+      - P02
+    slices:
+      - 03-collection-dto-assets
+    outputs:
+      - Full-history collector without 2000-message cap
+      - DTO transformation compatible with current HTML transcript semantics
+      - Asset mirror pipeline with bounds, warnings, and fallbacks
+  - id: P04
+    title: v1 rendering, HTTP serving, and compiler replacement
+    status: completed
+    depends_on:
+      - P03
+    slices:
+      - 04-render-http-compiler
+    outputs:
+      - document.json and index.html generation
+      - Local HTTP server and routes
+      - HTML compiler overwrite using afterTranscriptCompilersLoaded
+  - id: P05
+    title: v1 admin command surface, verification, and cutover proof
+    status: completed
+    depends_on:
+      - P04
+    slices:
+      - 05-admin-tests-cutover
+    outputs:
+      - transcript slash and text command
+      - Plugin-owned responder/messages as needed
+      - Automated tests and final verification evidence
+  - id: P06
+    title: Operations hardening foundation
+    status: completed
+    depends_on:
+      - P05
+    slices:
+      - 06-ops-contracts-and-storage
+      - 07-retention-execution-and-sweep-actions
+      - 08-integrity-scan-repair-and-export-service
+    outputs:
+      - Stable operations and audit contracts inside ot-html-transcripts
+      - Retention preview and execution engine
+      - Integrity scan, repair, and export service surface
+  - id: P07
+    title: Dashboard operations consumer
+    status: completed
+    depends_on:
+      - P06
+    slices:
+      - 09-dashboard-ops-summary-and-detail
+      - 10-dashboard-filters-bulk-actions-and-exports
+    outputs:
+      - Transcript operations views in ot-dashboard
+      - Bulk admin flows and export surfaces backed by the service
+  - id: P08
+    title: Access and privacy controls
+    status: completed
+    depends_on:
+      - P07
+    slices:
+      - 11-link-policy-and-expiry
+      - 12-dashboard-private-access-mode
+    outputs:
+      - Optional expiring transcript access
+      - Optional dashboard-hosted private transcript viewer mode
+  - id: P09
+    title: Transcript UX and styling tooling
+    status: completed
+    depends_on:
+      - P08
+    slices:
+      - 13-transcript-preview-and-style-presets
+      - 14-transcript-editor-copy-and-localization
+    outputs:
+      - Previewable HTML transcript styling workflow
+      - Cleaner editor UX and locale-backed transcript editor copy
+  - id: P10
+    title: Integration cleanup and ownership simplification
+    status: completed
+    depends_on:
+      - P09
+    slices:
+      - 15-dashboard-self-registration-and-workbench-refactor
+    outputs:
+      - Cleaner plugin-owned dashboard registration model
+      - Reduced special-casing around transcript workbench behavior
+  - id: P11
+    title: Operator search and query refinement
+    status: completed
+    depends_on:
+      - P10
+    slices:
+      - 16-operator-query-contracts-and-filtered-summary
+      - 17-dashboard-advanced-transcript-filters-and-url-state
+    outputs:
+      - Richer service-owned operator query and filtered summary contracts
+      - Additive advanced transcript workspace filters and durable URL-state
+  - id: P12
+    title: Deployment guardrails and private-view auditability
+    status: completed
+    depends_on:
+      - P11
+    slices:
+      - 18-deployment-warnings-and-workbench-notices
+      - 19-private-viewer-access-audit-events
+    outputs:
+      - Additive transcript deployment warnings in startup logs and the plugin-owned dashboard workbench
+      - Additive private-view transcript access audit events visible through the existing dashboard history
+  - id: P13
+    title: Plugin-owned per-option transcript channel routing
+    status: completed
+    depends_on:
+      - P12
+    slices:
+      - 20-plugin-owned-option-routing-contracts
+      - 21-compiler-wrapper-delivery-routing
+      - 22-dashboard-option-editor-routing-controls
+    outputs:
+      - Plugin-owned ticket-option routing contract and checker coverage
+      - Compiler-wrapper transcript channel delivery for both transcript modes without src/** changes
+      - Dashboard option-editor controls and transcript copy aligned to inherit-versus-override routing
+  - id: P14
+    title: Discord auth, viewer portal, and access hardening
+    status: completed
+    depends_on:
+      - P13
+    slices:
+      - 23-dashboard-auth-store-and-dual-host-foundation
+      - 24-admin-discord-auth-live-rbac-and-route-guards
+      - 25-viewer-live-access-and-my-transcripts-service
+      - 26-my-transcripts-portal-and-security-workspace
+      - 27-audit-logging-and-security-hardening
+      - 28-final-auth-access-polish-and-verification
+    outputs:
+      - Durable SQLite-backed admin and viewer auth state, sessions, OAuth state, and login throttling inside ot-dashboard
+      - Dual-host dashboard and viewer URL handling with canonical host enforcement for Cloudflare-ready deployment
+      - Discord-based admin RBAC with live guild-role revalidation and seeded owner bootstrap
+      - Viewer-host My Transcripts portal backed by service-owned live access checks
+      - Admin-only security workspace, tighter editor scope, and final style-consistent auth/access verification
+active_slice: null
+prepared_next_slice: null
+prepared_following_slice: null
+prepared_downstream_slice: null
+prepared_trailing_slice: null
+prepared_access_slice: null
+prepared_private_slice: null
+prepared_ux_slice: null
+prepared_editor_slice: null
+prepared_cleanup_slice: null
+prepared_query_slice: null
+prepared_query_dashboard_slice: null
+
+final_verification:
+  required_commands:
+    - npm run build
+    - npm --prefix plugins/ot-dashboard run build:editor
+    - node --test dist/plugins/ot-dashboard/test/app.test.js dist/plugins/ot-dashboard/test/auth.test.js dist/plugins/ot-dashboard/test/viewer-routes.test.js dist/plugins/ot-dashboard/test/transcript-workspace.test.js dist/plugins/ot-dashboard/test/operational-pages.test.js dist/plugins/ot-dashboard/test/editor-layout.test.js dist/plugins/ot-dashboard/test/roundtrip.test.js
+    - node --test dist/plugins/ot-html-transcripts/test/plugin-contract.test.js dist/plugins/ot-html-transcripts/test/service.test.js dist/plugins/ot-html-transcripts/test/http.test.js dist/plugins/ot-html-transcripts/test/end-to-end.test.js
+  required_behavior_checks:
+    - v1 local transcript build, serve, and admin flows remain intact.
+    - New operations data stays behind ot-html-transcripts:service rather than direct SQLite access.
+    - Any future dashboard surface remains a consumer of service methods, not a separate source of truth.
+    - No enhancement work requires edits outside plugins/ot-html-transcripts/** or plugins/ot-dashboard/**.
+    - Admin and viewer routes respect canonical host boundaries and do not expose admin surfaces on the viewer host.
+    - Durable auth state survives restart and admin/viewer cookies remain isolated by host.
+    - Admin and viewer authorization revalidate current guild membership and live role eligibility on each authorized request.
+    - My Transcripts lists only currently accessible transcripts, and stored participant role participant never grants portal access.
+    - Reviewer has no admin-host access, Editor is limited to the visual Options/Panels/Questions scope, and Admin retains transcript and security authority.
+    - The security workspace edits only non-secret RBAC and host-routing fields.
+    - New auth, portal, and security surfaces stay aligned with the existing matte dark UI with no glow and no redundant copy.
+    - Successful private viewer transcript opens record the locked access-path classification while failed or unauthorized requests remain event-free.
+
+acceptance:
+  - The controller kernel documents the full enhancement roadmap without creating a parallel planning system.
+  - The active slice is implementation-ready and can be handed to an implementer without further planning.
+  - The prepared next slice is also decision-complete, but it remains inactive until the active slice is completed and verified.
+  - The prepared following slice is decision-complete but remains blocked until the prepared next slice is completed and verified.
+  - The prepared downstream, trailing, and access slices are also decision-complete and remain blocked in sequence until their predecessors verify.
+  - When the user explicitly approves sequential execution across locked slices, the implementer may continue directly into the prepared next slice only after updating kernel state and passing the active slice verification.
+  - Slices 23 through 28 are implementation-ready as a sequential handoff for the stricter access wave without further product decisions.
+  - Historical v1 evidence remains available for reference and rollback reasoning.

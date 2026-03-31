@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body public-entry-body public-entry-login admin-entry-login" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <main class="page-wrap centered-page entry-page-wrap">
+      <section class="entry-panel login-entry-panel">
+        <img class="login-hero-art" src="<%= assetPath('assets/eotfs-login-hero.png') %>" alt="<%= t("login.heroAlt") %>">
+        <div class="entry-copy login-entry-copy">
+          <p class="hero-eyebrow"><%= t("login.eyebrow") %></p>
+          <h1 class="entry-title entry-title-compact"><%= t("login.headline") %></h1>
+          <p class="hero-subtitle narrow"><%= t("login.subtitle") %></p>
+        </div>
+        <% if (message) { %>
+          <div class="inline-alert error"><%= message %></div>
+        <% } %>
+        <div class="stack-form login-entry-actions">
+          <a class="btn primary wide" href="<%= discordAuthHref %>"><%= t("login.discordAction") %></a>
+          <% if (breakglassEnabled) { %>
+            <p class="field-help login-breakglass-notice"><%= t("login.breakglassNotice") %></p>
+          <% } %>
+        </div>
+      </section>
+    </main>
+
+    <%- include('partials/footer', { footerClass: 'entry-site-footer' }) %>
+  </div>
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+</body>
+</html>

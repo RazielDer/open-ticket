@@ -1,0 +1,942 @@
+version: 1
+task:
+  key: ot_dashboard_global_admin_roles_json_repair
+  title: OT Dashboard global admin roles JSON repair
+  status: completed
+  mode: implementation
+  roots:
+    - plugins/ot-dashboard
+  source_specs:
+    - workflow.md
+    - evidence/core-editor-workspace-redesign-planning.md
+    - slices/21-shared-editor-workspace-foundation.md
+    - slices/22-general-workspace-redesign.md
+    - slices/23-array-editor-safety-and-reorder.md
+    - slices/24-options-workspace-redesign.md
+    - slices/25-panels-workspace-redesign.md
+    - slices/26-questions-workspace-redesign.md
+    - slices/27-home-card-cutover-and-legacy-route-redirects.md
+    - evidence/editor-workspace-density-alignment-planning.md
+    - slices/28-shared-workspace-density-and-responsive-advanced-tools.md
+    - slices/29-workspace-copy-tightening-and-structural-trim.md
+    - slices/30-final-visual-alignment-and-density-verification.md
+    - evidence/editor-workspace-ui-refinement-planning.md
+    - slices/31-shared-workspace-proportion-and-control-sizing.md
+    - slices/32-editor-card-compaction-and-copy-tuning.md
+    - slices/33-final-ui-refinement-verification.md
+    - evidence/add-ons-inventory-ui-refinement-planning.md
+    - slices/34-add-ons-inventory-shell-and-search-density.md
+    - slices/35-add-ons-card-hierarchy-and-copy-refinement.md
+    - slices/36-final-add-ons-inventory-verification.md
+    - evidence/add-ons-inventory-decluttering-planning.md
+    - slices/37-add-ons-inventory-grouping-and-layout-decluttering.md
+    - slices/38-add-ons-metadata-trim-and-row-compaction.md
+    - slices/39-final-add-ons-decluttering-verification.md
+    - evidence/transcript-operations-ui-refinement-planning.md
+    - slices/40-transcript-operations-shell-and-filter-structure.md
+    - slices/41-transcript-records-and-summary-decluttering.md
+    - slices/42-final-transcript-operations-verification.md
+    - evidence/transcript-layout-decluttering-planning.md
+    - slices/43-transcript-summary-and-shell-compaction.md
+    - slices/44-transcript-records-toolbar-and-operations-balance.md
+    - slices/45-final-transcript-layout-verification.md
+    - evidence/transcript-surface-polish-planning.md
+    - slices/46-transcript-shell-and-filter-streamlining.md
+    - slices/47-transcript-records-and-operations-density.md
+    - slices/48-final-transcript-surface-polish-verification.md
+    - evidence/admin-surface-page-fill-planning.md
+    - slices/49-admin-surface-page-fill-width-restoration.md
+    - slices/50-final-admin-surface-page-fill-verification.md
+    - evidence/tickets-surface-retirement-planning.md
+    - slices/51-tickets-surface-retirement-and-safe-redirect.md
+    - slices/52-final-tickets-surface-retirement-verification.md
+    - evidence/general-workspace-layout-refinement-planning.md
+    - slices/53-general-workspace-structure-and-density-rebalance.md
+    - slices/54-final-general-workspace-layout-verification.md
+    - evidence/options-workspace-layout-refinement-planning.md
+    - slices/55-options-workspace-structure-and-visibility-fix.md
+    - slices/56-final-options-workspace-layout-verification.md
+    - evidence/panels-workspace-layout-refinement-planning.md
+    - slices/57-panels-workspace-structure-and-flow-rebalance.md
+    - slices/58-final-panels-workspace-layout-verification.md
+    - evidence/questions-workspace-layout-refinement-planning.md
+    - slices/59-questions-workspace-structure-and-flow-rebalance.md
+    - slices/60-final-questions-workspace-layout-verification.md
+    - evidence/general-workspace-space-and-copy-trim-planning.md
+    - slices/61-general-workspace-space-and-copy-trim.md
+    - slices/62-final-general-workspace-space-and-copy-trim-verification.md
+    - evidence/options-workspace-space-and-copy-trim-planning.md
+    - slices/63-options-workspace-space-and-copy-trim.md
+    - slices/64-final-options-workspace-space-and-copy-trim-verification.md
+    - evidence/panels-workspace-space-and-copy-trim-planning.md
+    - slices/65-panels-workspace-space-and-copy-trim.md
+    - slices/66-final-panels-workspace-space-and-copy-trim-verification.md
+    - evidence/questions-workspace-space-and-copy-trim-planning.md
+    - slices/67-questions-workspace-space-and-copy-trim.md
+    - slices/68-final-questions-workspace-space-and-copy-trim-verification.md
+    - evidence/brand-and-auth-surface-cleanup-planning.md
+    - slices/69-shared-brand-favicon-and-footer-cleanup.md
+    - slices/70-auth-surface-simplification-and-health-shortcut-removal.md
+    - slices/71-final-brand-and-auth-surface-cleanup-verification.md
+    - evidence/global-admin-roles-json-repair-planning.md
+    - slices/72-global-admin-roles-json-repair-and-legacy-recovery.md
+    - slices/73-final-global-admin-roles-json-repair-verification.md
+  updated_at: 2026-03-31
+
+constraints:
+  write_scope:
+    - plugins/ot-dashboard/**
+  forbidden_writes:
+    - src/**
+    - config/**
+    - database/**
+    - any path outside plugins/ot-dashboard/**
+  hard_stop_conditions:
+    - Any slice would require edits outside plugins/ot-dashboard/**.
+    - The redesign would require schema changes to the managed config files.
+    - The redesign would require changing locked route paths instead of layering on the documented redirects.
+  repo_contracts:
+    - Keep the existing Express + EJS architecture.
+    - Keep `/`, `/login`, `/health`, and `/admin` route paths unchanged.
+    - Keep the existing viewer-auth routes and callback paths unchanged.
+    - Preserve the current save routes and submitted field names for `general`, `options`, `panels`, and `questions` unless the workflow explicitly adds a new endpoint.
+    - Keep raw JSON routes at `/config/:id` working.
+    - Keep transcript access rules, viewer routes, and archive behavior unchanged in this task unless a shared dashboard primitive needs a narrow compatibility adjustment.
+    - Keep all changed user-facing copy locale-backed in locales/english.json.
+    - Use apply_patch for file edits.
+
+decisions:
+  - Scope the first-pass redesign to `General`, `Options`, `Panels`, and `Questions`.
+  - Keep raw JSON as an advanced escape hatch, not as a peer primary path.
+  - Delay Home-card direct-entry cutover until the new workspaces preserve advanced-tool parity.
+  - Preserve backup, export, restore, and raw-review capabilities inside the new workspaces before redirecting legacy config-detail routes.
+  - Block reference-breaking delete and ID-change actions for `options` and `questions`.
+  - Add explicit reorder controls and reorder endpoints for `options`, `panels`, and `questions`.
+  - Keep the flat-black matte theme direction and do not reintroduce glow, glossy gradients, or hero-like marketing slabs.
+  - Use `/login` as the visual reference surface for the editor density follow-up while keeping the existing warm accent.
+  - Collapse only the advanced-tools tray by default once the workspace stacks; keep the inventory visible.
+  - Use a conservative copy-trim pass that removes duplicated helper and meta language without changing warnings or advanced-tool reachability.
+  - Keep `/admin/plugins` in the existing admin shell, but tighten it until it feels like the same restrained product family as `/login`.
+  - Prefer exposing more useful add-on inventory context through denser card hierarchy before adding new workflow features.
+  - Group `/admin/plugins` by operational status before considering any creator- or topic-based categorization.
+  - Prefer flatter inventory rows and sectioned scan paths over nested metadata boxes when the add-on count is high.
+  - Let the add-ons inventory header carry the only required page summary once the intro slab becomes redundant.
+  - Keep the mobile admin rail compact enough that `/admin/plugins` reaches inventory content without an oversized preamble.
+  - Treat `/admin/transcripts` like a single transcript workspace instead of a hero-plus-summary-card stack.
+  - Let transcript filters and operations become secondary responsive disclosures so records stay reachable on stacked/mobile layouts.
+  - Keep the next transcript pass focused on density and hierarchy rather than new transcript workflow features.
+  - Replace the remaining transcript summary-card walls with denser transcript-specific scan surfaces before introducing any new grouping model.
+  - Keep bulk actions near the records table, but compress them into a calmer records toolbar instead of another tall subsection slab.
+  - Keep the next transcript polish pass focused on flattening nested subsection chrome and improving scan flow before the table rather than inventing new transcript groupings.
+  - Preserve transcript status coverage, but integrate the records summary into the records hierarchy instead of leaving it as another bordered slab.
+  - Keep bulk tooling functional and visible in-page, including select-all state sync, while reducing the toolbar's visual weight.
+  - Use an equivalent authenticated transcript fixture when `127.0.0.1:3360` is unavailable to automation.
+  - Let wide admin content surfaces use the shell's available content track unless a page has a concrete functional reason to stay narrower.
+  - Fix add-ons/transcripts page-fill gaps through shared admin CSS rather than new route-specific layout wrappers.
+  - Retire the dedicated `/admin/tickets` surface and keep only the ticket summary signals that still add value on Home and in shared health details.
+  - Preserve historical `/admin/tickets` bookmarks by redirecting them to `/admin` instead of leaving a dead page or hard 404.
+  - Keep the next General-specific follow-up focused on layout structure and scan flow rather than reopening the broader editor system.
+  - Use the General page's wide editor lane for calmer section grouping instead of leaving every secondary section as another full-width slab.
+  - Keep the General advanced-tools tray behavior intact while reducing page clutter through denser navigation, clearer stats, and a non-overlapping save row.
+  - Keep the next General-specific follow-up focused on redundant copy, section compaction, and wasted vertical space rather than adding new configuration concepts.
+  - Use the General header and sidebar to surface current command-entry context instead of repeating section count and navigation filler text.
+  - Keep the next Options-specific follow-up focused on section visibility, layout structure, and scan flow rather than adding new editor features.
+  - Fix hidden editor sections through shared dashboard CSS so the selected option type is the only visible editing path.
+  - Rebalance the Options ticket editor into clearer operational subsections before considering deeper workflow changes.
+  - Keep the next Options-specific follow-up focused on redundant text, warning placement, and top-stage compaction rather than new editor features.
+  - Simplify the Options inventory around operator-facing name, type, and ID instead of noisy member-facing button-emoji text.
+  - Move the panel-reference warning into the dependency surface and use a shared identity/dependency lane so the main ticket form starts sooner.
+  - Keep the next Panels-specific follow-up focused on layout structure, preview hierarchy, and save-surface placement rather than adding new editor features.
+  - Rebalance Panels around paired builder lanes so identity/embed and picker/preview stop reading like same-weight full-width slabs.
+  - Sanitize saved panel embed colors through the existing client editor so invalid legacy values do not break the color input.
+  - Keep the next Panels-specific follow-up focused on redundant text, summary-card compaction, and preview-surface density rather than new editor features.
+  - Let the Panels top stage carry label/value status only once the visible actions and builder lanes already explain the rest.
+  - Trim helper text from identity, embed, picker, preview, advanced, and save surfaces so the page stops reading like a guided utility form.
+  - Keep the next Questions-specific follow-up focused on layout structure, usage hierarchy, and save-surface placement rather than adding new editor features.
+  - Rebalance Questions around a paired usage/identity lane so dependency context stops reading like another same-weight full-width slab.
+  - Move the active-reference warning closer to the usage surface instead of leaving it in the top stage.
+  - Keep the next Questions-specific follow-up focused on redundant text, label compaction, and space trim rather than new editor features.
+  - Let the Questions inventory and top stage carry shorter labels and label/value summary cards once the usage and detail lanes already explain the workflow.
+  - Trim helper text from the Questions inventory, stage, usage, identity, advanced, and save surfaces so the page stops reading like a narrated utility form.
+  - Replace the remaining E4 dashboard identity with EoTFS dinosaur branding: `Logo_dinosaur_herbivore_1.png` feeds `public/assets/eotfs-dashboard-favicon.png`, while `Logo_dinosaur_ver_2.png` feeds `public/assets/eotfs-login-hero.png` for the admin login only.
+  - Keep the shared dashboard chrome text-only: no shared logo image, no duplicated dashboard-name kicker, no footer links, and no vendor credit copy.
+  - Remove every visible dashboard `Health` / `Check health` shortcut while keeping the `/health` route available for direct operational use.
+  - Keep the transcript viewer login more minimal than the admin login: no hero art, no shared header navigation, and no explanatory info-card stack.
+  - Preserve auth, host routing, and transcript-access behavior; this follow-up is allowed to change shared shell markup, asset paths, copy, and tests, but not route contracts or access rules.
+  - Use new asset filenames under `public/assets` for the dinosaur favicon and login hero art so browser caches do not keep the E4 icon alive.
+  - Fix `globalAdmins` through a dedicated strict JSON role-ID path in the General workspace instead of widening shared list parsing behavior.
+  - Recover the known legacy line-split `globalAdmins` corruption signature only when the recovery is unambiguous; do not introduce broader heuristic list repair.
+  - Preserve all other General form edits on `globalAdmins` validation failure through a route-level draft view model and inline error re-render.
+  - Treat `globalAdmins` as quoted role-ID strings only; reject numeric JSON IDs to avoid Discord snowflake precision loss.
+  - Keep Security and Options list-editor behavior unchanged in this follow-up and prove that through regression verification.
+
+repo_grounded_clarifications:
+  - `General`, `Options`, `Panels`, `Questions`, and `Transcripts` already have dedicated visual routes under `/visual/*`.
+  - `Options`, `Panels`, and `Questions` currently depend on modal-first editing and page reloads, which is the main usability bottleneck.
+  - `/admin/configs/:id` currently owns raw JSON review, export, backup, and restore entry points, so direct-route cutover cannot happen until those utilities are preserved elsewhere.
+  - Current array save/delete flows do not prevent option/question reference breakage on rename or delete.
+  - Current array editors do not provide reorder control even though array order matters operationally.
+  - A Playwright audit of `/visual/general`, `/visual/options`, `/visual/panels`, and `/visual/questions` showed the rendered editor surfaces are already shadow-free and gradient-free in the main workspace chrome.
+  - On `390x844`, the first editor form section currently starts around `2658-2727px` because the stacked layout renders the shared hero, inventory, and the fully expanded advanced-tools tray before the form.
+  - The shared workspace header currently duplicates the page title in both the eyebrow and heading, repeats the hero subtitle in the first stat card, and repeats the advanced-tools purpose in a third stat card.
+  - The advanced-tools partial already contains a nested `Review JSON before apply` disclosure, so the outer tray collapse should reuse the shared disclosure pattern instead of inventing a second interaction model.
+  - A follow-up browser audit on 2026-03-28 still found oversized workspace chrome after the density pass: desktop headers render around `279-303px`, top summary cards land around `199-223px`, and save bars still read as `188-196px` slabs.
+  - At `390x844`, the first editor form now starts around `1122-1247px`, but stacked/mobile toolbars still spend too much vertical space because each action button expands to its own full-width row.
+  - The current desktop split still reads slightly over-wide relative to `/login`: the workspace spans about `1385px` with a `320px` sidebar at a `1440px` viewport.
+  - Several dependency and preview cards in `Options`, `Panels`, and `Questions` still duplicate their visible title through a repeated kicker line, which adds height without adding meaning.
+  - The authenticated add-ons inventory currently uses the older admin-shell page-intro and card-grid pattern, so it still reads wider and taller than the tighter `/login` reference.
+  - The `/admin/plugins` search control spends a full visible label row ahead of the input, which adds vertical weight without improving scan speed.
+  - `buildPluginInventoryItems` already computes `assetPreview`, but the `/admin/plugins` template does not show it, so users still cannot tell which JSON files are exposed until they open the workbench.
+  - A follow-up authenticated fixture audit on 2026-03-28 still showed `/dash/admin/plugins` as a single equal-weight wall of 18 add-on cards, which is the main reason the page still feels clustered.
+  - Most current inventory entries report `Source` as `Manifest only`, so repeating that fact on every card adds more noise than discrimination on the main inventory page.
+  - Grouping the inventory by creator would fragment the operator scan path for small and medium installations, while grouping by operational state matches the primary maintenance question more directly.
+  - A final fixture audit showed the last major clutter drivers were the extra add-ons intro slab, repeated per-row fact labels, visible JSON filename previews, and the one-column mobile admin rail.
+  - A March 28, 2026 fixture audit of `/dash/admin/transcripts` showed the stacked/mobile route reaching the filter section around `2008px` and the records section around `4786px` because the page layers hero, alert, summary cards, filters, filtered summary, and operations before the records.
+  - The transcript list route already preserves filter state, bulk actions, return-to links, and operations queries, so the main refinement opportunity is structural layout and copy density rather than behavioral changes.
+  - A March 29, 2026 ready-state fixture audit still showed `/admin/transcripts` reading as a clustered stack: the desktop workspace header was about `324px`, the filtered-summary slab about `178px`, the bulk-actions slab about `294px`, and the first table row started around `1517px`.
+  - On the same March 29, 2026 fixture audit at `390x844`, the stacked layout still measured about `621px` for the header, `802px` for the filtered summary, `449px` for bulk actions, and a `3409px` table start when the stacked surfaces were open.
+  - The transcript models already provide status tones for filtered-summary and operations values, but the current template renders those values as near-identical summary cards, which flattens hierarchy instead of clarifying it.
+  - A second March 29, 2026 critique found the records summary and bulk tools still rendering as bordered subsections inside the records shell, while the closed `More filters` row still read like a raised block.
+  - The same critique found the mobile transcript header secondary facts still stacking into extra full-width rows that added avoidable pre-table height.
+  - A wide-desktop authenticated fixture audit on 2026-03-29 showed `Home` using about `1604px` of the shell track at `1920x1080`, while `/admin/plugins` stayed capped around `1220px` and `/admin/transcripts` around `1100px`.
+  - Those wide-desktop gutters came from page-specific `.control-content` width caps in `public/global.css`, while `1440x900` and mobile remained stable.
+  - The dedicated Tickets admin surface was isolated to one route, one nav item, one template, one locale block, and a small set of route-render tests.
+  - The runtime ticket snapshot still feeds Home and shared health details, so retiring the Tickets page does not require removing ticket tracking from the dashboard runtime.
+  - A March 29, 2026 live critique of `/dash/visual/general` still found the page reading more clustered than the later editor workspaces because `Status`, `Logs`, `Limits`, and the five advanced disclosures all remained in one same-weight vertical stack.
+  - The same critique found the General mobile nav still spending too much height on one-column links and the sticky save bar still competing with the connection section instead of reading like a final commit row.
+  - A second March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/general` still found wasted space because the header repeated section count, the sidebar still carried redundant navigation copy, the connection stage kept command modes below the main fields, and the advanced/save copy still repeated visible actions.
+  - A March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/options` found the page still reading as a jumbled wall because the top stage repeated toolbar, summary, warning, and save surfaces before the form and the ticket editor still rendered as one long stack.
+  - The same Options critique found a real visibility bug: `Website` and `Role` sections still rendered even when the selected option type was `ticket`, because shared card CSS was overriding the intended `hidden` state.
+  - A second March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/options` found that inventory rows still surfaced noisy button-emoji text, the panel-reference warning still spent its own top-stage slab, and nearly every ticket subsection still opened with another helper paragraph.
+  - A March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/panels` found the page still reading like a long utility form because identity, picker, preview, and embed all rendered as same-weight full-width slabs while the sticky save bar hovered near the top instead of closing the workflow.
+  - A second March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/panels` found that the top stage, primary lane, builder lane, and save row still spent height on explanatory copy that mostly repeated visible headings, values, and preview content.
+  - A March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/questions` found the page still reading like a straight utility form because usage, identity, advanced settings, and save all rendered as same-weight vertical sections while the sticky save bar hovered near the top instead of closing the workflow.
+  - A second March 29, 2026 live critique of `http://127.0.0.1:3371/dash/visual/questions` found that the inventory, top stage, summary strip, usage card, and save row still spent height on helper copy and labels that repeated their visible state.
+  - `public/views/partials/footer.ejs` still carries both the visible footer and the hidden `dashboard-ui-messages` payload consumed by `public/js/dashboard-ui.js`, so footer cleanup must preserve the non-visual dialog payload.
+  - The dashboard favicon is currently delivered in both `public/views/partials/head.ejs` and `server/create-app.ts`, so both paths must be updated together to avoid stale E4 tab branding.
+  - `public/js/login.js` only powers the `Check health` interaction on `/login`, so removing that UI should either retire the script or leave it completely unused.
+  - Visible health shortcuts currently exist on `/login`, the landing/admin entry surfaces, and the authenticated utility rail.
+  - `public/views/transcript-viewer-login.ejs` still renders the shared header plus the `What happens next`, `Private access`, and `Separate session` cards the user wants removed.
+  - Both provided dinosaur PNG files are `2970x2331` `Format32bppArgb`, which is suitable for dashboard-local derived assets with transparency preserved.
+  - `ot-html-transcripts` has an independent favicon pipeline, but this follow-up should stay scoped to `plugins/ot-dashboard/**` unless verification proves E4 branding still leaks through dashboard-served transcript pages.
+  - `public/views/config-general.ejs` currently renders `globalAdmins` as pretty JSON while `server/config-service.ts` still saves that field through the loose `parseStringArray` fallback.
+  - The exact production corruption shape is reproducible when a trailing-comma `globalAdmins` array falls through the newline-splitting fallback in `parseStringArray`.
+  - `locales/english.json` currently labels `globalAdmins` as Discord user IDs, but the runtime checker and permission loaders consume those values as Discord role IDs.
+  - `plugins/ot-local-runtime-config/index.ts` strips non-snowflake `globalAdmins` entries at runtime, so malformed saved arrays silently remove global-admin role behavior.
+  - The General page script is not the culprit: `public/js/config-general.js` only tracks dirty state and submit shortcuts, and the compiled happy-path form tests already pass.
+  - Security and Options do not share this exact failure path because Security intentionally parses newline/comma lists and Options parses list textareas client-side before posting JSON.
+  - The dashboard runtime uses compiled server code from `dist/plugins/ot-dashboard/server/**`, so this follow-up must rebuild and verify `dist`, not only the TypeScript source.
+
+target_plugin_layout:
+  likely_touch_points:
+    - workflow.yaml
+    - workflow-ledger.yaml
+    - workflow.md
+    - active/active-slice.md
+    - runtime/controller-state.yaml
+    - evidence/core-editor-workspace-redesign-planning.md
+    - slices/21-shared-editor-workspace-foundation.md
+    - slices/22-general-workspace-redesign.md
+    - slices/23-array-editor-safety-and-reorder.md
+    - slices/24-options-workspace-redesign.md
+    - slices/25-panels-workspace-redesign.md
+    - slices/26-questions-workspace-redesign.md
+    - slices/27-home-card-cutover-and-legacy-route-redirects.md
+    - evidence/brand-and-auth-surface-cleanup-planning.md
+    - slices/69-shared-brand-favicon-and-footer-cleanup.md
+    - slices/70-auth-surface-simplification-and-health-shortcut-removal.md
+    - slices/71-final-brand-and-auth-surface-cleanup-verification.md
+    - evidence/global-admin-roles-json-repair-planning.md
+    - slices/72-global-admin-roles-json-repair-and-legacy-recovery.md
+    - slices/73-final-global-admin-roles-json-repair-verification.md
+    - public/assets/**
+    - public/global.css
+    - public/views/login.ejs
+    - public/views/transcript-viewer-login.ejs
+    - public/views/config-general.ejs
+    - public/views/config-options.ejs
+    - public/views/config-panels.ejs
+    - public/views/config-questions.ejs
+    - public/views/sections/overview.ejs
+    - public/views/partials/**
+    - public/js/login.js
+    - public/js/config-options.js
+    - public/js/config-panels.js
+    - public/js/config-questions.js
+    - server/brand.ts
+    - server/create-app.ts
+    - server/dashboard-config.ts
+    - server/routes/pages.ts
+    - server/routes/admin.ts
+    - server/routes/api.ts
+    - server/config-service.ts
+    - server/home-setup-models.ts
+    - locales/english.json
+    - README.md
+    - test/app.test.ts
+    - test/auth.test.ts
+    - test/editor-layout.test.ts
+    - test/home-setup.test.ts
+    - test/operational-pages.test.ts
+    - test/roundtrip.test.ts
+    - test/viewer-routes.test.ts
+
+phases:
+  - id: P01
+    title: Login-first entry consolidation
+    slice: 09-login-first-entry-consolidation
+    status: completed
+    depends_on: []
+    outputs:
+      - `/` redirect to `/login?returnTo=%2Fadmin`
+      - Login card with integrated text-only branding and no top banner
+      - Inline health status action inside the card
+      - Reduced login copy and removed redundant actions
+      - Updated route-render tests for redirect and login structure
+  - id: P02
+    title: Login surface hierarchy refinement
+    slice: 10-login-surface-hierarchy-refinement
+    status: completed
+    depends_on:
+      - P01
+    outputs:
+      - Stronger login card placement with reduced empty-space drift
+      - Brand treatment that reads as identity, not hyperlink styling
+      - Compact `Health` utility that does not compete with sign-in
+      - Hidden status region that remains invisible until interaction
+      - Updated route-render tests for the refined login structure
+  - id: P03
+    title: Login brand normalization
+    slice: 11-login-brand-normalization
+    status: completed
+    depends_on:
+      - P02
+    outputs:
+      - Remove the redundant `Admin access` eyebrow
+      - Normalize the dashboard-name size and weight in the login masthead
+      - Update locale strings and route-render tests to match the simplified masthead
+  - id: P04
+    title: Login masthead wrap normalization
+    slice: 12-login-masthead-wrap-normalization
+    status: completed
+    depends_on:
+      - P03
+    outputs:
+      - Brand title no longer wraps prematurely on wide cards
+      - Wrapped brand titles center cleanly when wrapping is unavoidable
+      - Targeted verification against the updated masthead layout
+  - id: P05
+    title: Login CSRF recovery
+    slice: 13-login-csrf-recovery
+    status: completed
+    depends_on:
+      - P04
+    outputs:
+      - Stale login-form CSRF posts redirect back to `/login` with a fresh prompt
+      - The login page surfaces a locale-backed expired-page message
+      - Authenticated POST routes continue rejecting missing CSRF tokens
+  - id: P06
+    title: Dark theme flattening and admin home simplification
+    slice: 14-dark-theme-and-admin-home-simplification
+    status: completed
+    depends_on:
+      - P05
+    outputs:
+      - Login surface keeps the same layout but drops decorative glow and glossy treatment
+      - Shared admin shell uses the same matte dark theme direction
+      - `/admin` home removes repeated status storytelling and trims redundant copy for clearer end-user flow
+  - id: P07
+    title: Flat black admin shell refinement
+    slice: 15-flat-black-admin-shell-refinement
+    status: completed
+    depends_on:
+      - P06
+    outputs:
+      - Shared admin shell shifts from charcoal-gray layering toward a flatter black theme
+      - Rail, status strip, cards, and footer reduce tinted chrome while preserving the existing layout
+      - Admin home remains end-user-ready but visually calmer and closer to the login screen direction
+  - id: P08
+    title: Admin home daily work removal
+    slice: 16-admin-home-daily-work-removal
+    status: completed
+    depends_on:
+      - P07
+    outputs:
+      - `/admin` no longer renders the redundant `Daily work` section
+      - Home copy no longer references the removed section
+      - Home route tests match the slimmer admin-home flow
+  - id: P09
+    title: Admin home density refinement
+    slice: 17-admin-home-density-refinement
+    status: completed
+    depends_on:
+      - P08
+    outputs:
+      - `/admin` consolidates the home intro and metrics into a tighter top workspace block
+      - Status strip, section spacing, and footer read denser and less padded
+      - Admin-home tests stay green against the updated structure
+  - id: P10
+    title: Admin home overview compaction
+    slice: 18-admin-home-overview-compaction
+    status: completed
+    depends_on:
+      - P09
+    outputs:
+      - `/admin` home renders the status strip inside the overview stage instead of as a detached top band
+      - The admin shell no longer stretches status and footer rows into oversized slabs
+      - Home-route tests prove the status strip is part of the overview layout
+  - id: P11
+    title: Setup page next-step removal
+    slice: 19-setup-page-next-step-removal
+    status: completed
+    depends_on:
+      - P10
+    outputs:
+      - `/admin/configs` no longer renders the redundant `Next step` section
+      - The Setup route no longer passes the deleted page-only action model
+      - Setup-page tests prove the deletion without affecting Home behavior
+  - id: P12
+    title: Setup surface removal
+    slice: 20-setup-surface-removal
+    status: completed
+    depends_on:
+      - P11
+    outputs:
+      - `/admin/configs` redirects to `/admin`
+      - The Setup rail item is removed
+      - Home remains the only setup hub while config detail pages still work
+  - id: P13
+    title: Shared editor workspace foundation
+    slice: 21-shared-editor-workspace-foundation
+    status: completed
+    depends_on:
+      - P12
+    outputs:
+      - Shared flat-black workspace chrome and utility-tray contract exist for `general`, `options`, `panels`, and `questions`
+      - Visual pages can expose raw/export/review/restore utilities without depending on the old config-detail landing
+      - Home links and legacy redirects stay unchanged until later cutover
+  - id: P14
+    title: General workspace redesign
+    slice: 22-general-workspace-redesign
+    status: completed
+    depends_on:
+      - P13
+    outputs:
+      - `/visual/general` uses the shared workspace shell and compact section navigation
+      - Rare flags and power-user controls move into collapsed advanced sections
+      - The existing general-form POST contract remains unchanged
+  - id: P15
+    title: Array editor safety and reorder foundation
+    slice: 23-array-editor-safety-and-reorder
+    status: completed
+    depends_on:
+      - P13
+    outputs:
+      - Reorder endpoints exist for `options`, `panels`, and `questions`
+      - Duplicate IDs are blocked on update as well as create
+      - Reference-breaking option/question rename and delete actions are blocked with guidance payloads
+  - id: P16
+    title: Options workspace redesign
+    slice: 24-options-workspace-redesign
+    status: completed
+    depends_on:
+      - P15
+    outputs:
+      - `/visual/options` becomes a dedicated inventory-plus-editor workspace with no modal-first editing
+      - Question assignment uses a structured picker and inline dependency summaries
+      - Duplicate and reorder controls work against the locked save contracts
+  - id: P17
+    title: Panels workspace redesign
+    slice: 25-panels-workspace-redesign
+    status: completed
+    depends_on:
+      - P15
+      - P16
+    outputs:
+      - `/visual/panels` becomes a dedicated inventory-plus-editor workspace with a structured option picker
+      - Dropdown compatibility guidance and panel summary preview are in-page
+      - Duplicate and reorder controls work against the locked save contracts
+  - id: P18
+    title: Questions workspace redesign
+    slice: 26-questions-workspace-redesign
+    status: completed
+    depends_on:
+      - P15
+      - P16
+    outputs:
+      - `/visual/questions` becomes a dedicated inventory-plus-editor workspace with no modal-first editing
+      - Usage summaries show which options currently consume each question
+      - Duplicate and reorder controls work against the locked save contracts
+  - id: P19
+    title: Home card cutover and legacy route redirects
+    slice: 27-home-card-cutover-and-legacy-route-redirects
+    status: completed
+    depends_on:
+      - P14
+      - P16
+      - P17
+      - P18
+    outputs:
+      - Home setup cards open visual workspaces directly for `general`, `options`, `panels`, and `questions`
+      - Legacy `/admin/configs/:id` routes redirect to `/visual/:id` for those four areas
+      - Docs and tests reflect the workspace-first model without breaking transcript behavior
+  - id: P20
+    title: Shared workspace density and responsive advanced tools
+    slice: 28-shared-workspace-density-and-responsive-advanced-tools
+    status: completed
+    depends_on:
+      - P19
+    outputs:
+      - Shared workspace headers stop duplicating the page title and drop the redundant advanced-tools stat
+      - The advanced-tools tray becomes a shared disclosure that stays open on desktop and collapses by default on stacked/mobile widths
+      - The stacked workspace flow reaches the main form without forcing users through the fully expanded advanced-tools tray
+  - id: P21
+    title: Workspace copy tightening and structural trim
+    slice: 29-workspace-copy-tightening-and-structural-trim
+    status: completed
+    depends_on:
+      - P20
+    outputs:
+      - `General`, `Options`, `Panels`, and `Questions` remove duplicated helper/meta language while keeping warnings and advanced actions intact
+      - Top editor cards and save bars stop repeating internal route/payload guidance to end users
+      - The four workspaces keep one clear primary guidance layer instead of restating the same instruction in hero, stats, and section copy
+  - id: P22
+    title: Final visual alignment and density verification
+    slice: 30-final-visual-alignment-and-density-verification
+    status: completed
+    depends_on:
+      - P21
+    outputs:
+      - Final shared editor density aligns with the login page’s matte black restraint without widening scope outside the four workspaces
+      - The full test suite and desktop/mobile browser checks pass against the tightened workspace shell
+      - Workflow evidence captures the follow-up density pass end to end
+  - id: P23
+    title: Shared workspace proportion and control sizing
+    slice: 31-shared-workspace-proportion-and-control-sizing
+    status: completed
+    depends_on:
+      - P22
+    outputs:
+      - Shared editor width, sidebar sizing, header/stat density, and save-bar structure better align with the restrained login reference
+      - Inventory rows and stacked/mobile editor toolbars consume less vertical space before the main fields
+      - Advanced-tools reachability and shared disclosure behavior stay intact
+  - id: P24
+    title: Editor card compaction and copy tuning
+    slice: 32-editor-card-compaction-and-copy-tuning
+    status: completed
+    depends_on:
+      - P23
+    outputs:
+      - Duplicate micro-headings are removed from the page-specific dependency and preview cards
+      - High-friction helper copy is shortened where it is inflating layout without adding new meaning
+      - The four workspaces keep warnings and advanced guidance intact while reading cleaner
+  - id: P25
+    title: Final UI refinement verification
+    slice: 33-final-ui-refinement-verification
+    status: completed
+    depends_on:
+      - P24
+    outputs:
+      - The final refinement pass is verified across build, tests, and desktop/mobile browser checks
+      - Evidence captures the concrete layout improvements and preserved behaviors for the four workspaces
+  - id: P26
+    title: Add-ons inventory shell and search density
+    slice: 34-add-ons-inventory-shell-and-search-density
+    status: completed
+    depends_on:
+      - P25
+    outputs:
+      - `/admin/plugins` uses a tighter intro, content width, and search-toolbar layout that better matches `/login`
+      - The add-ons inventory no longer repeats its subject through both the page intro and section heading
+      - Filtered search can surface an explicit empty state instead of leaving a blank grid
+  - id: P27
+    title: Add-ons card hierarchy and copy refinement
+    slice: 35-add-ons-card-hierarchy-and-copy-refinement
+    status: completed
+    depends_on:
+      - P26
+    outputs:
+      - Add-on cards surface denser status, fact, and JSON-preview hierarchy
+      - Existing routes and advanced add-on workbench actions stay reachable without inventory bloat
+      - The inventory copy reads cleaner and more operator-focused
+  - id: P28
+    title: Final add-ons inventory verification
+    slice: 36-final-add-ons-inventory-verification
+    status: completed
+    depends_on:
+      - P27
+    outputs:
+      - The add-ons inventory refinement closes with build, targeted tests, and desktop/mobile browser verification
+      - Evidence captures the concrete layout and usability improvements without widening scope beyond the plugins surface
+  - id: P29
+    title: Add-ons inventory grouping and layout decluttering
+    slice: 37-add-ons-inventory-grouping-and-layout-decluttering
+    status: completed
+    depends_on:
+      - P28
+    outputs:
+      - `/admin/plugins` groups add-ons by operational state instead of rendering one undifferentiated wall
+      - Search can hide empty groups while preserving the existing client-side empty-state behavior
+      - The grouped inventory stays matte, restrained, and aligned with `/login`
+  - id: P30
+    title: Add-ons metadata trim and row compaction
+    slice: 38-add-ons-metadata-trim-and-row-compaction
+    status: completed
+    depends_on:
+      - P29
+    outputs:
+      - Inventory items use a flatter row-like structure instead of nested fact boxes
+      - Redundant visible metadata is trimmed without weakening author, JSON, status, or workbench reachability
+      - Desktop/mobile layouts scan more clearly when many add-ons are present
+  - id: P31
+    title: Final add-ons decluttering verification
+    slice: 39-final-add-ons-decluttering-verification
+    status: completed
+    depends_on:
+      - P30
+    outputs:
+      - The decluttering follow-up closes with build, targeted tests, and desktop/mobile browser verification
+      - Evidence captures the concrete scan, density, and grouping improvements for `/admin/plugins`
+  - id: P32
+    title: Transcript operations shell and filter structure
+    slice: 40-transcript-operations-shell-and-filter-structure
+    status: completed
+    depends_on:
+      - P31
+    outputs:
+      - `/admin/transcripts` stops rendering a duplicated hero-plus-summary-card stack above the page-owned workspace shell
+      - Filters stay fully reachable but collapse by default on stacked/mobile widths
+      - The transcript page keeps config/plugin reachability while reducing top-of-page clutter
+  - id: P33
+    title: Transcript records and summary decluttering
+    slice: 41-transcript-records-and-summary-decluttering
+    status: completed
+    depends_on:
+      - P32
+    outputs:
+      - Filtered summary, records, and operations read in a clearer primary-to-secondary order
+      - Bulk actions and records stay reachable without pushing the records surface too far down the page
+  - id: P34
+    title: Final transcript operations verification
+    slice: 42-final-transcript-operations-verification
+    status: completed
+    depends_on:
+      - P33
+    outputs:
+      - The transcript-operations follow-up closes with build, tests, and desktop/mobile browser verification
+      - Evidence captures the concrete layout, scan-path, and preserved-behavior outcomes for `/admin/transcripts`
+  - id: P35
+    title: Transcript summary and shell compaction
+    slice: 43-transcript-summary-and-shell-compaction
+    status: completed
+    depends_on:
+      - P34
+    outputs:
+      - `/admin/transcripts` header facts stop reading like another same-weight summary-card wall
+      - Filtered summary becomes a denser transcript-specific scan surface that does not dominate mobile height
+      - The transcript page keeps the matte login-aligned shell while reading calmer at the top of the page
+  - id: P36
+    title: Transcript records toolbar and operations balance
+    slice: 44-transcript-records-toolbar-and-operations-balance
+    status: completed
+    depends_on:
+      - P35
+    outputs:
+      - Bulk actions compress into a denser records toolbar that sits closer to the table
+      - The operations overview reads as secondary analysis instead of another competing card wall
+      - Records become reachable earlier on both desktop and stacked/mobile layouts
+  - id: P37
+    title: Final transcript layout verification
+    slice: 45-final-transcript-layout-verification
+    status: completed
+    depends_on:
+      - P36
+    outputs:
+      - The transcript decluttering follow-up closes with build, tests, and desktop/mobile browser verification
+      - Evidence captures the concrete density and flow improvements for `/admin/transcripts`
+  - id: P38
+    title: Transcript shell and filter streamlining
+    slice: 46-transcript-shell-and-filter-streamlining
+    status: completed
+    depends_on:
+      - P37
+    outputs:
+      - The transcript shell now uses one primary metric with paired secondary facts instead of another same-weight wall
+      - The filter shell keeps active filters in one footer and the closed advanced row stops reading like a raised subsection card
+      - Transcript copy clarifies single-record versus bulk actions without reviving the older intro stack
+  - id: P39
+    title: Transcript records and operations density
+    slice: 47-transcript-records-and-operations-density
+    status: completed
+    depends_on:
+      - P38
+    outputs:
+      - The filtered summary and bulk tools now read as divider-based parts of the records workflow instead of bordered mini-panels
+      - Operations use denser fact strips and calmer inner panels while staying reachable
+      - Mobile transcript header facts keep a denser two-up arrangement and bulk select-all remains functional
+  - id: P40
+    title: Final transcript surface polish verification
+    slice: 48-final-transcript-surface-polish-verification
+    status: completed
+    depends_on:
+      - P39
+    outputs:
+      - The transcript surface-polish follow-up closes with build, tests, and browser verification
+      - Evidence captures the concrete decluttering and table-reachability improvements for `/admin/transcripts`
+  - id: P41
+    title: Admin surface page fill width restoration
+    slice: 49-admin-surface-page-fill-width-restoration
+    status: completed
+    depends_on:
+      - P40
+    outputs:
+      - `/admin/plugins` and `/admin/transcripts` stop forcing route-specific narrow content caps on wide desktop widths
+      - Both pages inherit the shared admin shell content track instead of centering separate narrower lanes
+  - id: P42
+    title: Final admin surface page fill verification
+    slice: 50-final-admin-surface-page-fill-verification
+    status: completed
+    depends_on:
+      - P41
+    outputs:
+      - The page-fill follow-up closes with build, tests, and wide-desktop/browser verification
+      - Evidence captures the restored full-width content lane for add-ons and transcripts
+  - id: P43
+    title: Tickets surface retirement and safe redirect
+    slice: 51-tickets-surface-retirement-and-safe-redirect
+    status: completed
+    depends_on:
+      - P42
+    outputs:
+      - The obsolete Tickets admin surface is removed from the authenticated rail and its dedicated template is deleted
+      - `/admin/tickets` redirects safely to `/admin` instead of rendering the retired page
+      - Home and shared health surfaces keep the remaining useful ticket summary signals
+  - id: P44
+    title: Final tickets surface retirement verification
+    slice: 52-final-tickets-surface-retirement-verification
+    status: completed
+    depends_on:
+      - P43
+    outputs:
+      - The Tickets-surface retirement closes with build, tests, and authenticated browser verification
+      - Evidence captures the rail removal and safe redirect behavior
+  - id: P45
+    title: General workspace structure and density rebalance
+    slice: 53-general-workspace-structure-and-density-rebalance
+    status: completed
+    depends_on:
+      - P44
+    outputs:
+      - `/visual/general` uses the editor lane more deliberately through a calmer section hierarchy and paired secondary cards
+      - The General advanced section stops reading like one long repeated disclosure stack
+      - The General save surface becomes a final commit row instead of a floating overlap
+  - id: P46
+    title: Final general workspace layout verification
+    slice: 54-final-general-workspace-layout-verification
+    status: completed
+    depends_on:
+      - P45
+    outputs:
+      - The General-specific refinement closes with full verification and authenticated browser checks
+      - Evidence captures the improved desktop structure and earlier mobile reachability for `/visual/general`
+  - id: P47
+    title: Options workspace structure and visibility fix
+    slice: 55-options-workspace-structure-and-visibility-fix
+    status: completed
+    depends_on:
+      - P46
+    outputs:
+      - `/visual/options` uses a calmer top stage, hides inactive option-type sections correctly, and groups ticket editing more deliberately
+      - The Options save surface becomes a final commit row instead of a floating slab
+  - id: P48
+    title: Final options workspace layout verification
+    slice: 56-final-options-workspace-layout-verification
+    status: completed
+    depends_on:
+      - P47
+    outputs:
+      - The Options-specific refinement closes with full verification and authenticated browser checks
+      - Evidence captures the improved summary density, correct section visibility, and preserved editor behavior
+  - id: P49
+    title: Panels workspace structure and flow rebalance
+    slice: 57-panels-workspace-structure-and-flow-rebalance
+    status: completed
+    depends_on:
+      - P48
+    outputs:
+      - `/visual/panels` uses the editor lane more deliberately through paired identity/embed and picker/preview lanes
+      - The dropdown compatibility warning moves beside the option picker and the Panels save surface becomes a final commit row
+      - Invalid saved embed colors no longer trigger browser warnings when the editor loads
+  - id: P50
+    title: Final panels workspace layout verification
+    slice: 58-final-panels-workspace-layout-verification
+    status: completed
+    depends_on:
+      - P49
+    outputs:
+      - The Panels-specific refinement closes with full verification and authenticated browser checks
+      - Evidence captures the improved desktop lane usage, mobile summary density, and preserved editor behavior
+  - id: P51
+    title: Questions workspace structure and flow rebalance
+    slice: 59-questions-workspace-structure-and-flow-rebalance
+    status: completed
+    depends_on:
+      - P50
+    outputs:
+      - `/visual/questions` uses the editor lane more deliberately through a paired usage/identity layout
+      - The reference warning moves into the usage section and the Questions save surface becomes a final commit row
+  - id: P52
+    title: Final questions workspace layout verification
+    slice: 60-final-questions-workspace-layout-verification
+    status: completed
+    depends_on:
+      - P51
+    outputs:
+      - The Questions-specific refinement closes with full verification and authenticated browser checks
+      - Evidence captures the improved desktop lane usage, mobile summary density, and preserved editor behavior
+  - id: P53
+    title: General workspace space and copy trim
+    slice: 61-general-workspace-space-and-copy-trim
+    status: completed
+    depends_on:
+      - P52
+    outputs:
+      - `/visual/general` removes redundant header, navigation, and save copy while keeping the same editor behavior
+      - The connection stage and support band use the editor lane more efficiently without changing field names or advanced-tool reachability
+  - id: P54
+    title: Final general workspace space and copy trim verification
+    slice: 62-final-general-workspace-space-and-copy-trim-verification
+    status: completed
+    depends_on:
+      - P53
+    outputs:
+      - The General space-trim follow-up closes with full verification and authenticated browser checks
+      - Evidence captures the reduced desktop/mobile section heights and preserved matte-shell behavior
+  - id: P55
+    title: Options workspace space and copy trim
+    slice: 63-options-workspace-space-and-copy-trim
+    status: completed
+    depends_on:
+      - P48
+    outputs:
+      - `/visual/options` trims redundant inventory, stage, dependency, ticket, and save copy without changing behavior
+      - The Options inventory and dependency surfaces read calmer while the ticket editor starts sooner
+  - id: P56
+    title: Final options workspace space and copy trim verification
+    slice: 64-final-options-workspace-space-and-copy-trim-verification
+    status: completed
+    depends_on:
+      - P55
+    outputs:
+      - The Options space-trim follow-up closes with full verification and authenticated browser checks
+      - Evidence captures the reduced desktop/mobile Options surface heights and preserved matte-shell behavior
+  - id: P57
+    title: Panels workspace space and copy trim
+    slice: 65-panels-workspace-space-and-copy-trim
+    status: completed
+    depends_on:
+      - P50
+    outputs:
+      - `/visual/panels` trims redundant inventory, stage, section, advanced, and save copy without changing behavior
+      - The Panels workspace reads calmer through denser summary, preview, and save surfaces
+  - id: P58
+    title: Final panels workspace space and copy trim verification
+    slice: 66-final-panels-workspace-space-and-copy-trim-verification
+    status: completed
+    depends_on:
+      - P57
+    outputs:
+      - The Panels space-trim follow-up closes with full verification and authenticated browser checks
+      - Evidence captures the reduced desktop/mobile Panels surface heights and preserved matte-shell behavior
+  - id: P59
+    title: Questions workspace space and copy trim
+    slice: 67-questions-workspace-space-and-copy-trim
+    status: completed
+    depends_on:
+      - P52
+    outputs:
+      - `/visual/questions` trims redundant inventory, stage, usage, advanced, and save copy without changing behavior
+      - The Questions workspace reads calmer through denser summary, detail, and save surfaces
+  - id: P60
+    title: Final questions workspace space and copy trim verification
+    slice: 68-final-questions-workspace-space-and-copy-trim-verification
+    status: completed
+    depends_on:
+      - P59
+    outputs:
+      - The Questions space-trim follow-up closes with full verification and authenticated browser checks
+      - Evidence captures the reduced desktop/mobile Questions surface heights and preserved matte-shell behavior
+  - id: P61
+    title: Shared brand favicon and footer cleanup
+    slice: 69-shared-brand-favicon-and-footer-cleanup
+    status: completed
+    depends_on:
+      - P60
+    outputs:
+      - The dashboard favicon pipeline uses the new EoTFS dinosaur asset instead of the E4 icon
+      - Shared dashboard pages render with text-only chrome, no visible footer, and no visible non-auth health shortcuts
+      - Shared dialog payloads still work after the visible footer markup is removed
+  - id: P62
+    title: Auth surface simplification and health shortcut removal
+    slice: 70-auth-surface-simplification-and-health-shortcut-removal
+    status: completed
+    depends_on:
+      - P61
+    outputs:
+      - `/login` uses a centered EoTFS hero image, one Discord CTA, and no health utility or redundant helper copy
+      - `/transcripts/_auth/login` becomes a minimal single-panel viewer auth surface with no header nav or explanatory cards
+      - Route-render tests reflect the flatter admin and viewer auth surfaces without changing OAuth behavior
+  - id: P63
+    title: Final brand and auth surface cleanup verification
+    slice: 71-final-brand-and-auth-surface-cleanup-verification
+    status: completed
+    depends_on:
+      - P62
+    outputs:
+      - The brand/auth cleanup closes with build, full node verification, and browser checks on admin login, viewer login, and shared chrome
+      - Evidence captures the new dinosaur favicon, centered admin login art, and the absence of footer and visible health shortcuts
+  - id: P64
+    title: Global admin roles JSON repair and legacy recovery
+    slice: 72-global-admin-roles-json-repair-and-legacy-recovery
+    status: completed
+    depends_on:
+      - P63
+    outputs:
+      - `/visual/general` uses dedicated strict JSON role-ID handling for `globalAdmins` instead of the loose shared fallback parser
+      - Known legacy `globalAdmins` corruption renders as a repaired draft with warning while invalid saves preserve full General form state and do not write config
+      - Localized General copy aligns the field to role IDs and route plus service tests cover valid save, invalid save, and legacy recovery behavior
+  - id: P65
+    title: Final global admin roles JSON repair verification
+    slice: 73-final-global-admin-roles-json-repair-verification
+    status: completed
+    depends_on:
+      - P64
+    outputs:
+      - The Global Admin Roles follow-up closes with build, full node verification, and desktop/mobile General-page behavior checks
+      - Evidence captures invalid JSON rejection, legacy recovery, clean saved role-ID arrays, and unchanged Security plus Options list-editor behavior
+
+active_slice: null
+
+final_verification:
+  required_commands:
+    - npm run build
+    - node --test dist/plugins/ot-dashboard/test/app.test.js dist/plugins/ot-dashboard/test/auth.test.js dist/plugins/ot-dashboard/test/home-setup.test.js dist/plugins/ot-dashboard/test/editor-layout.test.js dist/plugins/ot-dashboard/test/operational-pages.test.js dist/plugins/ot-dashboard/test/viewer-routes.test.js dist/plugins/ot-dashboard/test/transcript-workspace.test.js dist/plugins/ot-dashboard/test/roundtrip.test.js
+  required_behavior_checks:
+    - `/visual/general` labels `globalAdmins` as a role-ID field and explains the expected JSON array format clearly.
+    - Valid quoted role-ID JSON saves a clean string array to `config/general.json` without introducing bracket or quoted-line artifacts.
+    - Invalid trailing-comma JSON returns an inline error, preserves the rest of the General form state, and does not write `config/general.json`.
+    - A legacy saved `globalAdmins` corruption shape renders as a repaired JSON draft with warning and rewrites cleanly on the next successful save.
+    - Unrecoverable invalid saved `globalAdmins` data does not trigger heuristic guessing; it stays visible as raw JSON with operator guidance.
+    - Security multiline list inputs and Options list-editor flows still behave as before.
+
+verification_notes:
+  - Verify slice 72 before advancing to slice 73.
+  - Rebuild the dashboard before running verification so `dist/plugins/ot-dashboard/server/**` reflects the source changes.
+  - Use the live local General route when available; otherwise verify against the equivalent local fixture route.
+  - Browser/manual checks should cover desktop and mobile widths plus valid-save, invalid-save, and legacy-recovery scenarios.
+
+acceptance:
+  - The General workspace can no longer silently corrupt `globalAdmins` into a bracket-and-quoted-line array when operators submit invalid JSON.
+  - Existing legacy-corrupted `globalAdmins` values are recoverable through the General workspace when the broken shape is unambiguous.
+  - The field’s copy and validation now match the runtime role-ID contract instead of incorrectly describing user IDs.
+  - Invalid `globalAdmins` saves fail closed with preserved operator state, while unrelated dashboard list editors remain behaviorally unchanged.

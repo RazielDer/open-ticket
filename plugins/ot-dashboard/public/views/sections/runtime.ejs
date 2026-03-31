@@ -1,0 +1,73 @@
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("systemStatusPage.snapshotTitle") %></h3>
+  </div>
+  <p class="item-copy"><%= t("systemStatusPage.snapshotBody") %></p>
+  <div class="table-wrap">
+    <table class="data-table">
+      <tbody>
+        <tr><th><%= t("systemStatusPage.snapshotRows.availability") %></th><td><%= snapshot.availability %></td></tr>
+        <tr><th><%= t("systemStatusPage.snapshotRows.processStart") %></th><td><%= snapshot.processStartTime || t("common.unavailable") %></td></tr>
+        <tr><th><%= t("systemStatusPage.snapshotRows.readyTime") %></th><td><%= snapshot.readyTime || t("common.unavailable") %></td></tr>
+        <tr>
+          <th><%= t("systemStatusPage.snapshotRows.checkerResult") %></th>
+          <td>
+            <%= snapshot.checkerSummary.valid === null
+              ? t("systemStatusPage.checkerStates.unknown")
+              : snapshot.checkerSummary.valid
+                ? t("systemStatusPage.checkerStates.valid")
+                : t("systemStatusPage.checkerStates.invalid") %>
+          </td>
+        </tr>
+        <tr><th><%= t("systemStatusPage.snapshotRows.configInventory") %></th><td><%= t("systemStatusPage.snapshotRows.managedFiles", { count: snapshot.configInventory.length }) %></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<% if (Array.isArray(actionCards) && actionCards.length) { %>
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("systemStatusPage.maintenanceTitle") %></h3>
+    </div>
+    <p class="item-copy"><%= t("systemStatusPage.maintenanceBody") %></p>
+    <div class="card-grid">
+      <% actionCards.forEach((provider) => { %>
+        <article class="config-card">
+          <p class="config-file"><%= provider.id %></p>
+          <h3><%= provider.title %></h3>
+          <p><%= provider.available ? t("shell.providerReady") : provider.reason %></p>
+          <div class="sticky-actions">
+            <% provider.actions.forEach((action) => { %>
+              <form method="post" action="<%= action.href %>" class="inline-form">
+                <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                <input type="hidden" name="returnTo" value="<%= assetPath('admin/runtime') %>">
+                <button class="btn <%= provider.available ? 'secondary' : 'subtle' %>" type="submit" <% if (!provider.available) { %>disabled<% } %> data-confirm-message="<%= action.confirmationText %>"><%= action.label %></button>
+              </form>
+            <% }) %>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  </section>
+<% } %>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("systemStatusPage.warningsTitle") %></h3>
+  </div>
+  <% if (snapshot.warnings.length) { %>
+    <div class="list-grid">
+      <% snapshot.warnings.forEach((warning) => { %>
+        <article class="item-card">
+          <p class="item-copy"><%= warning %></p>
+        </article>
+      <% }) %>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("systemStatusPage.warningsEmptyTitle") %></h3>
+      <p><%= t("systemStatusPage.warningsEmptyBody") %></p>
+    </div>
+  <% } %>
+</section>

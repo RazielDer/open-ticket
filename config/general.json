@@ -10,19 +10,19 @@
 
     "mainColor":"#f8ba00",
     "language":"english",
-    "prefix":"!ticket ",
-    "serverId":"discord server id",
-    "globalAdmins":["discord role id"],
+    "prefix":"/ticket ",
+    "serverId":"1433418426029834305",
+    "globalAdmins":["1433762860588335189","1435726508923556011"],
 
     "slashCommands":true,
     "textCommands":true,
 
     "status":{
         "enabled":true,
-        "type":"listening OR watching OR playing OR custom",
-        "mode":"online OR invisible OR idle OR dnd",
+        "type":"Watching..... Always watching.....",
+        "mode":"online",
         "text":"/help",
-        "state":"(additional text or leave empty)"
+        "state":"Watching for incoming tickets."
     },
 
     "system":{
@@ -34,7 +34,7 @@
         "disableVerifyBars":false,
         "useRedErrorEmbeds":true,
         "alwaysShowReason":false,
-        "emojiStyle":"before (OR after OR double OR disabled)",
+        "emojiStyle":"before",
         "pinEmoji":"📌",
         
         "replyOnTicketCreation":true,
@@ -63,8 +63,8 @@
         
         "limits":{
             "enabled":true,
-            "globalMaximum":50,
-            "userMaximum":3
+            "globalMaximum":200,
+            "userMaximum":5
         },
 
         "channelTopic":{

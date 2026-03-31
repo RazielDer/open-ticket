@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body public-entry-body public-entry-landing" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerActions: [],
+      headerClass: 'entry-site-header',
+      logoutAction: null
+    }) %>
+
+    <main class="page-wrap centered-page entry-page-wrap">
+      <section class="entry-panel">
+        <div class="entry-copy">
+          <p class="hero-eyebrow"><%= t("landing.eyebrow") %></p>
+          <h2 class="entry-title"><%= t("landing.title") %></h2>
+          <p class="entry-subtitle"><%= t("landing.subtitle") %></p>
+        </div>
+        <div class="entry-actions">
+          <a class="btn primary" href="<%= assetPath('admin') %>"><%= t("landing.primaryAction") %></a>
+        </div>
+        <div class="entry-support">
+          <p class="entry-support-title"><%= t("landing.supportTitle") %></p>
+          <p class="entry-support-copy"><%= t("landing.supportBody") %></p>
+        </div>
+      </section>
+    </main>
+
+    <%- include('partials/footer', { footerClass: 'entry-site-footer' }) %>
+  </div>
+</body>
+</html>

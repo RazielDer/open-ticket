@@ -1,0 +1,25 @@
+{
+    "name":"OT EoTFS Bridge",
+    "id":"ot-eotfs-bridge",
+    "version":"1.0.0",
+    "startFile":"index.ts",
+    "supportedVersions":["OTv4.0.x","OTv4.1.x","OTv4.2.x"],
+
+    "enabled":true,
+    "priority":0,
+    "events":[],
+
+    "npmDependencies":[],
+    "requiredPlugins":["ot-ticket-forms","ot-html-transcripts"],
+    "incompatiblePlugins":[],
+
+    "details":{
+        "author":"OpenAI Codex",
+        "contributors":[],
+        "shortDescription":"Local-only whitelist intake bridge for EoTFS Open Ticket.",
+        "longDescription":"Posts a staff-controlled whitelist intake bridge button on eligible tickets and sends signed case-created and transcript-attached events to the EoTFS Discord bot.",
+        "imageUrl":"",
+        "projectUrl":"",
+        "tags":["local","bridge","whitelist","eotfs"]
+    }
+}

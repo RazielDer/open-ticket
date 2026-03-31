@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerActions: [
+        { href: assetPath(''), label: t('common.overview'), variant: 'secondary' }
+      ],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap">
+      <section class="hero-panel compact-hero">
+        <p class="hero-eyebrow"><%= t("admin.title") %></p>
+        <h2 class="hero-title compact"><%= t("admin.headline") %></h2>
+        <p class="hero-subtitle"><%= t("admin.subtitle") %></p>
+      </section>
+
+      <section class="card-grid">
+        <% files.forEach((file) => { %>
+          <article class="config-card">
+            <p class="config-file"><%= file.fileName %></p>
+            <h3><%= file.title %></h3>
+            <p><%= file.description %></p>
+            <div class="card-actions">
+              <a class="btn primary" href="<%= file.visualHref %>"><%= t("common.visualEditor") %></a>
+              <a class="btn secondary" href="<%= file.rawHref %>"><%= t("common.rawEditor") %></a>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+</body>
+</html>

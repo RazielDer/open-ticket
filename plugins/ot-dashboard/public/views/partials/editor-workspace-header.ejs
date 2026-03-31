@@ -1,0 +1,36 @@
+<%
+  const headerEyebrow = typeof eyebrow === 'string' ? eyebrow.trim() : ''
+  const headerTitle = typeof title === 'string' ? title.trim() : String(title || '')
+%>
+<section class="section-card editor-workspace-stage">
+  <div class="editor-workspace-header">
+    <div class="editor-workspace-copy">
+      <% if (headerEyebrow && headerEyebrow !== headerTitle) { %>
+        <p class="hero-eyebrow"><%= headerEyebrow %></p>
+      <% } %>
+      <h2 class="hero-title compact"><%= headerTitle %></h2>
+      <p class="hero-subtitle narrow"><%= subtitle %></p>
+    </div>
+    <% if (Array.isArray(actions) && actions.length) { %>
+      <div class="card-actions">
+        <% actions.forEach((action) => { %>
+          <a class="btn <%= action.variant || 'secondary' %>" href="<%= action.href %>"><%= action.label %></a>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+
+  <% if (Array.isArray(stats) && stats.length) { %>
+    <div class="editor-workspace-stats">
+      <% stats.forEach((stat) => { %>
+        <article class="subsection-card editor-workspace-stat">
+          <p class="config-file"><%= stat.label %></p>
+          <h3><%= stat.value %></h3>
+          <% if (stat.detail) { %>
+            <p class="item-copy"><%= stat.detail %></p>
+          <% } %>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>

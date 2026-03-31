@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <%
+    const systemFlags = [
+      ['preferSlashOverText', 'Prefer slash commands over text'],
+      ['sendErrorOnUnknownCommand', 'Send an error on unknown commands'],
+      ['questionFieldsInCodeBlock', 'Render question fields in a code block'],
+      ['displayFieldsWithQuestions', 'Display embed fields with questions'],
+      ['showGlobalAdminsInPanelRoles', 'Show global admins in panel roles'],
+      ['disableVerifyBars', 'Disable verify bars'],
+      ['useRedErrorEmbeds', 'Use red error embeds'],
+      ['alwaysShowReason', 'Always show action reasons'],
+      ['replyOnTicketCreation', 'Reply on ticket creation'],
+      ['replyOnReactionRole', 'Reply on reaction role changes'],
+      ['askPriorityOnTicketCreation', 'Ask for priority on ticket creation'],
+      ['removeParticipantsOnClose', 'Remove participants on close'],
+      ['disableAutocloseAfterReopen', 'Disable autoclose after reopen'],
+      ['autodeleteRequiresClosedTicket', 'Require closed state before autodelete'],
+      ['adminOnlyDeleteWithoutTranscript', 'Restrict delete without transcript to admins'],
+      ['allowCloseBeforeMessage', 'Allow close before the first message'],
+      ['allowCloseBeforeAdminMessage', 'Allow close before the first admin message'],
+      ['useTranslatedConfigChecker', 'Use the translated config checker'],
+      ['pinFirstTicketMessage', 'Pin the first ticket message'],
+      ['enableTicketClaimButtons', 'Enable claim buttons'],
+      ['enableTicketCloseButtons', 'Enable close buttons'],
+      ['enableTicketPinButtons', 'Enable pin buttons'],
+      ['enableTicketDeleteButtons', 'Enable delete buttons'],
+      ['enableTicketActionWithReason', 'Enable action-with-reason flows'],
+      ['enableDeleteWithoutTranscript', 'Enable delete without transcript']
+    ]
+    const channelTopicFlags = [
+      ['showOptionName', 'Show option name'],
+      ['showOptionDescription', 'Show option description'],
+      ['showOptionTopic', 'Show option topic'],
+      ['showPriority', 'Show priority'],
+      ['showClosed', 'Show closed state'],
+      ['showClaimed', 'Show claimed state'],
+      ['showPinned', 'Show pinned state'],
+      ['showCreator', 'Show creator'],
+      ['showParticipants', 'Show participants']
+    ]
+    const permissionFields = [
+      ['help', 'Help'],
+      ['panel', 'Panel'],
+      ['ticket', 'Ticket'],
+      ['close', 'Close'],
+      ['delete', 'Delete'],
+      ['reopen', 'Reopen'],
+      ['claim', 'Claim'],
+      ['unclaim', 'Unclaim'],
+      ['pin', 'Pin'],
+      ['unpin', 'Unpin'],
+      ['move', 'Move'],
+      ['rename', 'Rename'],
+      ['add', 'Add'],
+      ['remove', 'Remove'],
+      ['blacklist', 'Blacklist'],
+      ['stats', 'Stats'],
+      ['clear', 'Clear'],
+      ['autoclose', 'Autoclose'],
+      ['autodelete', 'Autodelete'],
+      ['transfer', 'Transfer'],
+      ['topic', 'Topic'],
+      ['priority', 'Priority']
+    ]
+    const messageFields = [
+      ['creation', 'Creation'],
+      ['closing', 'Closing'],
+      ['deleting', 'Deleting'],
+      ['reopening', 'Reopening'],
+      ['claiming', 'Claiming'],
+      ['pinning', 'Pinning'],
+      ['adding', 'Adding'],
+      ['removing', 'Removing'],
+      ['renaming', 'Renaming'],
+      ['moving', 'Moving'],
+      ['blacklisting', 'Blacklisting'],
+      ['transferring', 'Transferring'],
+      ['topicChange', 'Topic change'],
+      ['priorityChange', 'Priority change'],
+      ['reactionRole', 'Reaction role']
+    ]
+    const commandModeValue = config.slashCommands && config.textCommands
+      ? t('general.workspace.commandModesBoth')
+      : config.slashCommands
+        ? t('general.workspace.commandModesSlash')
+        : config.textCommands
+          ? t('general.workspace.commandModesText')
+          : t('general.workspace.commandModesDisabled')
+    const sectionLinks = [
+      { href: '#section-connection', label: t('general.workspace.connectionNav') },
+      { href: '#section-status', label: t('general.workspace.statusNav') },
+      { href: '#section-logs', label: t('general.workspace.logsNav') },
+      { href: '#section-limits', label: t('general.workspace.limitsNav') },
+      { href: '#section-advanced', label: t('general.workspace.advancedNav') }
+    ]
+  %>
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerClass: 'editor-workspace-header-no-logo',
+      headerShowLogo: false,
+      headerActions: dashboardAccess?.tier === 'admin'
+        ? [{ href: assetPath('admin'), label: t('common.admin'), variant: 'secondary' }]
+        : [],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap editor-workspace-page editor-workspace-general-page">
+      <% if (saved) { %>
+        <div class="inline-alert success"><%= t("common.statusSaved") %></div>
+      <% } %>
+      <% if (errorMessage) { %>
+        <div class="inline-alert error"><%= errorMessage %></div>
+      <% } %>
+
+      <%- include('partials/editor-workspace-header', {
+        eyebrow: '',
+        title: t('general.title'),
+        subtitle: t('general.subtitle'),
+        actions: [],
+        stats: [
+          { label: t('common.file'), value: advancedTools.fileName },
+          { label: t('general.workspace.commandModesLabel'), value: commandModeValue }
+        ]
+      }) %>
+
+      <div class="editor-workspace-grid">
+        <aside class="editor-workspace-sidebar">
+          <section class="section-card">
+            <div class="section-heading">
+              <h3><%= t("general.workspace.navigationTitle") %></h3>
+            </div>
+            <nav aria-label="<%= t('general.workspace.navigationTitle') %>">
+              <div class="editor-outline-list">
+                <% sectionLinks.forEach((link) => { %>
+                  <a class="editor-outline-link" href="<%= link.href %>"><%= link.label %></a>
+                <% }) %>
+              </div>
+            </nav>
+          </section>
+
+          <%- include('partials/editor-advanced-tools', { advancedTools }) %>
+        </aside>
+
+        <form id="generalForm" method="post" action="<%= assetPath('api/config/general') %>" class="page-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+
+          <div class="editor-workspace-main general-workspace-main">
+            <section class="section-card general-connection-section" id="section-connection">
+              <div class="section-heading">
+                <h3><%= t("general.sections.connection") %></h3>
+              </div>
+              <div class="general-connection-layout">
+                <div class="form-grid two-up general-connection-primary">
+                  <label class="general-token-field">
+                    <span class="field-label"><%= t("general.fields.token") %></span>
+                    <input class="text-input" type="text" name="token" value="<%= config.token || '' %>">
+                  </label>
+                  <label class="checkbox-field general-token-source">
+                    <input type="checkbox" name="tokenFromENV" <%= config.tokenFromENV ? 'checked' : '' %>>
+                    <span><%= t("general.fields.tokenFromEnv") %></span>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.serverId") %></span>
+                    <input class="text-input" type="text" name="serverId" value="<%= config.serverId || '' %>">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.language") %></span>
+                    <select class="select-input" name="language">
+                      <% languages.forEach((language) => { %>
+                        <option value="<%= language %>" <%= config.language === language ? 'selected' : '' %>><%= language %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label class="general-prefix-field">
+                    <span class="field-label"><%= t("general.fields.prefix") %></span>
+                    <input class="text-input" type="text" name="prefix" value="<%= config.prefix || '' %>">
+                  </label>
+                </div>
+                <div class="subsection-card general-command-modes">
+                  <h4><%= t("general.fields.commandModes") %></h4>
+                  <div class="checkbox-grid general-command-mode-list">
+                    <label class="checkbox-field">
+                      <input type="checkbox" name="slashCommands" <%= config.slashCommands ? 'checked' : '' %>>
+                      <span><%= t("general.fields.slashCommands") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" name="textCommands" <%= config.textCommands ? 'checked' : '' %>>
+                      <span><%= t("general.fields.textCommands") %></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="general-support-grid">
+              <section class="section-card general-support-section general-support-section-status" id="section-status">
+                <div class="section-heading">
+                  <h3><%= t("general.sections.status") %></h3>
+                </div>
+                <div class="form-grid two-up general-status-grid">
+                  <label class="checkbox-field">
+                    <input type="checkbox" name="status.enabled" <%= config.status?.enabled ? 'checked' : '' %>>
+                    <span><%= t("general.fields.statusEnabled") %></span>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.statusType") %></span>
+                    <select class="select-input" name="status.type">
+                      <% statusTypes.forEach((value) => { %>
+                        <option value="<%= value %>" <%= config.status?.type === value ? 'selected' : '' %>><%= value %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.statusMode") %></span>
+                    <select class="select-input" name="status.mode">
+                      <% statusModes.forEach((value) => { %>
+                        <option value="<%= value %>" <%= config.status?.mode === value ? 'selected' : '' %>><%= value %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.statusText") %></span>
+                    <input class="text-input" type="text" name="status.text" value="<%= config.status?.text || '' %>">
+                  </label>
+                  <label class="span-2">
+                    <span class="field-label"><%= t("general.fields.statusState") %></span>
+                    <input class="text-input" type="text" name="status.state" value="<%= config.status?.state || '' %>">
+                  </label>
+                </div>
+              </section>
+
+              <section class="section-card general-support-section general-support-section-logs" id="section-logs">
+                <div class="section-heading">
+                  <h3><%= t("general.sections.logs") %></h3>
+                </div>
+                <div class="form-grid two-up">
+                  <label class="checkbox-field">
+                    <input type="checkbox" name="system.logs.enabled" <%= config.system?.logs?.enabled ? 'checked' : '' %>>
+                    <span><%= t("general.fields.logsEnabled") %></span>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.logsChannel") %></span>
+                    <input class="text-input" type="text" name="system.logs.channel" value="<%= config.system?.logs?.channel || '' %>">
+                  </label>
+                </div>
+              </section>
+
+              <section class="section-card general-support-section general-support-section-limits" id="section-limits">
+                <div class="section-heading">
+                  <h3><%= t("general.sections.limits") %></h3>
+                </div>
+                <div class="form-grid two-up">
+                  <label class="checkbox-field">
+                    <input type="checkbox" name="system.limits.enabled" <%= config.system?.limits?.enabled ? 'checked' : '' %>>
+                    <span><%= t("general.fields.limitsEnabled") %></span>
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.globalMaximum") %></span>
+                    <input class="text-input" type="number" name="system.limits.globalMaximum" value="<%= config.system?.limits?.globalMaximum ?? 0 %>">
+                  </label>
+                  <label>
+                    <span class="field-label"><%= t("general.fields.userMaximum") %></span>
+                    <input class="text-input" type="number" name="system.limits.userMaximum" value="<%= config.system?.limits?.userMaximum ?? 0 %>">
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <section class="section-card" id="section-advanced">
+              <div class="section-heading">
+                <h3><%= t("general.sections.advanced") %></h3>
+              </div>
+              <p class="editor-intro"><%= t("general.sections.advancedBody") %></p>
+              <div class="general-advanced-grid">
+                <details class="subsection-card editor-disclosure general-advanced-disclosure">
+                  <summary>
+                    <h4><%= t("general.sections.identity") %></h4>
+                    <p class="editor-intro"><%= t("general.sections.identityBody") %></p>
+                  </summary>
+                    <div class="editor-disclosure-body">
+                      <div class="form-grid two-up">
+                        <label>
+                          <span class="field-label"><%= t("general.fields.globalAdmins") %></span>
+                          <textarea class="code-area compact" name="globalAdmins" rows="4" aria-invalid="<%= globalAdminsErrorMessage ? 'true' : 'false' %>"><%= globalAdminsDraft %></textarea>
+                          <% if (globalAdminsWarningMessage) { %>
+                            <div class="inline-alert warning"><%= globalAdminsWarningMessage %></div>
+                          <% } %>
+                          <% if (globalAdminsErrorMessage) { %>
+                            <div class="inline-alert error"><%= globalAdminsErrorMessage %></div>
+                          <% } %>
+                          <span class="field-help"><%= t("general.fields.globalAdminsHelp") %></span>
+                        </label>
+                        <div class="subsection-card">
+                        <div class="form-grid two-up">
+                          <label>
+                            <span class="field-label"><%= t("general.fields.mainColor") %></span>
+                            <input class="text-input color-input" type="color" name="mainColor" value="<%= config.mainColor || '#000000' %>">
+                          </label>
+                          <label>
+                            <span class="field-label"><%= t("general.fields.emojiStyle") %></span>
+                            <select class="select-input" name="system.emojiStyle">
+                              <% emojiStyles.forEach((value) => { %>
+                                <option value="<%= value %>" <%= config.system?.emojiStyle === value ? 'selected' : '' %>><%= value %></option>
+                              <% }) %>
+                            </select>
+                          </label>
+                          <label class="span-2">
+                            <span class="field-label"><%= t("general.fields.pinEmoji") %></span>
+                            <input class="text-input" type="text" name="system.pinEmoji" value="<%= config.system?.pinEmoji || '' %>">
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="subsection-card editor-disclosure general-advanced-disclosure">
+                  <summary>
+                    <h4><%= t("general.sections.system") %></h4>
+                    <p class="editor-intro"><%= t("general.sections.systemBody") %></p>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="checkbox-grid">
+                      <% systemFlags.forEach(([key, label]) => { %>
+                        <label class="checkbox-field">
+                          <input type="checkbox" name="system.<%= key %>" <%= config.system?.[key] ? 'checked' : '' %>>
+                          <span><%= label %></span>
+                        </label>
+                      <% }) %>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="subsection-card editor-disclosure general-advanced-disclosure">
+                  <summary>
+                    <h4><%= t("general.sections.channelTopic") %></h4>
+                    <p class="editor-intro"><%= t("general.sections.channelTopicBody") %></p>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="checkbox-grid">
+                      <% channelTopicFlags.forEach(([key, label]) => { %>
+                        <label class="checkbox-field">
+                          <input type="checkbox" name="system.channelTopic.<%= key %>" <%= config.system?.channelTopic?.[key] ? 'checked' : '' %>>
+                          <span><%= label %></span>
+                        </label>
+                      <% }) %>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="subsection-card editor-disclosure general-advanced-disclosure">
+                  <summary>
+                    <h4><%= t("general.sections.permissions") %></h4>
+                    <p class="editor-intro"><%= t("general.sections.permissionsBody") %></p>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="form-grid three-up">
+                      <% permissionFields.forEach(([key, label]) => { %>
+                        <label>
+                          <span class="field-label"><%= label %></span>
+                          <input class="text-input" type="text" name="system.permissions.<%= key %>" value="<%= config.system?.permissions?.[key] || '' %>">
+                        </label>
+                      <% }) %>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="subsection-card editor-disclosure general-advanced-disclosure">
+                  <summary>
+                    <h4><%= t("general.sections.messages") %></h4>
+                    <p class="editor-intro"><%= t("general.sections.messagesBody") %></p>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="message-grid">
+                      <% messageFields.forEach(([key, label]) => { %>
+                        <article class="message-card">
+                          <h4><%= label %></h4>
+                          <label class="checkbox-field">
+                            <input type="checkbox" name="system.messages.<%= key %>.dm" <%= config.system?.messages?.[key]?.dm ? 'checked' : '' %>>
+                            <span>Send DM</span>
+                          </label>
+                          <label class="checkbox-field">
+                            <input type="checkbox" name="system.messages.<%= key %>.logs" <%= config.system?.messages?.[key]?.logs ? 'checked' : '' %>>
+                            <span>Send log event</span>
+                          </label>
+                        </article>
+                      <% }) %>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </section>
+
+            <div class="section-card editor-savebar general-savebar">
+              <div class="editor-savebar-copy">
+                <h3><%= t("general.workspace.saveTitle") %></h3>
+              </div>
+              <div class="card-actions sticky-actions editor-savebar-actions">
+                <button class="btn primary" type="submit"><%= t("common.save") %></button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/config-general.js') %>"></script>
+</body>
+</html>

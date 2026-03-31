@@ -1,0 +1,83 @@
+<% if (!dashboardAccess || dashboardAccess.canUseAdvancedEditorTools) { %>
+<details
+  class="section-card editor-disclosure editor-utility-tray"
+  data-responsive-disclosure="workspace-advanced-tools"
+  open
+>
+  <summary>
+    <h3><%= t("editor.advancedTools.title") %></h3>
+    <p class="editor-intro"><%= t("editor.advancedTools.body") %></p>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <div class="card-actions editor-utility-actions">
+      <a class="btn secondary" href="<%= advancedTools.rawHref %>"><%= t("editor.advancedTools.rawAction") %></a>
+      <a class="btn secondary" href="<%= advancedTools.exportHref %>"><%= t("editor.advancedTools.exportAction") %></a>
+    </div>
+
+    <section class="subsection-card">
+      <div class="section-heading">
+        <h4><%= t("editor.advancedTools.backupTitle") %></h4>
+      </div>
+      <p class="item-copy"><%= t("editor.advancedTools.backupBody") %></p>
+      <form method="post" action="<%= advancedTools.backupAction %>" class="stack-form">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= advancedTools.returnTo %>">
+        <label>
+          <span class="field-label"><%= t("editor.advancedTools.backupNoteLabel") %></span>
+          <input
+            class="text-input"
+            type="text"
+            name="note"
+            placeholder="<%= t('editor.advancedTools.backupNotePlaceholder') %>"
+          >
+        </label>
+        <button class="btn secondary" type="submit"><%= t("editor.advancedTools.backupAction") %></button>
+      </form>
+    </section>
+
+    <details class="section-card editor-disclosure editor-utility-section">
+      <summary>
+        <h4><%= t("editor.advancedTools.reviewTitle") %></h4>
+        <p class="editor-intro"><%= t("editor.advancedTools.reviewBody") %></p>
+      </summary>
+      <div class="editor-disclosure-body">
+        <form method="post" action="<%= advancedTools.reviewAction %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="sourceLabel" value="<%= t('routeMessages.configDraftSource') %>">
+          <label>
+            <span class="field-label"><%= t("editor.advancedTools.reviewLabel") %></span>
+            <textarea class="code-area compact editor-utility-code" name="candidateText"><%= advancedTools.reviewDraftText %></textarea>
+          </label>
+          <button class="btn secondary" type="submit"><%= t("editor.advancedTools.reviewAction") %></button>
+        </form>
+      </div>
+    </details>
+
+    <section class="subsection-card">
+      <div class="section-heading">
+        <h4><%= t("editor.advancedTools.restoreTitle") %></h4>
+      </div>
+      <p class="item-copy"><%= t("editor.advancedTools.restoreBody") %></p>
+      <% if (advancedTools.restoreItems.length) { %>
+        <div class="editor-restore-list">
+          <% advancedTools.restoreItems.forEach((item) => { %>
+            <article class="editor-restore-item">
+              <div>
+                <p class="config-file"><%= item.id %></p>
+                <p class="item-copy"><%= item.createdLabel %></p>
+              </div>
+              <a class="btn subtle" href="<%= item.restoreHref %>"><%= t("editor.advancedTools.restoreAction") %></a>
+            </article>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <div class="empty-panel editor-restore-empty">
+          <h3><%= t("editor.advancedTools.restoreEmptyTitle") %></h3>
+          <p><%= t("editor.advancedTools.restoreEmptyBody") %></p>
+        </div>
+      <% } %>
+    </section>
+  </div>
+</details>
+<% } %>

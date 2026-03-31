@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body public-entry-body public-entry-login viewer-entry-login" data-base-path="<%= basePath %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <main class="page-wrap centered-page entry-page-wrap">
+      <section class="entry-panel viewer-login-panel">
+        <div class="entry-copy viewer-entry-copy">
+          <p class="hero-eyebrow"><%= t("transcripts.viewer.login.title") %></p>
+          <h1 class="entry-title entry-title-compact"><%= t("transcripts.viewer.login.headline") %></h1>
+          <p class="hero-subtitle narrow"><%= t("transcripts.viewer.login.subtitle") %></p>
+        </div>
+        <% if (message) { %>
+          <div class="inline-alert error"><%= message %></div>
+        <% } %>
+        <div class="stack-form viewer-login-actions">
+          <a class="btn primary wide" href="<%= discordAuthHref %>"><%= t("transcripts.viewer.login.action") %></a>
+        </div>
+      </section>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+</body>
+</html>

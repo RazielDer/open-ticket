@@ -1,0 +1,25 @@
+{
+    "name":"OT Ticket Forms",
+    "id":"ot-ticket-forms",
+    "version":"1.1.0",
+    "startFile":"index.ts",
+    "supportedVersions":["OTv4.0.x","OTv4.1.x","OTv4.2.x"],
+
+    "enabled":true,
+    "priority":0,
+    "events":[],
+
+    "npmDependencies":[],
+    "requiredPlugins":[],
+    "incompatiblePlugins":[],
+
+    "details":{
+        "author":"guillee.3",
+        "contributors":[],
+        "shortDescription":"An advanced forms plugin for Open Ticket.",
+        "longDescription":"This plugin allows you to create advanced forms with 3 types of questions: modal, dropdown and buttons. Check the README.md for more information!",
+        "imageUrl":"",
+        "projectUrl":"",
+        "tags":["forms","questions","modal","dropdown","buttons"]
+    }
+}

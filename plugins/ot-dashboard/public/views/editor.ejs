@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerActions: [
+        { href: assetPath('admin'), label: t('common.admin'), variant: 'secondary' },
+        { href: visualHref, label: t('common.visualEditor'), variant: 'secondary' }
+      ],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap">
+      <% if (saved) { %>
+        <div class="inline-alert success"><%= t("common.statusSaved") %></div>
+      <% } %>
+      <% if (errorMessage) { %>
+        <div class="inline-alert error"><%= errorMessage %></div>
+      <% } %>
+
+      <section class="hero-panel compact-hero">
+        <p class="hero-eyebrow"><%= t("editor.title") %></p>
+        <h2 class="hero-title compact"><%= fileName %></h2>
+        <p class="hero-subtitle"><%= t("editor.subtitle") %></p>
+      </section>
+
+      <section class="section-card">
+        <form id="rawEditorForm" method="post" action="<%= rawHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <label class="field-label" for="jsonEditor">Draft JSON</label>
+          <textarea id="jsonEditor" name="json" class="code-area" spellcheck="false" data-json-editor="true"><%= jsonText %></textarea>
+          <label class="field-label" for="jsonImport">Import JSON file</label>
+          <input id="jsonImport" type="file" accept=".json,application/json" data-load-json-into="#jsonEditor">
+          <div class="card-actions">
+            <button class="btn primary" type="submit"><%= t("common.save") %></button>
+            <a class="btn secondary" href="<%= visualHref %>"><%= t("common.visualEditor") %></a>
+          </div>
+        </form>
+      </section>
+
+      <textarea id="page-messages" hidden><%= messages %></textarea>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/vendor/codemirror-json.js') %>"></script>
+  <script src="<%= assetPath('js/json-editor.js') %>"></script>
+  <script src="<%= assetPath('js/raw-editor.js') %>"></script>
+</body>
+</html>

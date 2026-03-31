@@ -1,0 +1,132 @@
+[
+    {
+        "id":"whitelist-accepted",
+        "name":"Whitelist Accepted",
+        "description":"Use when an application has been approved.",
+        
+        "message":{
+            "enabled":true,
+            "text":"",
+            "embed":{
+                "enabled":true,
+                "title":"Whitelist Status",
+                "description":"Your whitelist application has been approved. A staff member will guide you through any final next steps if they are still needed.",
+                "customColor":"#00ff00",
+
+                "image":"",
+                "thumbnail":"",
+                "fields":[],
+                "timestamp":true
+            },
+            "ping":{
+                "@here":false,
+                "@everyone":false,
+                "custom":[]
+            }
+        }
+    },
+    {
+        "id":"whitelist-denied",
+        "name":"Whitelist Denied",
+        "description":"Use when an application has been denied.",
+        
+        "message":{
+            "enabled":true,
+            "text":"",
+            "embed":{
+                "enabled":true,
+                "title":"Whitelist Status",
+                "description":"Your whitelist application has been denied. Review the staff feedback in this ticket before opening a new application.",
+                "customColor":"#ff0000",
+
+                "image":"",
+                "thumbnail":"",
+                "fields":[],
+                "timestamp":true
+            },
+            "ping":{
+                "@here":false,
+                "@everyone":false,
+                "custom":[]
+            }
+        }
+    },
+    {
+        "id":"whitelist-under-review",
+        "name":"Whitelist Under Review",
+        "description":"Use when staff are actively reviewing the application.",
+        
+        "message":{
+            "enabled":true,
+            "text":"",
+            "embed":{
+                "enabled":true,
+                "title":"Whitelist Status",
+                "description":"Your whitelist application is under review. Please wait for a staff decision and keep new messages relevant to your application.",
+                "customColor":"#ffaa00",
+
+                "image":"",
+                "thumbnail":"",
+                "fields":[],
+                "timestamp":true
+            },
+            "ping":{
+                "@here":false,
+                "@everyone":false,
+                "custom":[]
+            }
+        }
+    },
+    {
+        "id":"whitelist-more-info",
+        "name":"Need More Information",
+        "description":"Use when the application is missing detail.",
+
+        "message":{
+            "enabled":true,
+            "text":"",
+            "embed":{
+                "enabled":true,
+                "title":"More Information Needed",
+                "description":"Staff need more detail before the whitelist review can continue. Please answer the questions asked above in this ticket.",
+                "customColor":"#3182ce",
+
+                "image":"",
+                "thumbnail":"",
+                "fields":[],
+                "timestamp":true
+            },
+            "ping":{
+                "@here":false,
+                "@everyone":false,
+                "custom":[]
+            }
+        }
+    },
+    {
+        "id":"whitelist-duplicate",
+        "name":"Duplicate Application",
+        "description":"Use when the user already has an application open.",
+
+        "message":{
+            "enabled":true,
+            "text":"",
+            "embed":{
+                "enabled":true,
+                "title":"Duplicate Application",
+                "description":"An application for you is already being handled. Please continue in the existing ticket instead of opening another one.",
+                "customColor":"#805ad5",
+
+                "image":"",
+                "thumbnail":"",
+                "fields":[],
+                "timestamp":true
+            },
+            "ping":{
+                "@here":false,
+                "@everyone":false,
+                "custom":[]
+            }
+        }
+    }
+]

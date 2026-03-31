@@ -1,0 +1,95 @@
+<section class="section-card overview-stage">
+  <div class="status-strip overview-stage-status tone-<%= statusStrip.tone %>">
+    <span class="status-pill tone-<%= statusStrip.tone %>"><%= statusStrip.attentionLabel %></span>
+    <strong><%= statusStrip.label %></strong>
+    <span><%= statusStrip.updatedLabel %></span>
+    <span><%= statusStrip.detail %></span>
+  </div>
+  <div class="overview-stage-grid">
+    <div class="overview-stage-copy">
+      <% if (pageEyebrow) { %>
+        <p class="hero-eyebrow"><%= pageEyebrow %></p>
+      <% } %>
+      <h2 class="hero-title compact"><%= pageHeadline %></h2>
+      <% if (pageSubtitle) { %>
+        <p class="hero-subtitle"><%= pageSubtitle %></p>
+      <% } %>
+    </div>
+
+    <% if (Array.isArray(summaryCards) && summaryCards.length) { %>
+      <section class="summary-grid summary-grid-compact" aria-label="<%= t('home.title') %>">
+        <% summaryCards.forEach((card) => { %>
+          <article class="summary-card summary-card-<%= card.kind %> <%= card.tone ? `tone-${card.tone}` : '' %>">
+            <% if (card.kind === 'status') { %>
+              <span class="status-pill tone-<%= card.tone || 'muted' %>"><%= card.label %></span>
+            <% } else { %>
+              <p class="summary-label"><%= card.label %></p>
+            <% } %>
+            <strong class="summary-value"><%= card.value %></strong>
+            <p class="summary-detail"><%= card.detail %></p>
+          </article>
+        <% }) %>
+      </section>
+    <% } %>
+  </div>
+</section>
+
+<% if (recommendedAction.id !== "operations") { %>
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("home.nextStepTitle") %></h3>
+    </div>
+    <article class="subsection-card">
+      <div class="item-card-header">
+        <div>
+          <p class="config-file"><%= recommendedAction.metaLabel %></p>
+          <h3><%= recommendedAction.title %></h3>
+        </div>
+      </div>
+      <p class="item-copy"><%= recommendedAction.whyNow %></p>
+      <div class="card-actions">
+        <a class="btn primary" href="<%= recommendedAction.href %>"><%= recommendedAction.actionLabel %></a>
+      </div>
+    </article>
+  </section>
+<% } %>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("home.setupStatusTitle") %></h3>
+  </div>
+  <div class="card-grid">
+    <% setupCards.forEach((item) => { %>
+      <article class="config-card">
+        <div class="item-card-header">
+          <div>
+            <p class="config-file"><%= item.metaLabel %></p>
+            <h3><%= item.title %></h3>
+          </div>
+          <span class="status-pill tone-<%= item.stateTone %>"><%= item.stateLabel %></span>
+        </div>
+        <p class="item-copy"><%= item.whatControls %></p>
+        <p class="field-help"><%= item.guidance %></p>
+        <div class="card-actions">
+          <a class="btn primary" href="<%= item.primaryHref %>"><%= item.primaryActionLabel %></a>
+          <a class="btn secondary" href="<%= item.secondaryHref %>"><%= item.secondaryActionLabel %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<% if (snapshot.warnings.length) { %>
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("home.warningsTitle") %></h3>
+    </div>
+    <div class="list-grid">
+      <% snapshot.warnings.forEach((warning) => { %>
+        <article class="item-card">
+          <p class="item-copy"><%= warning %></p>
+        </article>
+      <% }) %>
+    </div>
+  </section>
+<% } %>

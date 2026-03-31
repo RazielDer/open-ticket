@@ -1,0 +1,56 @@
+version: 2
+updated_at: 2026-03-29
+mode: implementation
+status: completed
+active_slice: null
+next_slice: null
+next_slice_status: null
+following_slice: null
+following_slice_status: null
+downstream_slice: null
+downstream_slice_status: null
+trailing_slice: null
+trailing_slice_status: null
+access_slice: null
+access_slice_status: null
+private_view_slice: null
+private_view_slice_status: null
+ux_slice: null
+ux_slice_status: null
+editor_slice: null
+editor_slice_status: null
+cleanup_slice: null
+cleanup_slice_status: null
+query_slice: null
+query_slice_status: null
+query_dashboard_slice: null
+query_dashboard_slice_status: null
+
+resume_sequence:
+  - workflow.yaml
+  - active/active-slice.md
+  - workflow.md
+  - evidence/phase-14-stricter-access-and-portal-basis.md
+  - runtime/controller-state.yaml
+
+operator_notes:
+  - Allowed writes for the v2 roadmap remain limited to plugins/ot-html-transcripts/** and plugins/ot-dashboard/**.
+  - Slices 01 through 22 remain historical context and are already implemented and verified.
+  - Phase P14 reopens the kernel for Cloudflare-ready dual-host routing, Discord admin auth, durable auth state, a viewer-host My Transcripts portal, and tighter RBAC.
+  - "`publicBaseUrl` is locked as the admin-host canonical URL and `viewerPublicBaseUrl` is locked as the viewer-host canonical URL."
+  - Current guild membership is required for all viewer-host access. Staff transcript access additionally requires stored transcript role `admin` plus live `Reviewer+` eligibility.
+  - "`Reviewer` is viewer-host only. `Editor` is limited to visual `Options`, `Panels`, and `Questions`. `Admin` keeps global transcript and security authority."
+  - Live admin and viewer authorization must be revalidated on every authorized request with cache freshness capped at 60 seconds and fail-closed behavior on stale lookup failure.
+  - Durable admin/viewer sessions, OAuth state, and rate limits now belong in a local SQLite auth store under runtime/ot-dashboard rather than MemoryStore or in-memory maps.
+  - The admin security workspace is Admin-only, lives inside the current admin shell and Advanced flow, and may edit non-secret RBAC/host fields only.
+  - Slice 27 is implemented and verified. Its durable auth/security audit records and live-first revalidation behavior remain part of the completed P14 baseline.
+  - The user has approved sequential execution across slices 23 through 28 as long as kernel state is updated after each verified slice.
+  - New admin/viewer pages must stay aligned with the existing matte dark UI: no glow, no redundant copy, no roomy layout drift.
+  - Slice 28 is implemented and verified. P14 is complete, there is no active slice, and the last full four-command verification sweep passed after plugin-scope doc/test drift fixes.
+
+hard_blockers_to_escalate:
+  - Required edits outside the two plugin directories
+  - Multi-node, shared-storage, or distributed-locking requirements
+  - Inability to preserve current transcript-ready, transcript-error, retry, continue, or visit-button behavior
+  - Inability to resolve current guild membership and role state through the running bot without src/** changes
+  - Discovery that the locked Editor-only visual scope cannot be enforced without exposing raw JSON, transcript, or runtime actions

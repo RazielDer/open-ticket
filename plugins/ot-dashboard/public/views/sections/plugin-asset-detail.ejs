@@ -1,0 +1,66 @@
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("pluginAsset.reviewTitle") %></h3>
+  </div>
+  <div class="subsection-card">
+    <div class="section-heading">
+      <h4><%= detail.asset.relativePath %></h4>
+      <div class="pill-list">
+        <span class="pill-tag"><%= detail.asset.kind %></span>
+        <span class="pill-tag muted"><%= t("pluginAsset.detectedRoot") %>: <%= detail.asset.detectedRootShape %></span>
+      </div>
+    </div>
+    <p class="field-help"><%= t("pluginAsset.help") %></p>
+  </div>
+  <form method="post" action="<%= detail.asset.reviewAction %>" class="stack-form">
+    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+    <input type="hidden" name="sourceLabel" value="Plugin asset review">
+    <label class="field-label" for="pluginAssetDraft"><%= t("pluginAsset.draftLabel") %></label>
+    <textarea id="pluginAssetDraft" name="candidateText" class="code-area" spellcheck="false" data-json-editor="true"><%= detail.asset.currentText %></textarea>
+    <label class="field-label" for="pluginAssetFile"><%= t("pluginAsset.importLabel") %></label>
+    <input id="pluginAssetFile" type="file" accept=".json,application/json" data-load-json-into="#pluginAssetDraft">
+    <div class="sticky-actions">
+      <button class="btn primary" type="submit"><%= t("pluginAsset.reviewAction") %></button>
+      <a class="btn secondary" href="<%= detail.asset.exportHref %>"><%= t("pluginAsset.exportAction") %></a>
+    </div>
+  </form>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= t("pluginAsset.backupsTitle") %></h3>
+  </div>
+  <% if (detail.backupItems.length) { %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th><%= t("pluginAsset.backupsHeaders.id") %></th>
+            <th><%= t("pluginAsset.backupsHeaders.created") %></th>
+            <th><%= t("pluginAsset.backupsHeaders.source") %></th>
+            <th><%= t("pluginAsset.backupsHeaders.actions") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% detail.backupItems.forEach((backup) => { %>
+            <tr>
+              <td><%= backup.id %></td>
+              <td><%= backup.createdLabel %></td>
+              <td><%= backup.source %></td>
+              <td>
+                <div class="sticky-actions">
+                  <a class="btn subtle" href="<%= backup.restoreHref %>"><%= t("pluginAsset.restoreReviewAction") %></a>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("pluginAsset.backupsEmptyTitle") %></h3>
+      <p><%= t("pluginAsset.backupsEmptyBody") %></p>
+    </div>
+  <% } %>
+</section>

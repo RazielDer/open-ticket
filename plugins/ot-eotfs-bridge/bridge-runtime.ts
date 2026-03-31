@@ -1,0 +1,710 @@
+import {
+    BRIDGE_ACTION_ACCEPT,
+    BRIDGE_ACTION_DUPLICATE,
+    BRIDGE_ACTION_HARD_DENY,
+    BRIDGE_ACTION_REFRESH_STATUS,
+    BRIDGE_ACTION_RETRY,
+    BRIDGE_ACTION_RETRY_APPLY,
+    BRIDGE_BLOCK_STATE_HARD_DENY_MANUAL,
+    BRIDGE_BLOCK_STATE_HARD_DENY_PENDING,
+    BRIDGE_BLOCK_STATE_HARD_DENY_REPAIR_REQUIRED,
+    BRIDGE_BLOCK_STATE_LIMIT_LOCKOUT,
+    BRIDGE_BLOCK_STATE_NONE,
+    BRIDGE_BLOCK_STATE_RETRY_COOLDOWN,
+    BRIDGE_CASE_STATUS_ACCEPTED_APPLIED,
+    BRIDGE_CASE_STATUS_ACCEPTED_FAILED,
+    BRIDGE_CASE_STATUS_ACCEPTED_PENDING_APPLY,
+    BRIDGE_CASE_STATUS_DUPLICATE_REJECTED,
+    BRIDGE_CASE_STATUS_HARD_DENY_PENDING,
+    BRIDGE_CASE_STATUS_HARD_DENY_REPAIR_REQUIRED,
+    BRIDGE_CASE_STATUS_LIMIT_LOCKED,
+    BRIDGE_CASE_STATUS_PENDING_REVIEW,
+    BRIDGE_CASE_STATUS_RETRY_DENIED,
+    BRIDGE_MAX_POLL_ATTEMPTS,
+    BRIDGE_POLL_INTERVAL_MS,
+    BRIDGE_RENDER_STATE_DEGRADED,
+    BRIDGE_RENDER_STATE_UNSTAGED,
+    BRIDGE_TRANSCRIPT_ATTACHED_STATUS,
+    BridgeActionAvailability,
+    BridgeActionResponse,
+    BridgeCaseCreatedPayload,
+    BridgeCompletedFormSnapshot,
+    BridgeControlDescriptor,
+    BridgeCreateTicketDecision,
+    BridgeEligibilityResponse,
+    BridgeHandoffState,
+    BridgeOpenTicketSnapshot,
+    BridgeOptionLimitSnapshot,
+    BridgePolicySnapshot,
+    BridgeRenderState,
+    BridgeStatusResponse,
+    BridgeTicketContext,
+    BridgeTranscriptAttachedPayload,
+    applyTranscriptAttachment,
+    buildCaseCreatedPayload,
+    buildTranscriptAttachedPayload,
+    createHandoffState
+} from "./bridge-core"
+
+export type BridgeCaseCreatedPreparation =
+    | { status: "ready"; payload: BridgeCaseCreatedPayload }
+    | { status: "missing-form"; message: string }
+    | { status: "invalid-form"; message: string }
+    | { status: "already-bridged"; state: BridgeHandoffState }
+
+export type BridgeTranscriptAttachPreparation =
+    | { status: "ready"; payload: BridgeTranscriptAttachedPayload }
+    | { status: "ignored"; reason: "missing-state" | "missing-transcript-url" | "already-attached" }
+
+function asObject(value: unknown): Record<string, unknown> {
+    return value && typeof value == "object" ? value as Record<string, unknown> : {}
+}
+
+function asString(value: unknown, fallback: string = ""): string {
+    return typeof value == "string" ? value.trim() : fallback
+}
+
+function asNullableString(value: unknown): string | null {
+    const normalized = asString(value)
+    return normalized.length > 0 ? normalized : null
+}
+
+function asBoolean(value: unknown): boolean {
+    return value === true
+}
+
+function asNumber(value: unknown, fallback: number = 0): number {
+    if (typeof value == "number" && Number.isFinite(value)) return value
+    if (typeof value == "string" && value.trim().length > 0) {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed)) return parsed
+    }
+    return fallback
+}
+
+function asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    return value
+        .map((entry) => asString(entry))
+        .filter((entry) => entry.length > 0)
+}
+
+function addMilliseconds(isoTimestamp: string, milliseconds: number): string {
+    const base = Number.isFinite(Date.parse(isoTimestamp))
+        ? Date.parse(isoTimestamp)
+        : Date.now()
+    return new Date(base + milliseconds).toISOString()
+}
+
+function normalizePolicySnapshot(value: unknown): BridgePolicySnapshot {
+    const policy = asObject(value)
+    return {
+        max_retry_denials: asNumber(policy.max_retry_denials, 99),
+        retry_cooldown_minutes: asNumber(policy.retry_cooldown_minutes, 5),
+        limit_lockout_minutes: asNumber(policy.limit_lockout_minutes, 43_200),
+        next_retry_outcome: asString(policy.next_retry_outcome, BRIDGE_CASE_STATUS_RETRY_DENIED),
+        total_staged_attempts: asNumber(policy.total_staged_attempts, 0),
+        active_retry_denial_count: asNumber(policy.active_retry_denial_count, 0),
+        lifetime_retry_denial_count: asNumber(policy.lifetime_retry_denial_count, 0),
+        lifetime_limit_lockout_count: asNumber(policy.lifetime_limit_lockout_count, 0),
+        duplicate_rejection_count: asNumber(policy.duplicate_rejection_count, 0),
+        accept_count: asNumber(policy.accept_count, 0),
+        hard_deny_count: asNumber(policy.hard_deny_count, 0),
+        current_block_state: asString(policy.current_block_state, BRIDGE_BLOCK_STATE_NONE),
+        block_expires_at: asNullableString(policy.block_expires_at),
+        historical_alderon_ids: asStringArray(policy.historical_alderon_ids),
+        override_actor_user_id: policy.override_actor_user_id == null ? null : asNumber(policy.override_actor_user_id, 0),
+        override_reason: asNullableString(policy.override_reason),
+        override_updated_at: asNullableString(policy.override_updated_at)
+    }
+}
+
+function normalizeActionAvailability(value: unknown): BridgeActionAvailability {
+    const availability = asObject(value)
+    return {
+        accept: asBoolean(availability.accept),
+        retry: asBoolean(availability.retry),
+        duplicate: asBoolean(availability.duplicate),
+        hard_deny: asBoolean(availability.hard_deny),
+        retry_apply: asBoolean(availability.retry_apply),
+        refresh_status: asBoolean(availability.refresh_status),
+        accept_disabled_reason: asNullableString(availability.accept_disabled_reason),
+        retry_warning: asNullableString(availability.retry_warning)
+    }
+}
+
+export function normalizeEligibilityResponse(
+    value: unknown,
+    fallbackApplicantDiscordUserId: string
+): BridgeEligibilityResponse {
+    const payload = asObject(value)
+    return {
+        applicant_discord_user_id: asString(payload.applicant_discord_user_id, fallbackApplicantDiscordUserId),
+        eligible: asBoolean(payload.eligible),
+        current_block_state: asString(payload.current_block_state, BRIDGE_BLOCK_STATE_NONE),
+        block_expires_at: asNullableString(payload.block_expires_at),
+        policy: normalizePolicySnapshot(payload.policy)
+    }
+}
+
+export function normalizeStatusResponse(value: unknown): BridgeStatusResponse {
+    const payload = asObject(value)
+    return {
+        bridge_case_id: asString(payload.bridge_case_id),
+        source_ticket_ref: asString(payload.source_ticket_ref),
+        status: asString(payload.status, BRIDGE_CASE_STATUS_PENDING_REVIEW),
+        render_version: asNumber(payload.render_version, 1),
+        transcript_ready: asBoolean(payload.transcript_ready),
+        ticket_log_link: asNullableString(payload.ticket_log_link),
+        duplicate_active_whitelist: asBoolean(payload.duplicate_active_whitelist),
+        current_block_state: asString(payload.current_block_state, BRIDGE_BLOCK_STATE_NONE),
+        block_expires_at: asNullableString(payload.block_expires_at),
+        policy: normalizePolicySnapshot(payload.policy),
+        action_availability: normalizeActionAvailability(payload.action_availability),
+        apply_closeout_state: asString(payload.apply_closeout_state, "ticket_open"),
+        reviewed_hard_deny_targets: asStringArray(payload.reviewed_hard_deny_targets)
+    }
+}
+
+export function normalizeActionResponse(value: unknown): BridgeActionResponse {
+    const payload = asObject(value)
+    const statusPayload = normalizeStatusResponse(payload)
+    return {
+        ...statusPayload,
+        action_kind: asString(payload.action_kind),
+        close_ticket_ready: asBoolean(payload.close_ticket_ready),
+        apply_request_id: asNullableString(payload.apply_request_id),
+        approval_id: asNullableString(payload.approval_id),
+        player_visible_critique: asNullableString(payload.player_visible_critique)
+    }
+}
+
+export function createInitialBridgeState(
+    ticketChannelId: string,
+    targetGroupKey: string,
+    applicantDiscordUserId: string,
+    ticketCreatorDiscordUserId: string | null,
+    updatedAt: string
+): BridgeHandoffState {
+    const normalizedApplicantDiscordUserId = asString(applicantDiscordUserId, "unknown") || "unknown"
+    const normalizedTicketCreatorDiscordUserId = asNullableString(ticketCreatorDiscordUserId)
+    return {
+        ticketChannelId,
+        sourceTicketRef: `ot:${ticketChannelId}`,
+        bridgeCaseId: null,
+        ticketRef: `ot:${ticketChannelId}`,
+        targetGroupKey: asString(targetGroupKey),
+        applicantDiscordUserId: normalizedApplicantDiscordUserId,
+        ticketCreatorDiscordUserId: normalizedTicketCreatorDiscordUserId,
+        creatorTransferDetected: normalizedTicketCreatorDiscordUserId !== null && normalizedTicketCreatorDiscordUserId != normalizedApplicantDiscordUserId,
+        createdEventId: null,
+        transcriptEventId: null,
+        transcriptUrl: null,
+        transcriptStatus: null,
+        controlMessageId: null,
+        lastRenderedState: BRIDGE_RENDER_STATE_UNSTAGED,
+        renderVersion: 0,
+        lastPolicySnapshot: null,
+        lastStatus: null,
+        pollAttemptCount: 0,
+        lastPolledAt: null,
+        nextPollAt: null,
+        lastPollError: null,
+        degradedReason: null,
+        updatedAt
+    }
+}
+
+export function normalizeBridgeState(state: BridgeHandoffState): BridgeHandoffState {
+    const fallback = createInitialBridgeState(
+        state.ticketChannelId,
+        state.targetGroupKey,
+        state.applicantDiscordUserId,
+        state.ticketCreatorDiscordUserId,
+        state.updatedAt
+    )
+    const bridgeCaseId = asNullableString(state.bridgeCaseId)
+    const ticketRef = asString(state.ticketRef, fallback.ticketRef) || fallback.ticketRef
+    const applicantDiscordUserId = asString(state.applicantDiscordUserId, fallback.applicantDiscordUserId) || fallback.applicantDiscordUserId
+    const ticketCreatorDiscordUserId = asNullableString(state.ticketCreatorDiscordUserId)
+    return {
+        ...fallback,
+        bridgeCaseId,
+        ticketRef,
+        applicantDiscordUserId,
+        ticketCreatorDiscordUserId,
+        creatorTransferDetected: ticketCreatorDiscordUserId !== null && ticketCreatorDiscordUserId != applicantDiscordUserId,
+        createdEventId: asNullableString(state.createdEventId),
+        transcriptEventId: asNullableString(state.transcriptEventId),
+        transcriptUrl: asNullableString(state.transcriptUrl),
+        transcriptStatus: asNullableString(state.transcriptStatus),
+        controlMessageId: asNullableString(state.controlMessageId),
+        lastRenderedState: (asNullableString(state.lastRenderedState) as BridgeRenderState | null) ?? fallback.lastRenderedState,
+        renderVersion: asNumber(state.renderVersion, 0),
+        lastPolicySnapshot: state.lastPolicySnapshot ? normalizePolicySnapshot(state.lastPolicySnapshot) : null,
+        lastStatus: state.lastStatus ? normalizeStatusResponse(state.lastStatus) : null,
+        pollAttemptCount: asNumber(state.pollAttemptCount, 0),
+        lastPolledAt: asNullableString(state.lastPolledAt),
+        nextPollAt: asNullableString(state.nextPollAt),
+        lastPollError: asNullableString(state.lastPollError),
+        degradedReason: asNullableString(state.degradedReason),
+        updatedAt: asString(state.updatedAt, fallback.updatedAt)
+    }
+}
+
+export function updateTicketCreatorSnapshot(
+    state: BridgeHandoffState,
+    ticketCreatorDiscordUserId: string | null,
+    updatedAt: string
+): BridgeHandoffState {
+    const normalized = asNullableString(ticketCreatorDiscordUserId)
+    return {
+        ...state,
+        ticketCreatorDiscordUserId: normalized,
+        creatorTransferDetected: normalized !== null && normalized != state.applicantDiscordUserId,
+        updatedAt
+    }
+}
+
+export function markBridgeRendered(
+    state: BridgeHandoffState,
+    controlMessageId: string,
+    renderState: BridgeRenderState,
+    updatedAt: string
+): BridgeHandoffState {
+    return {
+        ...state,
+        controlMessageId,
+        lastRenderedState: renderState,
+        renderVersion: state.renderVersion + 1,
+        updatedAt
+    }
+}
+
+export function markBridgeDegraded(
+    state: BridgeHandoffState,
+    reason: string,
+    updatedAt: string
+): BridgeHandoffState {
+    return {
+        ...state,
+        degradedReason: asString(reason, "Bridge connectivity is degraded."),
+        lastRenderedState: BRIDGE_RENDER_STATE_DEGRADED,
+        lastPollError: asString(reason, "Bridge connectivity is degraded."),
+        updatedAt
+    }
+}
+
+export function clearBridgeDegraded(state: BridgeHandoffState, updatedAt: string): BridgeHandoffState {
+    return {
+        ...state,
+        degradedReason: null,
+        lastPollError: null,
+        updatedAt
+    }
+}
+
+export function beginBridgePolling(
+    state: BridgeHandoffState,
+    updatedAt: string,
+    intervalMs: number = BRIDGE_POLL_INTERVAL_MS
+): BridgeHandoffState {
+    return {
+        ...state,
+        pollAttemptCount: 0,
+        lastPolledAt: null,
+        nextPollAt: addMilliseconds(updatedAt, intervalMs),
+        lastPollError: null,
+        updatedAt
+    }
+}
+
+export function advanceBridgePolling(
+    state: BridgeHandoffState,
+    updatedAt: string,
+    error: string | null,
+    intervalMs: number = BRIDGE_POLL_INTERVAL_MS
+): BridgeHandoffState {
+    return {
+        ...state,
+        pollAttemptCount: state.pollAttemptCount + 1,
+        lastPolledAt: updatedAt,
+        nextPollAt: addMilliseconds(updatedAt, intervalMs),
+        lastPollError: error,
+        updatedAt
+    }
+}
+
+export function stopBridgePolling(state: BridgeHandoffState, updatedAt: string): BridgeHandoffState {
+    return {
+        ...state,
+        nextPollAt: null,
+        lastPollError: null,
+        updatedAt
+    }
+}
+
+export function shouldPollBridgeState(
+    state: BridgeHandoffState,
+    now: string,
+    maxAttempts: number = BRIDGE_MAX_POLL_ATTEMPTS
+): boolean {
+    if (!state.nextPollAt) return false
+    if (state.pollAttemptCount >= maxAttempts) return false
+    if (!state.degradedReason && state.lastStatus?.status != BRIDGE_CASE_STATUS_ACCEPTED_PENDING_APPLY) {
+        return false
+    }
+    return Date.parse(now) >= Date.parse(state.nextPollAt)
+}
+
+export function applyBridgeStatus(
+    state: BridgeHandoffState,
+    status: BridgeStatusResponse,
+    updatedAt: string
+): BridgeHandoffState {
+    return {
+        ...state,
+        bridgeCaseId: status.bridge_case_id || state.bridgeCaseId,
+        ticketRef: status.source_ticket_ref || state.ticketRef,
+        transcriptUrl: status.ticket_log_link ?? state.transcriptUrl,
+        transcriptStatus: status.transcript_ready
+            ? BRIDGE_TRANSCRIPT_ATTACHED_STATUS
+            : state.transcriptStatus,
+        lastPolicySnapshot: status.policy,
+        lastStatus: status,
+        degradedReason: null,
+        lastPollError: null,
+        updatedAt
+    }
+}
+
+export function applyBridgeAction(
+    state: BridgeHandoffState,
+    action: BridgeActionResponse,
+    updatedAt: string
+): BridgeHandoffState {
+    return applyBridgeStatus(
+        {
+            ...state,
+            lastRenderedState: action.status as BridgeRenderState
+        },
+        action,
+        updatedAt
+    )
+}
+
+export function prepareCaseCreatedEvent(
+    ticket: BridgeTicketContext,
+    completedForm: BridgeCompletedFormSnapshot | null,
+    handoffDiscordUserId: string,
+    targetGroupKey: string,
+    existingState: BridgeHandoffState | null
+): BridgeCaseCreatedPreparation {
+    if (existingState?.bridgeCaseId) {
+        return {
+            status: "already-bridged",
+            state: existingState
+        }
+    }
+
+    if (!completedForm) {
+        return {
+            status: "missing-form",
+            message: "Complete the whitelist review form before sending this ticket to whitelist review."
+        }
+    }
+
+    try {
+        return {
+            status: "ready",
+            payload: buildCaseCreatedPayload(ticket, completedForm, handoffDiscordUserId, targetGroupKey)
+        }
+    } catch (error) {
+        return {
+            status: "invalid-form",
+            message: error instanceof Error ? error.message : "Unable to build the whitelist bridge payload."
+        }
+    }
+}
+
+export function finalizeCaseCreatedEvent(
+    ticketChannelId: string,
+    targetGroupKey: string,
+    eventId: string,
+    updatedAt: string,
+    ack: { caseId: string; ticketRef: string; duplicate: boolean },
+    applicantDiscordUserId: string,
+    ticketCreatorDiscordUserId: string | null
+): BridgeHandoffState {
+    return createHandoffState(
+        ticketChannelId,
+        targetGroupKey,
+        eventId,
+        ack,
+        updatedAt,
+        applicantDiscordUserId,
+        ticketCreatorDiscordUserId
+    )
+}
+
+export function prepareTranscriptAttachedEvent(
+    ticketChannelId: string,
+    transcriptUrl: string | null,
+    existingState: BridgeHandoffState | null
+): BridgeTranscriptAttachPreparation {
+    if (!existingState || !existingState.bridgeCaseId || existingState.bridgeCaseId.trim().length < 1) {
+        return {
+            status: "ignored",
+            reason: "missing-state"
+        }
+    }
+
+    if (!transcriptUrl || transcriptUrl.trim().length < 1) {
+        return {
+            status: "ignored",
+            reason: "missing-transcript-url"
+        }
+    }
+
+    if (existingState.transcriptUrl == transcriptUrl && existingState.transcriptStatus == BRIDGE_TRANSCRIPT_ATTACHED_STATUS) {
+        return {
+            status: "ignored",
+            reason: "already-attached"
+        }
+    }
+
+    return {
+        status: "ready",
+        payload: buildTranscriptAttachedPayload(ticketChannelId, transcriptUrl, BRIDGE_TRANSCRIPT_ATTACHED_STATUS)
+    }
+}
+
+export function finalizeTranscriptAttachedEvent(
+    existingState: BridgeHandoffState,
+    eventId: string,
+    transcriptUrl: string,
+    updatedAt: string
+): BridgeHandoffState {
+    return applyTranscriptAttachment(existingState, eventId, transcriptUrl, BRIDGE_TRANSCRIPT_ATTACHED_STATUS, updatedAt)
+}
+
+function formatPolicyLines(policy: BridgePolicySnapshot | null): string[] {
+    if (!policy) return []
+    const lines = [
+        `Retry ladder: active ${policy.active_retry_denial_count}/${policy.max_retry_denials}, lifetime ${policy.lifetime_retry_denial_count}`,
+        `Limit lockouts: ${policy.lifetime_limit_lockout_count}; duplicates: ${policy.duplicate_rejection_count}; accepts: ${policy.accept_count}; hard denies: ${policy.hard_deny_count}`
+    ]
+    if (policy.current_block_state != BRIDGE_BLOCK_STATE_NONE) {
+        lines.push(
+            policy.block_expires_at
+                ? `Current block: \`${policy.current_block_state}\` until ${policy.block_expires_at}`
+                : `Current block: \`${policy.current_block_state}\``
+        )
+    }
+    return lines
+}
+
+export function buildBridgeControlDescriptor(state: BridgeHandoffState): BridgeControlDescriptor {
+    const lines: string[] = ["Whitelist intake adjudication control."]
+    const buttons: BridgeControlDescriptor["buttons"] = []
+    const status = state.lastStatus
+    const renderState: BridgeRenderState = state.degradedReason
+        ? BRIDGE_RENDER_STATE_DEGRADED
+        : (status?.status as BridgeRenderState | undefined) ?? BRIDGE_RENDER_STATE_UNSTAGED
+
+    if (state.bridgeCaseId) {
+        lines.push(`Ticket ref: \`${state.ticketRef}\``)
+        lines.push(`Case id: \`${state.bridgeCaseId}\``)
+    }
+
+    if (state.creatorTransferDetected) {
+        lines.push(
+            `Warning: applicant \`${state.applicantDiscordUserId}\` differs from current ticket owner \`${state.ticketCreatorDiscordUserId ?? "unknown"}\`. Attempt history stays pinned to the original applicant.`
+        )
+    } else {
+        lines.push(`Applicant Discord id: \`${state.applicantDiscordUserId}\``)
+    }
+
+    if (state.degradedReason) {
+        lines.push(`Bridge degraded: ${state.degradedReason}`)
+        lines.push("Controls are disabled until recovery.")
+    }
+
+    if (!status) {
+        if (!state.bridgeCaseId) {
+            lines.push("Complete the whitelist review form first, then send this ticket to whitelist review.")
+            buttons.push({
+                action: "send",
+                label: "Send to whitelist review",
+                style: "success",
+                disabled: state.degradedReason !== null
+            })
+        }
+        return { renderState, lines, buttons }
+    }
+
+    lines.push(`Status: \`${status.status}\``)
+    lines.push(
+        status.transcript_ready && status.ticket_log_link
+            ? `Transcript: ${status.ticket_log_link}`
+            : "Transcript: pending"
+    )
+    lines.push(`Apply closeout: \`${status.apply_closeout_state}\``)
+    lines.push(...formatPolicyLines(state.lastPolicySnapshot ?? status.policy))
+    if (status.duplicate_active_whitelist) {
+        lines.push("Duplicate advisory: the applicant already has an active whitelist.")
+    }
+    if (status.action_availability.accept_disabled_reason) {
+        lines.push(`Accept disabled: ${status.action_availability.accept_disabled_reason}`)
+    }
+    if (status.action_availability.retry_warning) {
+        lines.push(`Warning: ${status.action_availability.retry_warning}`)
+    }
+    if (status.reviewed_hard_deny_targets.length > 0) {
+        lines.push(`Reviewed hard-deny targets: ${status.reviewed_hard_deny_targets.join(", ")}`)
+    }
+
+    const disableAll = state.degradedReason !== null
+    if (
+        status.status == BRIDGE_CASE_STATUS_PENDING_REVIEW
+        || status.status == BRIDGE_CASE_STATUS_RETRY_DENIED
+        || status.status == BRIDGE_CASE_STATUS_LIMIT_LOCKED
+    ) {
+        if (status.duplicate_active_whitelist) {
+            buttons.push(
+                {
+                    action: "duplicate",
+                    label: "Close as Duplicate",
+                    style: "primary",
+                    disabled: disableAll || !status.action_availability.duplicate
+                },
+                {
+                    action: "refresh_status",
+                    label: "Refresh Status",
+                    style: "secondary",
+                    disabled: disableAll || !status.action_availability.refresh_status
+                }
+            )
+        } else {
+            buttons.push(
+                {
+                    action: "accept",
+                    label: "Accept",
+                    style: "success",
+                    disabled: disableAll || !status.action_availability.accept
+                },
+                {
+                    action: "retry",
+                    label: "Retry",
+                    style: "primary",
+                    disabled: disableAll || !status.action_availability.retry
+                },
+                {
+                    action: "hard_deny_review",
+                    label: "Hard Deny",
+                    style: "danger",
+                    disabled: disableAll || !status.action_availability.hard_deny
+                }
+            )
+        }
+    } else if (status.status == BRIDGE_CASE_STATUS_ACCEPTED_FAILED) {
+        buttons.push(
+            {
+                action: "retry_apply",
+                label: "Retry Apply",
+                style: "primary",
+                disabled: disableAll || !status.action_availability.retry_apply
+            },
+            {
+                action: "refresh_status",
+                label: "Refresh Status",
+                style: "secondary",
+                disabled: disableAll || !status.action_availability.refresh_status
+            }
+        )
+    } else if (status.status == BRIDGE_CASE_STATUS_ACCEPTED_PENDING_APPLY) {
+        buttons.push({
+            action: "refresh_status",
+            label: "Refresh Status",
+            style: "secondary",
+            disabled: disableAll || !status.action_availability.refresh_status
+        })
+    } else if (
+        status.status == BRIDGE_CASE_STATUS_HARD_DENY_PENDING
+        || status.status == BRIDGE_CASE_STATUS_HARD_DENY_REPAIR_REQUIRED
+        || status.status == BRIDGE_CASE_STATUS_DUPLICATE_REJECTED
+    ) {
+        buttons.push({
+            action: "refresh_status",
+            label: "Refresh Status",
+            style: "secondary",
+            disabled: disableAll || !status.action_availability.refresh_status
+        })
+    }
+
+    return { renderState, lines, buttons }
+}
+
+export function describeEligibilityBlock(response: BridgeEligibilityResponse): string {
+    const until = response.block_expires_at ? ` until ${response.block_expires_at}` : ""
+    switch (response.current_block_state) {
+        case BRIDGE_BLOCK_STATE_RETRY_COOLDOWN:
+            return `You cannot create another whitelist ticket while retry cooldown is active${until}.`
+        case BRIDGE_BLOCK_STATE_LIMIT_LOCKOUT:
+            return `You cannot create another whitelist ticket while the limit lockout is active${until}.`
+        case BRIDGE_BLOCK_STATE_HARD_DENY_PENDING:
+        case BRIDGE_BLOCK_STATE_HARD_DENY_REPAIR_REQUIRED:
+        case BRIDGE_BLOCK_STATE_HARD_DENY_MANUAL:
+            return `You cannot create another whitelist ticket while a hard block is active${until}.`
+        default:
+            return "You cannot create another whitelist ticket right now."
+    }
+}
+
+export function evaluateCreateTicketDecision(
+    optionId: string,
+    eligibleOptionIds: readonly string[],
+    applicantDiscordUserId: string,
+    openTickets: readonly BridgeOpenTicketSnapshot[],
+    eligibility: BridgeEligibilityResponse | null,
+    degradedReason: string | null
+): BridgeCreateTicketDecision {
+    if (!eligibleOptionIds.includes(optionId)) {
+        return { allow: true, reason: null, failOpen: false }
+    }
+    const normalizedApplicantDiscordUserId = asString(applicantDiscordUserId)
+    const liveWhitelistTicket = openTickets.find((ticket) => {
+        if (ticket.closed) return false
+        if (!eligibleOptionIds.includes(ticket.optionId)) return false
+        return asString(ticket.creatorDiscordUserId) == normalizedApplicantDiscordUserId
+    })
+    if (liveWhitelistTicket) {
+        return {
+            allow: false,
+            reason: "You already have an open whitelist ticket. Use the existing ticket instead of creating another one.",
+            failOpen: false
+        }
+    }
+    if (degradedReason) {
+        return { allow: true, reason: null, failOpen: true }
+    }
+    if (!eligibility || eligibility.eligible) {
+        return { allow: true, reason: null, failOpen: false }
+    }
+    if (eligibility.current_block_state == BRIDGE_BLOCK_STATE_NONE) {
+        return { allow: true, reason: null, failOpen: false }
+    }
+    return {
+        allow: false,
+        reason: describeEligibilityBlock(eligibility),
+        failOpen: false
+    }
+}
+
+export function findMisconfiguredEligibleOptionIds(
+    optionSnapshots: readonly BridgeOptionLimitSnapshot[]
+): string[] {
+    return optionSnapshots
+        .filter((snapshot) => !snapshot.limitsEnabled || snapshot.userMaximum != 1)
+        .map((snapshot) => snapshot.optionId)
+}

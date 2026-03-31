@@ -1,0 +1,107 @@
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.security.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.security.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.security.links.forEach((link) => { %>
+      <article class="item-card">
+        <h3><%= link.label %></h3>
+        <p class="item-copy"><%= advancedModel.sections.security.description %></p>
+        <div class="card-actions">
+          <a class="btn secondary" href="<%= link.href %>"><%= link.label %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.systemStatus.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.systemStatus.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.systemStatus.links.forEach((link) => { %>
+      <article class="item-card">
+        <h3><%= link.label %></h3>
+        <p class="item-copy"><%= advancedModel.sections.systemStatus.description %></p>
+        <div class="card-actions">
+          <a class="btn secondary" href="<%= link.href %>"><%= link.label %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.backups.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.backups.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.backups.links.forEach((link) => { %>
+      <article class="item-card">
+        <h3><%= link.label %></h3>
+        <p class="item-copy"><%= advancedModel.sections.backups.description %></p>
+        <div class="card-actions">
+          <a class="btn secondary" href="<%= link.href %>"><%= link.label %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.editors.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.editors.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.editors.items.forEach((item) => { %>
+      <article class="config-card">
+        <h3><%= item.title %></h3>
+        <p><%= item.description %></p>
+        <div class="card-actions">
+          <a class="btn subtle" href="<%= item.href %>"><%= t("common.rawEditor") %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.plugins.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.plugins.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.plugins.links.forEach((link) => { %>
+      <article class="item-card">
+        <h3><%= link.label %></h3>
+        <p class="item-copy"><%= advancedModel.sections.plugins.description %></p>
+        <div class="card-actions">
+          <a class="btn secondary" href="<%= link.href %>"><%= link.label %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="section-heading">
+    <h3><%= advancedModel.sections.diagnostics.title %></h3>
+  </div>
+  <p class="item-copy"><%= advancedModel.sections.diagnostics.description %></p>
+  <div class="card-grid">
+    <% advancedModel.sections.diagnostics.links.forEach((link) => { %>
+      <article class="item-card">
+        <h3><%= link.label %></h3>
+        <p class="item-copy"><%= advancedModel.sections.diagnostics.description %></p>
+        <div class="card-actions">
+          <a class="btn subtle" href="<%= link.href %>" <% if (link.target) { %>target="<%= link.target %>"<% } %> <% if (link.rel) { %>rel="<%= link.rel %>"<% } %>><%= link.label %></a>
+        </div>
+      </article>
+    <% }) %>
+  </div>
+</section>

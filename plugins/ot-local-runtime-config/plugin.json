@@ -1,0 +1,25 @@
+{
+    "name":"OT Local Runtime Config",
+    "id":"ot-local-runtime-config",
+    "version":"1.0.0",
+    "startFile":"index.ts",
+    "supportedVersions":["OTv4.1.x"],
+
+    "enabled":true,
+    "priority":100,
+    "events":[],
+
+    "npmDependencies":[],
+    "requiredPlugins":[],
+    "incompatiblePlugins":[],
+
+    "details":{
+        "author":"local",
+        "contributors":[],
+        "shortDescription":"Applies local runtime-only config normalization without changing tracked Open Ticket files.",
+        "longDescription":"This plugin fixes placeholder config values in memory so the checker can pass while the upstream repository stays unchanged on disk.",
+        "imageUrl":"",
+        "projectUrl":"",
+        "tags":["local","config","runtime"]
+    }
+}

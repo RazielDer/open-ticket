@@ -1,0 +1,28 @@
+{
+  "name": "OT-Dashboard",
+  "id": "ot-dashboard",
+  "version": "1.0.0",
+  "startFile": "start.ts",
+  "enabled": true,
+  "priority": 50,
+  "events": [],
+  "npmDependencies": [
+    "express",
+    "ejs",
+    "helmet",
+    "compression",
+    "serve-favicon",
+    "express-session",
+    "sqlite3"
+  ],
+  "requiredPlugins": [],
+  "incompatiblePlugins": [],
+  "details": {
+    "author": "e4Studio/e4vizz",
+    "shortDescription": "A configurable web dashboard for Open Ticket.",
+    "longDescription": "A professional dashboard for Open Ticket where you can configure the bot easily and fast.",
+    "imageUrl": "",
+    "projectUrl": "https://e4studio.dev/open-ticket/ot-dashboard",
+    "tags": ["dashboard", "web", "ui", "configuration", "tickets", "opendiscord", "ot", "e4studio",  "e4vizz", "open-ticket", "plugin"]
+  }
+}
