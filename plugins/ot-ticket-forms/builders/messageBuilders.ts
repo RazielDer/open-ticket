@@ -9,12 +9,16 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
     messages.add(new api.ODMessage("ot-ticket-forms:start-form-message"));
     messages.get("ot-ticket-forms:start-form-message").workers.add(
         new api.ODWorker("ot-ticket-forms:start-form-message", 0, async (instance, params, source, cancel) => {
-            const { formInstanceId, formName, formDescription, formColor, acceptAnswers } = params;
+            const { formInstanceId, formName, formDescription, formColor, acceptAnswers, buttonLabel } = params;
             instance.setEmbeds(
                 await opendiscord.builders.embeds.getSafe("ot-ticket-forms:start-form-embed").build(source, { formName, formDescription, formColor })
             );
             instance.addComponent(
-                await opendiscord.builders.buttons.getSafe("ot-ticket-forms:start-form-button").build(source, { formInstanceId, enabled: acceptAnswers })
+                await opendiscord.builders.buttons.getSafe("ot-ticket-forms:start-form-button").build(source, {
+                    formInstanceId,
+                    enabled: acceptAnswers,
+                    label: buttonLabel
+                })
             );
         })
     );
@@ -25,12 +29,17 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
     messages.add(new api.ODMessage("ot-ticket-forms:continue-message"));
     messages.get("ot-ticket-forms:continue-message").workers.add(
         new api.ODWorker("ot-ticket-forms:continue-message", 0, async (instance, params, source, cancel) => {
-            const { formInstanceId, sessionId, currentSection, totalSections, formColor } = params;
+            const { formInstanceId, sessionId, currentSection, totalSections, formColor, displayMode } = params;
             instance.setEmbeds(
-                await opendiscord.builders.embeds.getSafe("ot-ticket-forms:continue-embed").build(source, { currentSection, totalSections, formColor })
+                await opendiscord.builders.embeds.getSafe("ot-ticket-forms:continue-embed").build(source, {
+                    currentSection,
+                    totalSections,
+                    formColor,
+                    displayMode
+                })
             );
             instance.setEphemeral(true);
-            if(currentSection <= totalSections) {
+            if(displayMode == "continue_prompt" && currentSection <= totalSections) {
                 instance.addComponent(
                     await opendiscord.builders.buttons.getSafe("ot-ticket-forms:continue-button").build(source, { formInstanceId, sessionId })
                 );
@@ -44,16 +53,35 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
     messages.add(new api.ODMessage("ot-ticket-forms:question-message"));
     messages.get("ot-ticket-forms:question-message").workers.add(
         new api.ODWorker("ot-ticket-forms:question-message", 0, async (instance, params, source, cancel) => {
-            const { formId, formInstanceId, sessionId, question, currentSection, totalSections, formColor } = params;
+            const {
+                formId,
+                formInstanceId,
+                sessionId,
+                question,
+                currentSection,
+                totalSections,
+                formColor,
+                savedAnswer,
+                displayMode
+            } = params;
             instance.setEmbeds(
-                await opendiscord.builders.embeds.getSafe("ot-ticket-forms:question-embed").build(source, { question, currentSection, totalSections, formColor })
+                await opendiscord.builders.embeds.getSafe("ot-ticket-forms:question-embed").build(source, {
+                    question,
+                    currentSection,
+                    totalSections,
+                    formColor,
+                    savedAnswer,
+                    displayMode
+                })
             );
-            if ( question.type === "dropdown" ) {
-                instance.addComponent(await opendiscord.builders.dropdowns.getSafe("ot-ticket-forms:question-dropdown").build(source, { formId, formInstanceId, sessionId, choices: question.choices, minValues: question.minAnswerChoices, maxValues: question.maxAnswerChoices, placeholder: question.placeholder }));
-            } else {
-                for(const choice of question.choices) {
-                    instance.addComponent(await opendiscord.builders.buttons.getSafe("ot-ticket-forms:question-button").build(source, { formInstanceId, sessionId: sessionId, choice }));
-                };
+            if (displayMode == "live_prompt") {
+                if ( question.type === "dropdown" ) {
+                    instance.addComponent(await opendiscord.builders.dropdowns.getSafe("ot-ticket-forms:question-dropdown").build(source, { formId, formInstanceId, sessionId, choices: question.choices, minValues: question.minAnswerChoices, maxValues: question.maxAnswerChoices, placeholder: question.placeholder, savedAnswer }));
+                } else {
+                    for(const choice of question.choices) {
+                        instance.addComponent(await opendiscord.builders.buttons.getSafe("ot-ticket-forms:question-button").build(source, { formInstanceId, sessionId: sessionId, choice }));
+                    };
+                }
             }
             instance.setEphemeral(true);
         }

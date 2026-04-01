@@ -1,6 +1,7 @@
 import {
     BRIDGE_ACTION_ACCEPT,
     BRIDGE_ACTION_DUPLICATE,
+    BRIDGE_ACTION_REFRESH_REVIEW_PACKET,
     BRIDGE_ACTION_HARD_DENY,
     BRIDGE_ACTION_REFRESH_STATUS,
     BRIDGE_ACTION_RETRY,
@@ -22,6 +23,7 @@ import {
     BRIDGE_CASE_STATUS_RETRY_DENIED,
     BRIDGE_MAX_POLL_ATTEMPTS,
     BRIDGE_POLL_INTERVAL_MS,
+    BRIDGE_REVIEWABLE_CASE_STATUSES,
     BRIDGE_RENDER_STATE_DEGRADED,
     BRIDGE_RENDER_STATE_UNSTAGED,
     BRIDGE_TRANSCRIPT_ATTACHED_STATUS,
@@ -29,6 +31,7 @@ import {
     BridgeActionResponse,
     BridgeCaseCreatedPayload,
     BridgeCompletedFormSnapshot,
+    BridgeFormContractData,
     BridgeControlDescriptor,
     BridgeCreateTicketDecision,
     BridgeEligibilityResponse,
@@ -43,14 +46,16 @@ import {
     applyTranscriptAttachment,
     buildCaseCreatedPayload,
     buildTranscriptAttachedPayload,
-    createHandoffState
+    createHandoffState,
+    validateCompletedFormForHandoff
 } from "./bridge-core"
 
 export type BridgeCaseCreatedPreparation =
-    | { status: "ready"; payload: BridgeCaseCreatedPayload }
+    | { status: "ready"; payload: BridgeCaseCreatedPayload; mode: "initial" | "refresh" }
     | { status: "missing-form"; message: string }
     | { status: "invalid-form"; message: string }
     | { status: "already-bridged"; state: BridgeHandoffState }
+    | { status: "refresh-blocked"; state: BridgeHandoffState; message: string }
 
 export type BridgeTranscriptAttachPreparation =
     | { status: "ready"; payload: BridgeTranscriptAttachedPayload }
@@ -177,6 +182,12 @@ export function normalizeActionResponse(value: unknown): BridgeActionResponse {
         approval_id: asNullableString(payload.approval_id),
         player_visible_critique: asNullableString(payload.player_visible_critique)
     }
+}
+
+export function isReviewableBridgeStatus(status: string | null | undefined): boolean {
+    return BRIDGE_REVIEWABLE_CASE_STATUSES.includes(
+        (status ?? "") as typeof BRIDGE_REVIEWABLE_CASE_STATUSES[number]
+    )
 }
 
 export function createInitialBridgeState(
@@ -398,26 +409,64 @@ export function prepareCaseCreatedEvent(
     completedForm: BridgeCompletedFormSnapshot | null,
     handoffDiscordUserId: string,
     targetGroupKey: string,
-    existingState: BridgeHandoffState | null
+    formContract: BridgeFormContractData,
+    acceptedRulesPasswords: readonly string[],
+    existingState: BridgeHandoffState | null,
+    options: { allowRefresh?: boolean; creatorIdentityAliases?: readonly string[] | null } = {}
 ): BridgeCaseCreatedPreparation {
     if (existingState?.bridgeCaseId) {
-        return {
-            status: "already-bridged",
-            state: existingState
+        if (options.allowRefresh) {
+            if (isReviewableBridgeStatus(existingState.lastStatus?.status)) {
+                // continue and rebuild the review packet from the latest completed form snapshot
+            } else {
+                return {
+                    status: "refresh-blocked",
+                    state: existingState,
+                    message: "Refresh Review Packet is only available while the Discord-side case remains pending_review, retry_denied, or limit_locked."
+                }
+            }
+        } else {
+            return {
+                status: "already-bridged",
+                state: existingState
+            }
         }
     }
 
     if (!completedForm) {
         return {
             status: "missing-form",
-            message: "Complete the whitelist review form before sending this ticket to whitelist review."
+            message: "Complete the whitelist application form before sending this ticket to staff review."
+        }
+    }
+
+    const validation = validateCompletedFormForHandoff(
+        completedForm,
+        formContract,
+        acceptedRulesPasswords,
+        options.creatorIdentityAliases ?? null
+    )
+    if (!validation.ok) {
+        return {
+            status: "invalid-form",
+            message: [
+                "Update the whitelist application before sending this ticket to staff review:",
+                ...validation.errors.map((error) => `- ${error}`)
+            ].join("\n")
         }
     }
 
     try {
         return {
             status: "ready",
-            payload: buildCaseCreatedPayload(ticket, completedForm, handoffDiscordUserId, targetGroupKey)
+            mode: options.allowRefresh ? "refresh" : "initial",
+            payload: buildCaseCreatedPayload(
+                ticket,
+                completedForm,
+                handoffDiscordUserId,
+                targetGroupKey,
+                validation.alderonIds
+            )
         }
     } catch (error) {
         return {
@@ -488,6 +537,17 @@ export function finalizeTranscriptAttachedEvent(
     return applyTranscriptAttachment(existingState, eventId, transcriptUrl, BRIDGE_TRANSCRIPT_ATTACHED_STATUS, updatedAt)
 }
 
+export function shouldRecreateBridgeControlForPlacement(
+    controlMessageCreatedTimestamp: number | null | undefined,
+    applicantStartMessageCreatedTimestamp: number | null | undefined
+): boolean {
+    return typeof controlMessageCreatedTimestamp == "number"
+        && Number.isFinite(controlMessageCreatedTimestamp)
+        && typeof applicantStartMessageCreatedTimestamp == "number"
+        && Number.isFinite(applicantStartMessageCreatedTimestamp)
+        && controlMessageCreatedTimestamp < applicantStartMessageCreatedTimestamp
+}
+
 function formatPolicyLines(policy: BridgePolicySnapshot | null): string[] {
     if (!policy) return []
     const lines = [
@@ -505,7 +565,7 @@ function formatPolicyLines(policy: BridgePolicySnapshot | null): string[] {
 }
 
 export function buildBridgeControlDescriptor(state: BridgeHandoffState): BridgeControlDescriptor {
-    const lines: string[] = ["Whitelist intake adjudication control."]
+    const lines: string[] = ["Staff whitelist review control."]
     const buttons: BridgeControlDescriptor["buttons"] = []
     const status = state.lastStatus
     const renderState: BridgeRenderState = state.degradedReason
@@ -532,10 +592,10 @@ export function buildBridgeControlDescriptor(state: BridgeHandoffState): BridgeC
 
     if (!status) {
         if (!state.bridgeCaseId) {
-            lines.push("Complete the whitelist review form first, then send this ticket to whitelist review.")
+            lines.push("Complete the whitelist application form first, then send this ticket to staff review.")
             buttons.push({
                 action: "send",
-                label: "Send to whitelist review",
+                label: "Send to Staff Review",
                 style: "success",
                 disabled: state.degradedReason !== null
             })
@@ -565,9 +625,59 @@ export function buildBridgeControlDescriptor(state: BridgeHandoffState): BridgeC
     }
 
     const disableAll = state.degradedReason !== null
-    if (
-        status.status == BRIDGE_CASE_STATUS_PENDING_REVIEW
-        || status.status == BRIDGE_CASE_STATUS_RETRY_DENIED
+    if (status.status == BRIDGE_CASE_STATUS_PENDING_REVIEW) {
+        lines.push("Use Refresh Review Packet only if the applicant corrected the OT form before adjudication.")
+        if (status.duplicate_active_whitelist) {
+            buttons.push(
+                {
+                    action: "duplicate",
+                    label: "Close as Duplicate",
+                    style: "primary",
+                    disabled: disableAll || !status.action_availability.duplicate
+                },
+                {
+                    action: BRIDGE_ACTION_REFRESH_REVIEW_PACKET,
+                    label: "Refresh Review Packet",
+                    style: "secondary",
+                    disabled: disableAll
+                },
+                {
+                    action: "refresh_status",
+                    label: "Refresh Status",
+                    style: "secondary",
+                    disabled: disableAll || !status.action_availability.refresh_status
+                }
+            )
+        } else {
+            buttons.push(
+                {
+                    action: "accept",
+                    label: "Accept",
+                    style: "success",
+                    disabled: disableAll || !status.action_availability.accept
+                },
+                {
+                    action: "retry",
+                    label: "Retry",
+                    style: "primary",
+                    disabled: disableAll || !status.action_availability.retry
+                },
+                {
+                    action: "hard_deny_review",
+                    label: "Hard Deny",
+                    style: "danger",
+                    disabled: disableAll || !status.action_availability.hard_deny
+                },
+                {
+                    action: BRIDGE_ACTION_REFRESH_REVIEW_PACKET,
+                    label: "Refresh Review Packet",
+                    style: "secondary",
+                    disabled: disableAll
+                }
+            )
+        }
+    } else if (
+        status.status == BRIDGE_CASE_STATUS_RETRY_DENIED
         || status.status == BRIDGE_CASE_STATUS_LIMIT_LOCKED
     ) {
         if (status.duplicate_active_whitelist) {

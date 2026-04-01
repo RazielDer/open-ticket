@@ -13,6 +13,14 @@ When used on its own, the plugin:
 - serves transcript pages from a local HTTP host in `public` mode
 - exposes transcript operations through `ot-html-transcripts:service`
 
+## EoTFS Pairing
+
+In the EoTFS stack, this plugin pairs with:
+
+- [`../ot-dashboard/README.md`](../ot-dashboard/README.md) for Discord-gated browser viewing in `private-discord` mode
+- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) for transcript URL lookup and later `transcript_attached` delivery into the staged whitelist workflow
+- [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side intake worker and host coordination contract
+
 ## What Changes When `ot-dashboard` Is Installed
 
 `ot-dashboard` is optional in public mode and required in `private-discord` mode.

@@ -29,6 +29,22 @@ Need help or want to get involved? Feel free to join our <a href="https://discor
 > **[-> Navigate to (📚 Documentation)](https://otdocs.dj-dj.be)**  
 > **[-> Navigate to (📞 Support Server)](https://discord.dj-dj.be)**
 
+## Local EoTFS Overlay
+
+This workspace uses `C:\Users\Administrator\Desktop\PoT\Bot\EoTFS Ticket Bot\open-ticket` as the canonical Open Ticket repo for the EoTFS stack. The older `EoTFS Open Ticket` local path is only an alternate wrapper path into the same source tree.
+
+For the EoTFS-local documentation set, start with:
+
+- [Discord Bot README](../../EoTFS Discord Bot/README.md)
+- [Player Guide](../../EoTFS Discord Bot/docs/player/README.md)
+- [Staff Operator Guide](../../EoTFS Discord Bot/docs/staff-operators/README.md)
+- [Host / Admin Guide](../../EoTFS Discord Bot/docs/host-admin/README.md)
+- [Open Ticket Current Branch](CURRENT_BRANCH.md)
+- [OT Ticket Forms](plugins/ot-ticket-forms/README.md)
+- [OT EoTFS Bridge](plugins/ot-eotfs-bridge/README.md)
+- [OT Dashboard](plugins/ot-dashboard/README.md)
+- [OT HTML Transcripts](plugins/ot-html-transcripts/README.md)
+
 ### 📌 Features
 - **⏳ Quick Setup** - Using the interactive Quick Setup CLI, you can **configure Open Ticket in less than 5min!**
 - **🦇 Pterodactyl Support** - Open Ticket works perfect on Pterodactyl based panels. [(Download official eggs)](.eggs/README.md)

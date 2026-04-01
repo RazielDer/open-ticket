@@ -1,0 +1,34 @@
+version: 1
+updated_at: 2026-04-01
+mode: implementation
+status: completed
+active_slice: null
+next_slice: null
+next_slice_status: null
+following_slice: null
+following_slice_status: null
+trailing_slice: null
+trailing_slice_status: null
+
+resume_sequence:
+  - workflow.yaml
+  - active/active-slice.md
+  - workflow.md
+  - evidence/whitelist-application-ux-reliability-planning.md
+  - runtime/controller-state.yaml
+
+operator_notes:
+  - Slice 01 is complete and verified with compiled build plus targeted draft/edit/session-flow tests.
+  - Slice 02 is complete and verified with compiled build plus smart-continuation and recovery tests.
+  - Slice 03 is complete and verified with compiled forms-service, start-form runtime, managed-record, session-flow, and bridge entrypoint coverage.
+  - Slice 04 is complete with README/operator-doc sync, final verification evidence, and a passing full compiled test sweep.
+  - The user approved sequential execution across slices 01 through 04 without stopping as long as each prior slice is implemented, verified, and the kernel state is updated before promotion.
+  - The ticket card is the required recovery anchor; do not ship a slice that still depends on old ephemeral messages being present to resume.
+  - Smart continuation means fewer clicks, not zero explicit continuation. Continue Application is still required whenever the next step must open a modal or when recovery from a saved UI-delivery failure needs a fresh interaction.
+  - Bridge editability remains authoritative. If bridge state changes from reviewable to locked, the ticket card must reflect that immediately.
+
+hard_blockers_to_escalate:
+  - Required edits in src/**, config/**, database/**, or other plugin trees
+  - Any change that weakens applicant-only mutation or bridge-owned edit locks
+  - Inability to distinguish saved-vs-unsaved failures in the automated test path
+  - Inability to verify the end-to-end responder flow with compiled tests after npm run build

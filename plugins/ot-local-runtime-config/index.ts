@@ -77,12 +77,23 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         text:"",
         embed:{
             enabled:true,
-            title:"Whitelist Application",
-            description:"Thank you for opening a whitelist application ticket. Staff will review it as soon as possible.",
+            title:"Whitelist Application for EOTFS",
+            description:"Thank you for opening a whitelist application ticket with us. Staff will review it as soon as possible in the order they come in.",
             customColor:"",
             image:"",
             thumbnail:"",
-            fields:[],
+            fields:[
+                {
+                    name:"Whitelist Review Steps",
+                    value:"Please be sure to complete the form in this ticket located at the bottom. Staff will be sure to look over everything when taking the application into consideration.",
+                    inline:false
+                },
+                {
+                    name:"What Happens Next",
+                    value:"Be sure to Complete the entire form. If anything is left unanswered that will be an automatic denial. Once completed wait for staff to review it, and if you have any questions you may ask them here in the ticket.",
+                    inline:false
+                }
+            ],
             timestamp:false
         },
         ping:{

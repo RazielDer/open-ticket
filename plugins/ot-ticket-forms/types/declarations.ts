@@ -1,7 +1,7 @@
 import { api } from "#opendiscord";
 import discord from "discord.js";
 import { ODJsonConfig_DefaultForms, OTForms_Question, OTForms_ButtonQuestion, OTForms_DropdownQuestion, OTForms_ModalQuestion, OTForms_DropdownChoice, OTForms_ButtonChoice } from "./configDefaults";
-import type { OTFormsCompletedTicketFormSnapshot, OTFormsService } from "../service/forms-service";
+import type { OTFormsCompletedTicketFormSnapshot, OTFormsService, OTFormsTicketDraftSnapshot } from "../service/forms-service";
 
 declare module "#opendiscord-types" {
     export interface ODPluginManagerIds_Default {
@@ -26,20 +26,20 @@ declare module "#opendiscord-types" {
         "ot-ticket-forms:form":{source:"slash"|"text",params:{},workers:"ot-ticket-forms:form"|"ot-ticket-forms:logs"},
     }
     export interface ODMessageManagerIds_Default {
-        "ot-ticket-forms:start-form-message": { source: "ticket" | "slash"; params: { formId: string, formInstanceId: string, formName: string, formDescription: string, formColor: discord.ColorResolvable, acceptAnswers: boolean }; workers: "ot-ticket-forms:start-form-message" };
-        "ot-ticket-forms:continue-message": { source: "button"; params: { formId: string, formInstanceId: string, sessionId: string, currentSection:number, totalSections:number, formColor: discord.ColorResolvable }; workers: "ot-ticket-forms:continue-message" };
-        "ot-ticket-forms:question-message": { source: "other"; params: { formId: string, formInstanceId: string, sessionId: string, question: OTForms_ButtonQuestion|OTForms_DropdownQuestion, currentSection:number, totalSections:number, formColor: discord.ColorResolvable }; workers: "ot-ticket-forms:question-message" };
+        "ot-ticket-forms:start-form-message": { source: "ticket" | "slash"; params: { formId: string, formInstanceId: string, formName: string, formDescription: string, formColor: discord.ColorResolvable, acceptAnswers: boolean, buttonLabel?: string }; workers: "ot-ticket-forms:start-form-message" };
+        "ot-ticket-forms:continue-message": { source: "button"; params: { formId: string, formInstanceId: string, sessionId: string, currentSection:number, totalSections:number, formColor: discord.ColorResolvable, displayMode: "continue_prompt" | "passive_confirmation" }; workers: "ot-ticket-forms:continue-message" };
+        "ot-ticket-forms:question-message": { source: "other"; params: { formId: string, formInstanceId: string, sessionId: string, question: OTForms_ButtonQuestion|OTForms_DropdownQuestion, currentSection:number, totalSections:number, formColor: discord.ColorResolvable, savedAnswer: string | null, displayMode: "live_prompt" | "passive_confirmation" }; workers: "ot-ticket-forms:question-message" };
         "ot-ticket-forms:answers-message": { source: "button" | "other"; params: { formId: string, formInstanceId: string, sessionId: string, type: "initial" | "partial" | "completed", currentPageNumber: number, totalPages: number, currentPage: api.ODEmbedBuildResult }; workers: "ot-ticket-forms:answers-message" };
         "ot-ticket-forms:success-message": { source: "slash" | "other"; params: {}; workers: "ot-ticket-forms:success-message" };
     }
     export interface ODEmbedManagerIds_Default {
         "ot-ticket-forms:start-form-embed": { source: "ticket" | "slash"; params: { formName: string, formDescription: string, formColor: discord.ColorResolvable }; workers: "ot-ticket-forms:start-form-embed" };
-        "ot-ticket-forms:continue-embed": { source: "button"; params: { currentSection:number, totalSections:number, formColor: discord.ColorResolvable }; workers: "ot-ticket-forms:continue-embed" };
-        "ot-ticket-forms:question-embed": { source: "other"; params: { question: OTForms_ButtonQuestion|OTForms_DropdownQuestion, currentSection:number, totalSections:number, formColor: discord.ColorResolvable }; workers: "ot-ticket-forms:question-embed" };
+        "ot-ticket-forms:continue-embed": { source: "button"; params: { currentSection:number, totalSections:number, formColor: discord.ColorResolvable, displayMode: "continue_prompt" | "passive_confirmation" }; workers: "ot-ticket-forms:continue-embed" };
+        "ot-ticket-forms:question-embed": { source: "other"; params: { question: OTForms_ButtonQuestion|OTForms_DropdownQuestion, currentSection:number, totalSections:number, formColor: discord.ColorResolvable, savedAnswer: string | null, displayMode: "live_prompt" | "passive_confirmation" }; workers: "ot-ticket-forms:question-embed" };
         "ot-ticket-forms:answers-embed": { source: "button" | "other"; params: { type: "initial" | "partial" | "completed", user: discord.User, formColor: discord.ColorResolvable, fields: api.ODEmbedData["fields"], timestamp: Date }; workers: "ot-ticket-forms:answers-embed" };
     }
     export interface ODButtonManagerIds_Default {
-        "ot-ticket-forms:start-form-button": { source: "ticket" | "slash"; params: { formInstanceId: string, enabled: boolean }; workers: "ot-ticket-forms:start-form-button" };
+        "ot-ticket-forms:start-form-button": { source: "ticket" | "slash"; params: { formInstanceId: string, enabled: boolean, label?: string }; workers: "ot-ticket-forms:start-form-button" };
         "ot-ticket-forms:continue-button": { source: "button"; params: { formInstanceId: string, sessionId: string }; workers: "ot-ticket-forms:continue-button" };
         "ot-ticket-forms:question-button": { source: "other"; params: { formInstanceId: string, sessionId: string, choice: OTForms_ButtonChoice }; workers: "ot-ticket-forms:question-button" };
         "ot-ticket-forms:delete-answers-button": { source: "button" | "other"; params: { formInstanceId: string, sessionId: string }; workers: "ot-ticket-forms:delete-answers-button" };
@@ -63,7 +63,7 @@ declare module "#opendiscord-types" {
         "ot-ticket-forms:questions-modal":{source:"modal";params:{};workers:"ot-ticket-forms:questions-modal"},
     }
     export interface ODDropdownManagerIds_Default {
-        "ot-ticket-forms:question-dropdown": { source: "other"; params: { formId: string, formInstanceId: string, sessionId: string, choices: OTForms_DropdownChoice[], minValues: number, maxValues: number, placeholder: string }; workers: "ot-ticket-forms:question-dropdown" };
+        "ot-ticket-forms:question-dropdown": { source: "other"; params: { formId: string, formInstanceId: string, sessionId: string, choices: OTForms_DropdownChoice[], minValues: number, maxValues: number, placeholder: string, savedAnswer: string | null }; workers: "ot-ticket-forms:question-dropdown" };
     }
     export interface ODDropdownResponderManagerIds_Default {
         "ot-ticket-forms:question-dropdown": { source: "dropdown"; params: { }; workers: "ot-ticket-forms:question-dropdown" };
@@ -82,5 +82,6 @@ declare module "#opendiscord-types" {
             timestamp: number
         },
         "ot-ticket-forms:completed-ticket-forms": OTFormsCompletedTicketFormSnapshot,
+        "ot-ticket-forms:ticket-drafts": OTFormsTicketDraftSnapshot,
     }
 }

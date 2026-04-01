@@ -10,10 +10,19 @@ export interface OTForms_Form {
     description: string,
     color: discord.ColorResolvable,
 
+    answerTarget: OTFormsAnswerTarget,
     responseChannel: string,
     autoSendOptionIds: string[],
 
     questions: OTForms_Question[]
+}
+
+export type OTFormsAnswerTarget = "response_channel" | "ticket_managed_record"
+export type OTFormsDraftState = "initial" | "partial" | "completed"
+
+export interface OTFormsCapturedAnswer {
+    question: OTForms_Question,
+    answer: string | null
 }
 
 /** ## OTForms_Question `interface`
@@ -52,6 +61,7 @@ export interface OTForms_ModalQuestion extends OTForms_Question {
     placeholder: string,
     optional: boolean,
     maxLength: number,
+    value?: string,
 }
 
 /** ## OTForms_Choice `interface`

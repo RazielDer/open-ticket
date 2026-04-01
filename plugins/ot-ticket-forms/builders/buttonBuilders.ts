@@ -1,19 +1,23 @@
 import {api, opendiscord, utilities} from "#opendiscord"
 import * as discord from "discord.js"
+import {
+    OT_FORMS_DISABLED_START_FORM_BUTTON_LABEL,
+    OT_FORMS_START_FORM_BUTTON_LABEL,
+    createStartFormButtonCustomId
+} from "../service/start-form-runtime"
 
 // BUTTONS
 opendiscord.events.get("onButtonBuilderLoad").listen((buttons) => {
     buttons.add(new api.ODButton("ot-ticket-forms:start-form-button"));
     buttons.get("ot-ticket-forms:start-form-button").workers.add(
         new api.ODWorker("ot-ticket-forms:start-form-button", 0, (instance, params, source, cancel) => {
-            const { formInstanceId, enabled } = params;
-            const label = enabled ? "Answer" : "Form Answered";
+            const { formInstanceId, enabled, label } = params;
             instance.setMode("button");
             instance.setColor("green");
             instance.setEmoji("📝");
-            instance.setLabel(label);
+            instance.setLabel(label ?? (enabled ? OT_FORMS_START_FORM_BUTTON_LABEL : OT_FORMS_DISABLED_START_FORM_BUTTON_LABEL));
             instance.setDisabled(!enabled);
-            instance.setCustomId(`ot-ticket-forms:sb_${formInstanceId}`);
+            instance.setCustomId(createStartFormButtonCustomId(formInstanceId));
         })
     );
 
@@ -24,7 +28,7 @@ opendiscord.events.get("onButtonBuilderLoad").listen((buttons) => {
             instance.setMode("button");
             instance.setColor("green");
             instance.setEmoji("➡️");
-            instance.setLabel("Continue");
+            instance.setLabel("Continue Application");
             instance.setCustomId(`ot-ticket-forms:cb_${formInstanceId}_${sessionId}`);   
         })
     );

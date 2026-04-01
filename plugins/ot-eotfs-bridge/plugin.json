@@ -6,7 +6,7 @@
     "supportedVersions":["OTv4.0.x","OTv4.1.x","OTv4.2.x"],
 
     "enabled":true,
-    "priority":0,
+    "priority":-1,
     "events":[],
 
     "npmDependencies":[],
@@ -17,7 +17,7 @@
         "author":"OpenAI Codex",
         "contributors":[],
         "shortDescription":"Local-only whitelist intake bridge for EoTFS Open Ticket.",
-        "longDescription":"Posts a staff-controlled whitelist intake bridge button on eligible tickets and sends signed case-created and transcript-attached events to the EoTFS Discord bot.",
+        "longDescription":"Stages Open Ticket whitelist applications for Discord-side staff review, sends signed case-created and transcript-attached events to the EoTFS Discord bot, and keeps ticket closeout bounded to canonical whitelist outcomes.",
         "imageUrl":"",
         "projectUrl":"",
         "tags":["local","bridge","whitelist","eotfs"]

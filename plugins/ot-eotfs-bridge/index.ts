@@ -6,6 +6,7 @@ import {
     BRIDGE_ACTION_ACCEPT,
     BRIDGE_ACTION_DUPLICATE,
     BRIDGE_ACTION_HARD_DENY,
+    BRIDGE_ACTION_REFRESH_REVIEW_PACKET,
     BRIDGE_ACTION_REFRESH_STATUS,
     BRIDGE_ACTION_RETRY,
     BRIDGE_ACTION_RETRY_APPLY,
@@ -20,6 +21,7 @@ import {
     BRIDGE_TRANSCRIPT_ATTACHED_EVENT,
     BridgeActionKind,
     BridgeActionResponse,
+    BridgeCompletedFormSnapshot,
     BridgeConfigData,
     BridgeControlButtonDescriptor,
     BridgeEligibilityResponse,
@@ -31,6 +33,7 @@ import {
     createSignedBridgeHeaders,
     extractTranscriptUrl,
     isEligibleOptionId,
+    normalizeAcceptedRulesPasswords,
     normalizeEndpointBaseUrl,
     parseCaseCreatedAck
 } from "./bridge-core"
@@ -46,6 +49,7 @@ import {
     finalizeCaseCreatedEvent,
     finalizeTranscriptAttachedEvent,
     findMisconfiguredEligibleOptionIds,
+    isReviewableBridgeStatus,
     markBridgeDegraded,
     markBridgeRendered,
     normalizeActionResponse,
@@ -54,6 +58,7 @@ import {
     normalizeStatusResponse,
     prepareCaseCreatedEvent,
     prepareTranscriptAttachedEvent,
+    shouldRecreateBridgeControlForPlacement,
     shouldPollBridgeState,
     stopBridgePolling,
     updateTicketCreatorSnapshot
@@ -62,6 +67,7 @@ import {
 if (utilities.project != "openticket") throw new api.ODPluginError("This plugin only works in Open Ticket!")
 
 const BRIDGE_CONFIG_ID = "ot-eotfs-bridge:config"
+const BRIDGE_SERVICE_ID = "ot-eotfs-bridge:service"
 const BRIDGE_STATE_CATEGORY = "ot-eotfs-bridge:ticket-bridge-state"
 const BRIDGE_BUTTON_RESPONDER_ID = "ot-eotfs-bridge:button"
 const BRIDGE_BUTTON_PREFIX = "ot-eotfs-bridge:btn:"
@@ -69,9 +75,112 @@ const BRIDGE_MODAL_RESPONDER_ID = "ot-eotfs-bridge:modal"
 const BRIDGE_MODAL_PREFIX = "ot-eotfs-bridge:modal:"
 const BRIDGE_HARD_DENY_CONFIRM_ACTION = "confirm_hard_deny"
 const BRIDGE_POLL_LOOP_INTERVAL_MS = 10_000
+const APPLICANT_START_FORM_BUTTON_PREFIX = "ot-ticket-forms:sb_"
 
 class OTEotfsBridgeConfig extends api.ODJsonConfig {
     declare data: BridgeConfigData
+}
+
+class OTEotfsBridgeService extends api.ODManagerData {
+    constructor(id: api.ODValidId = BRIDGE_SERVICE_ID) {
+        super(id)
+    }
+
+    canApplicantEdit(ticketChannelId: string): boolean {
+        const state = bridgeTicketStateStore.get(ticketChannelId)
+        if (!state || !state.bridgeCaseId) return true
+        return isReviewableBridgeStatus(state.lastStatus?.status)
+    }
+
+    async syncReviewableDraftUpdate(ticketChannelId: string): Promise<void> {
+        const currentState = bridgeTicketStateStore.get(ticketChannelId)
+        if (!currentState || !currentState.bridgeCaseId) return
+
+        const ticket = opendiscord.tickets.get(ticketChannelId)
+        if (!ticket || ticket.get("opendiscord:closed").value) return
+
+        const channel = await opendiscord.tickets.getTicketChannel(ticket)
+        if (!channel) return
+
+        const config = getBridgeConfig()
+        const now = new Date().toISOString()
+        const ticketContext = getTicketContext(ticket, channel)
+        let syncedState = updateTicketCreatorSnapshot(currentState, ticketContext.creatorDiscordUserId, now)
+
+        try {
+            const status = await fetchBridgeStatus(config, syncedState.sourceTicketRef)
+            syncedState = await rerenderBridgeControl(
+                channel,
+                applyBridgeStatus(syncedState, status, now)
+            )
+        } catch (error) {
+            await rerenderBridgeControl(
+                channel,
+                markBridgeDegraded(
+                    syncedState,
+                    error instanceof Error ? error.message : "Whitelist bridge status refresh failed.",
+                    new Date().toISOString()
+                )
+            )
+            return
+        }
+
+        if (!isReviewableBridgeStatus(syncedState.lastStatus?.status)) {
+            return
+        }
+
+        const completedForm = await getCompletedFormSnapshot(ticketChannelId, config.formId)
+        if (!completedForm) return
+        const creatorIdentityAliases = await resolveTicketCreatorIdentityAliases(ticket, channel)
+
+        const prepared = prepareCaseCreatedEvent(
+            ticketContext,
+            completedForm,
+            syncedState.applicantDiscordUserId,
+            config.targetGroupKey,
+            config.formContract,
+            getAcceptedWhitelistRulesPasswords(),
+            syncedState,
+            {
+                allowRefresh: true,
+                creatorIdentityAliases
+            }
+        )
+        if (prepared.status != "ready") return
+
+        try {
+            const responseBody = await postBridgeJson(config, null, prepared.payload)
+            const ack = parseCaseCreatedAck(responseBody, prepared.payload.source_ticket_ref)
+            let nextState = finalizeCaseCreatedEvent(
+                ticketChannelId,
+                config.targetGroupKey,
+                crypto.randomUUID(),
+                new Date().toISOString(),
+                ack,
+                syncedState.applicantDiscordUserId,
+                ticketContext.creatorDiscordUserId
+            )
+            nextState = {
+                ...nextState,
+                controlMessageId: syncedState.controlMessageId,
+                renderVersion: syncedState.renderVersion,
+                lastRenderedState: syncedState.lastRenderedState,
+                transcriptEventId: syncedState.transcriptEventId,
+                transcriptUrl: syncedState.transcriptUrl,
+                transcriptStatus: syncedState.transcriptStatus
+            }
+            await refreshBridgeStatusAndRender(ticket, channel, nextState)
+        } catch (error) {
+            await rerenderBridgeControl(
+                channel,
+                markBridgeDegraded(
+                    syncedState,
+                    error instanceof Error ? error.message : "Whitelist bridge review refresh failed.",
+                    new Date().toISOString()
+                )
+            )
+        }
+    }
 }
 
 class BridgeHttpError extends Error {
@@ -139,6 +248,10 @@ function createBridgeModalCustomId(action: string, ticketChannelId: string): str
     return `${BRIDGE_MODAL_PREFIX}${action}:${ticketChannelId}`
 }
 
+function createApplicantStartFormButtonCustomId(ticketChannelId: string): string {
+    return `${APPLICANT_START_FORM_BUTTON_PREFIX}${ticketChannelId}`
+}
+
 function parseBridgeButtonCustomId(customId: string): { action: string; ticketChannelId: string } | null {
     if (!customId.startsWith(BRIDGE_BUTTON_PREFIX)) return null
     const parts = customId.slice(BRIDGE_BUTTON_PREFIX.length).split(":")
@@ -155,6 +268,28 @@ function parseBridgeModalCustomId(customId: string): { action: string; ticketCha
     const [action, ticketChannelId] = parts
     if (!action || !ticketChannelId) return null
     return { action, ticketChannelId }
+}
+
+function messageHasApplicantStartFormButton(
+    message: discord.Message,
+    ticketChannelId: string
+): boolean {
+    const customId = createApplicantStartFormButtonCustomId(ticketChannelId)
+    return message.components.some((row) =>
+        Array.isArray((row as { components?: readonly unknown[] }).components)
+        && ((row as { components?: readonly unknown[] }).components ?? []).some((component) => {
+            const typedComponent = component as { type?: number, customId?: string | null }
+            return typedComponent.type == discord.ComponentType.Button && typedComponent.customId == customId
+        })
+    )
+}
+
+async function findApplicantStartFormMessage(
+    channel: discord.GuildTextBasedChannel,
+    ticketChannelId: string
+): Promise<discord.Message | null> {
+    const messages = await channel.messages.fetch({ limit: 50 })
+    return messages.find((message) => messageHasApplicantStartFormButton(message, ticketChannelId)) ?? null
 }
 
 function buildControlMessage(state: BridgeHandoffState): Pick<discord.MessageCreateOptions, "content" | "components"> {
@@ -222,6 +357,11 @@ function getBridgeConfig(): BridgeConfigData {
     return config.data
 }
 
+function getAcceptedWhitelistRulesPasswords(): string[] {
+    const rawValue = process.env.EOTFS_OT_WHITELIST_RULES_PASSWORDS ?? ""
+    return normalizeAcceptedRulesPasswords(rawValue.split(","))
+}
+
 async function restoreBridgeState() {
     const globalDatabase = opendiscord.databases.get("opendiscord:global")
     const storedEntries = await globalDatabase.getCategory(BRIDGE_STATE_CATEGORY) ?? []
@@ -251,6 +391,69 @@ function getLiveTicketCreatorDiscordUserId(ticket: api.ODTicket): string | null 
     return typeof creator == "string" && creator.trim().length > 0 ? creator.trim() : null
 }
 
+function pushCreatorIdentityAlias(
+    aliases: string[],
+    seen: Set<string>,
+    candidate: string | null | undefined
+): void {
+    if (typeof candidate != "string") return
+    const normalized = candidate.trim().replace(/\s+/g, " ")
+    if (normalized.length < 1) return
+    const dedupeKey = normalized.toLowerCase()
+    if (seen.has(dedupeKey)) return
+    seen.add(dedupeKey)
+    aliases.push(normalized)
+}
+
+async function resolveTicketCreatorIdentityAliases(
+    ticket: api.ODTicket,
+    channel: discord.GuildTextBasedChannel
+): Promise<string[] | null> {
+    const creatorDiscordUserId = getLiveTicketCreatorDiscordUserId(ticket)
+    if (!creatorDiscordUserId) return null
+
+    const aliases: string[] = []
+    const seen = new Set<string>()
+    const lookupErrors: string[] = []
+
+    try {
+        const user = await opendiscord.client.client.users.fetch(creatorDiscordUserId)
+        pushCreatorIdentityAlias(aliases, seen, user.username)
+        pushCreatorIdentityAlias(aliases, seen, (user as discord.User & { globalName?: string | null }).globalName ?? null)
+        pushCreatorIdentityAlias(aliases, seen, (user as discord.User & { displayName?: string | null }).displayName ?? null)
+    } catch (error) {
+        lookupErrors.push(`user lookup failed: ${error instanceof Error ? error.message : "unknown error"}`)
+    }
+
+    try {
+        const member = await opendiscord.client.fetchGuildMember(channel.guild, creatorDiscordUserId)
+        if (member) {
+            pushCreatorIdentityAlias(aliases, seen, member.user?.username)
+            pushCreatorIdentityAlias(aliases, seen, (member.user as discord.User & { globalName?: string | null }).globalName ?? null)
+            pushCreatorIdentityAlias(aliases, seen, member.nickname)
+            pushCreatorIdentityAlias(aliases, seen, member.displayName)
+        } else {
+            lookupErrors.push("guild member lookup returned no member.")
+        }
+    } catch (error) {
+        lookupErrors.push(`guild member lookup failed: ${error instanceof Error ? error.message : "unknown error"}`)
+    }
+
+    if (aliases.length > 0) return aliases
+
+    opendiscord.log("Whitelist bridge creator identity lookup failed open during Discord username validation.", "plugin", [
+        { key: "channelid", value: channel.id, hidden: true },
+        { key: "creatorid", value: creatorDiscordUserId, hidden: true },
+        {
+            key: "error",
+            value: lookupErrors.length > 0
+                ? lookupErrors.join(" | ")
+                : "No live Discord username aliases were available for the ticket creator."
+        }
+    ])
+    return null
+}
+
 async function isAuthorizedStaffParticipant(ticket: api.ODTicket, userId: string): Promise<boolean> {
     const participants = await opendiscord.tickets.getAllTicketParticipants(ticket)
     return participants?.some((participant) => participant.user.id == userId && participant.role == "admin") ?? false
@@ -258,7 +461,7 @@ async function isAuthorizedStaffParticipant(ticket: api.ODTicket, userId: string
 
 async function getCompletedFormSnapshot(ticketChannelId: string, formId: string) {
     const service = opendiscord.plugins.classes.get("ot-ticket-forms:service") as {
-        getCompletedTicketForm(ticketChannelId: string, formId: string): Promise<BridgeHandoffState | null>
+        getCompletedTicketForm(ticketChannelId: string, formId: string): Promise<BridgeCompletedFormSnapshot | null>
     }
     return await service.getCompletedTicketForm(ticketChannelId, formId)
 }
@@ -382,9 +585,18 @@ async function rerenderBridgeControl(
 ): Promise<BridgeHandoffState> {
     const descriptor = buildBridgeControlDescriptor(state)
     const message = await ensureControlMessage(channel, state, currentMessage)
-    return await persistBridgeState(
+    const persistedState = await persistBridgeState(
         markBridgeRendered(state, message.id, descriptor.renderState, new Date().toISOString())
     )
+    try {
+        const formsService = opendiscord.plugins.classes.get("ot-ticket-forms:service") as {
+            refreshTicketStartFormMessage(ticketChannelId: string, formId: string): Promise<boolean>
+        }
+        await formsService.refreshTicketStartFormMessage(channel.id, getBridgeConfig().formId)
+    } catch {
+        // The applicant card refresh is best-effort and stays subordinate to bridge persistence.
+    }
+    return persistedState
 }
 
 async function closeTicketAfterSuccess(
@@ -565,6 +777,27 @@ async function repairEligibleTicketControls(): Promise<void> {
             state = updateTicketCreatorSnapshot(state, currentCreatorDiscordUserId, now)
         }
 
+        const controlMessage = state.controlMessageId
+            ? await channel.messages.fetch(state.controlMessageId).catch(() => null)
+            : null
+        const applicantStartMessage = await findApplicantStartFormMessage(channel, channel.id)
+        if (
+            controlMessage
+            && applicantStartMessage
+            && shouldRecreateBridgeControlForPlacement(
+                controlMessage.createdTimestamp,
+                applicantStartMessage.createdTimestamp
+            )
+        ) {
+            const deleted = await controlMessage.delete().then(() => true).catch(() => false)
+            if (deleted) {
+                state = {
+                    ...state,
+                    controlMessageId: null
+                }
+            }
+        }
+
         if (state.bridgeCaseId) {
             state = await refreshBridgeStatusAndRender(ticket, channel, state)
         } else if (state.degradedReason) {
@@ -630,6 +863,10 @@ async function replyInteraction(
     }
 }
 
+opendiscord.events.get("onPluginClassLoad").listen((classes) => {
+    classes.add(new OTEotfsBridgeService(BRIDGE_SERVICE_ID))
+})
+
 opendiscord.events.get("onConfigLoad").listen((configs) => {
     configs.add(new OTEotfsBridgeConfig(BRIDGE_CONFIG_ID, "config.json", "./plugins/ot-eotfs-bridge/"))
 })
@@ -653,7 +890,30 @@ opendiscord.events.get("onCheckerLoad").listen((checkers) => {
                 })
             },
             { key: "formId", optional: false, priority: 0, checker: new api.ODCheckerStringStructure("ot-eotfs-bridge:config:form-id", { minLength: 1, maxLength: 128 }) },
-            { key: "targetGroupKey", optional: false, priority: 0, checker: new api.ODCheckerStringStructure("ot-eotfs-bridge:config:target-group-key", { minLength: 1, maxLength: 128 }) }
+            { key: "targetGroupKey", optional: false, priority: 0, checker: new api.ODCheckerStringStructure("ot-eotfs-bridge:config:target-group-key", { minLength: 1, maxLength: 128 }) },
+            {
+                key: "formContract",
+                optional: false,
+                priority: 0,
+                checker: new api.ODCheckerObjectStructure("ot-eotfs-bridge:config:form-contract", {
+                    children: [
+                        { key: "discordUsernamePosition", optional: false, priority: 0, checker: new api.ODCheckerNumberStructure("ot-eotfs-bridge:config:discord-username-position", { min: 1, max: 100, floatAllowed: false, negativeAllowed: false }) },
+                        { key: "alderonIdsPosition", optional: false, priority: 0, checker: new api.ODCheckerNumberStructure("ot-eotfs-bridge:config:alderon-position", { min: 1, max: 100, floatAllowed: false, negativeAllowed: false }) },
+                        { key: "rulesPasswordPosition", optional: false, priority: 0, checker: new api.ODCheckerNumberStructure("ot-eotfs-bridge:config:rules-password-position", { min: 1, max: 100, floatAllowed: false, negativeAllowed: false }) },
+                        {
+                            key: "requiredAcknowledgementPositions",
+                            optional: false,
+                            priority: 0,
+                            checker: new api.ODCheckerArrayStructure("ot-eotfs-bridge:config:acknowledgement-positions", {
+                                minLength: 1,
+                                maxLength: 25,
+                                allowedTypes: ["number"],
+                                propertyChecker: new api.ODCheckerNumberStructure("ot-eotfs-bridge:config:acknowledgement-position", { min: 1, max: 100, floatAllowed: false, negativeAllowed: false })
+                            })
+                        }
+                    ]
+                })
+            }
         ]
     })
 
@@ -771,14 +1031,53 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons) => {
         const channel = instance.channel as discord.GuildTextBasedChannel
         const currentState = bridgeTicketStateStore.get(ticketChannelId)
 
-        if (action == "send") {
+        if (action == "send" || action == BRIDGE_ACTION_REFRESH_REVIEW_PACKET) {
             await instance.defer("reply", true)
+            const isRefreshReviewPacket = action == BRIDGE_ACTION_REFRESH_REVIEW_PACKET
             const ticketContext = getTicketContext(ticket, channel)
             const completedForm = await getCompletedFormSnapshot(ticketChannelId, config.formId)
-            const prepared = prepareCaseCreatedEvent(ticketContext, completedForm as never, instance.user.id, config.targetGroupKey, currentState)
+            let stateForPreparation = currentState
+            if (isRefreshReviewPacket) {
+                if (!currentState) {
+                    await instance.interaction.editReply(buildDeferredReply("Whitelist bridge state is missing for this ticket."))
+                    return cancel()
+                }
+                try {
+                    const latestStatus = await fetchBridgeStatus(config, currentState.sourceTicketRef)
+                    stateForPreparation = await rerenderBridgeControl(
+                        channel,
+                        applyBridgeStatus(currentState, latestStatus, new Date().toISOString()),
+                        instance.message
+                    )
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "Unable to verify the current whitelist bridge status."
+                    await rerenderBridgeControl(channel, markBridgeDegraded(currentState, message, new Date().toISOString()), instance.message)
+                    await instance.interaction.editReply(buildDeferredReply(message))
+                    return cancel()
+                }
+            }
+            const creatorIdentityAliases = await resolveTicketCreatorIdentityAliases(ticket, channel)
+            const prepared = prepareCaseCreatedEvent(
+                ticketContext,
+                completedForm,
+                instance.user.id,
+                config.targetGroupKey,
+                config.formContract,
+                getAcceptedWhitelistRulesPasswords(),
+                stateForPreparation,
+                {
+                    allowRefresh: isRefreshReviewPacket,
+                    creatorIdentityAliases
+                }
+            )
             if (prepared.status == "already-bridged") {
                 await refreshBridgeStatusAndRender(ticket, channel, prepared.state, instance.message)
                 await instance.interaction.editReply(buildDeferredReply(`This ticket is already staged as \`${prepared.state.ticketRef}\` (case \`${prepared.state.bridgeCaseId}\`).`))
+                return cancel()
+            }
+            if (prepared.status == "refresh-blocked") {
+                await refreshBridgeStatusAndRender(ticket, channel, prepared.state, instance.message)
+                await instance.interaction.editReply(buildDeferredReply(prepared.message))
                 return cancel()
             }
             if (prepared.status == "missing-form" || prepared.status == "invalid-form") {
@@ -798,27 +1097,35 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons) => {
                     prepared.payload.source_creator_discord_user_id,
                     ticketContext.creatorDiscordUserId
                 )
-                if (currentState) {
+                if (stateForPreparation) {
                     nextState = {
                         ...nextState,
-                        controlMessageId: currentState.controlMessageId,
-                        renderVersion: currentState.renderVersion,
-                        lastRenderedState: currentState.lastRenderedState,
-                        transcriptEventId: currentState.transcriptEventId,
-                        transcriptUrl: currentState.transcriptUrl,
-                        transcriptStatus: currentState.transcriptStatus
+                        controlMessageId: stateForPreparation.controlMessageId,
+                        renderVersion: stateForPreparation.renderVersion,
+                        lastRenderedState: stateForPreparation.lastRenderedState,
+                        transcriptEventId: stateForPreparation.transcriptEventId,
+                        transcriptUrl: stateForPreparation.transcriptUrl,
+                        transcriptStatus: stateForPreparation.transcriptStatus
                     }
                 }
                 nextState = await refreshBridgeStatusAndRender(ticket, channel, nextState, instance.message)
                 await instance.interaction.editReply(buildDeferredReply(
-                    ack.duplicate
-                        ? `Whitelist review already exists as \`${nextState.ticketRef}\` (case \`${nextState.bridgeCaseId}\`).`
-                        : `Sent to whitelist review as \`${nextState.ticketRef}\` (case \`${nextState.bridgeCaseId}\`).`
+                    isRefreshReviewPacket
+                        ? `Staff review packet refreshed for \`${nextState.ticketRef}\` (case \`${nextState.bridgeCaseId}\`).`
+                        : ack.duplicate
+                            ? `Staff review already exists as \`${nextState.ticketRef}\` (case \`${nextState.bridgeCaseId}\`).`
+                            : `Sent to staff review as \`${nextState.ticketRef}\` (case \`${nextState.bridgeCaseId}\`).`
                 ))
             } catch (error) {
-                const message = error instanceof Error ? error.message : "Unable to send the whitelist bridge request."
-                if (currentState) {
-                    await rerenderBridgeControl(channel, markBridgeDegraded(currentState, message, new Date().toISOString()), instance.message)
+                const message = error instanceof Error
+                    ? error.message
+                    : (
+                        isRefreshReviewPacket
+                            ? "Unable to refresh the staff review packet."
+                            : "Unable to send the staff review request."
+                    )
+                if (stateForPreparation) {
+                    await rerenderBridgeControl(channel, markBridgeDegraded(stateForPreparation, message, new Date().toISOString()), instance.message)
                 }
                 await instance.interaction.editReply(buildDeferredReply(message))
             }

@@ -19,6 +19,7 @@ export const BRIDGE_ACTION_DUPLICATE = "duplicate" as const
 export const BRIDGE_ACTION_HARD_DENY = "hard_deny" as const
 export const BRIDGE_ACTION_RETRY_APPLY = "retry_apply" as const
 export const BRIDGE_ACTION_REFRESH_STATUS = "refresh_status" as const
+export const BRIDGE_ACTION_REFRESH_REVIEW_PACKET = "refresh_review_packet" as const
 
 export const BRIDGE_BLOCK_STATE_NONE = "none" as const
 export const BRIDGE_BLOCK_STATE_RETRY_COOLDOWN = "retry_cooldown" as const
@@ -36,6 +37,11 @@ export const BRIDGE_CASE_STATUS_RETRY_DENIED = "retry_denied" as const
 export const BRIDGE_CASE_STATUS_LIMIT_LOCKED = "limit_locked" as const
 export const BRIDGE_CASE_STATUS_HARD_DENY_PENDING = "hard_deny_pending" as const
 export const BRIDGE_CASE_STATUS_HARD_DENY_REPAIR_REQUIRED = "hard_deny_repair_required" as const
+export const BRIDGE_REVIEWABLE_CASE_STATUSES = [
+    BRIDGE_CASE_STATUS_PENDING_REVIEW,
+    BRIDGE_CASE_STATUS_RETRY_DENIED,
+    BRIDGE_CASE_STATUS_LIMIT_LOCKED
+] as const
 
 export type BridgeOperationKind =
     | typeof BRIDGE_OPERATION_ELIGIBILITY
@@ -65,12 +71,20 @@ export type BridgeRenderState =
 
 export type BridgeControlButtonAction =
     | "send"
+    | "refresh_review_packet"
     | "accept"
     | "retry"
     | "duplicate"
     | "hard_deny_review"
     | "retry_apply"
     | "refresh_status"
+
+export interface BridgeFormContractData {
+    discordUsernamePosition: number
+    alderonIdsPosition: number
+    rulesPasswordPosition: number
+    requiredAcknowledgementPositions: number[]
+}
 
 export interface BridgeConfigData {
     integrationId: string
@@ -79,6 +93,7 @@ export interface BridgeConfigData {
     eligibleOptionIds: string[]
     formId: string
     targetGroupKey: string
+    formContract: BridgeFormContractData
 }
 
 export interface BridgeCompletedFormAnswer {
@@ -280,19 +295,101 @@ export function normalizeEndpointBaseUrl(endpointBaseUrl: string): string {
     return endpointBaseUrl.trim().replace(/\/+$/, "")
 }
 
-export function normalizeDelimitedValues(rawValue: string | null | undefined): string[] {
-    if (typeof rawValue != "string") return []
+const BRIDGE_AGID_PLAIN_RE = /^\d{9}$/
+const BRIDGE_AGID_GROUPED_RE = /^\d{3}-\d{3}-\d{3}$/
+
+function collapseInternalWhitespace(value: string | null | undefined): string {
+    if (typeof value != "string") return ""
+    return value.trim().replace(/\s+/g, " ")
+}
+
+function normalizeDiscordIdentityValue(value: string | null | undefined): string | null {
+    const normalized = collapseInternalWhitespace(value).toLowerCase()
+    return normalized.length > 0 ? normalized : null
+}
+
+function normalizeCreatorIdentityAliases(values: readonly string[] | null | undefined): string[] {
+    if (!values || values.length < 1) return []
     const seen = new Set<string>()
-    const values: string[] = []
+    const normalizedAliases: string[] = []
+    for (const value of values) {
+        const normalized = normalizeDiscordIdentityValue(value)
+        if (!normalized || seen.has(normalized)) continue
+        seen.add(normalized)
+        normalizedAliases.push(normalized)
+    }
+    return normalizedAliases
+}
+
+export function matchesCreatorIdentityAlias(
+    answer: string | null | undefined,
+    creatorIdentityAliases: readonly string[] | null | undefined
+): boolean {
+    const normalizedAnswer = normalizeDiscordIdentityValue(answer)
+    if (!normalizedAnswer) return false
+    const normalizedAliases = normalizeCreatorIdentityAliases(creatorIdentityAliases)
+    if (normalizedAliases.length < 1) return false
+    return normalizedAliases.includes(normalizedAnswer)
+}
+
+export function canonicalizeAlderonGameId(rawValue: string | null | undefined): string | null {
+    const normalized = collapseInternalWhitespace(rawValue)
+    if (normalized.length < 1) return null
+    if (BRIDGE_AGID_PLAIN_RE.test(normalized)) {
+        return `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6)}`
+    }
+    if (BRIDGE_AGID_GROUPED_RE.test(normalized)) {
+        return normalized
+    }
+    return null
+}
+
+export interface BridgeParsedAlderonIdsResult {
+    ids: string[]
+    hadAny: boolean
+    invalid: boolean
+    duplicates: boolean
+}
+
+export function parseAlderonGameIds(rawValue: string | null | undefined): BridgeParsedAlderonIdsResult {
+    if (typeof rawValue != "string") {
+        return {
+            ids: [],
+            hadAny: false,
+            invalid: false,
+            duplicates: false
+        }
+    }
+
+    const seen = new Set<string>()
+    const ids: string[] = []
+    let hadAny = false
+    let invalid = false
+    let duplicates = false
+
     for (const part of rawValue.split(",")) {
         const normalized = part.trim()
         if (normalized.length < 1) continue
-        const dedupeKey = normalized.toLowerCase()
-        if (seen.has(dedupeKey)) continue
-        seen.add(dedupeKey)
-        values.push(normalized)
+        hadAny = true
+        const canonical = canonicalizeAlderonGameId(normalized)
+        if (!canonical) {
+            invalid = true
+            continue
+        }
+        if (seen.has(canonical)) {
+            duplicates = true
+            continue
+        }
+        seen.add(canonical)
+        ids.push(canonical)
     }
-    return values
+
+    return {
+        ids,
+        hadAny,
+        invalid,
+        duplicates
+    }
 }
 
 export function extractFormAnswer(snapshot: BridgeCompletedFormSnapshot, position: number): string | null {
@@ -302,8 +399,71 @@ export function extractFormAnswer(snapshot: BridgeCompletedFormSnapshot, positio
     return normalized.length > 0 ? normalized : null
 }
 
-export function isApplicantReadyAnswer(answer: string | null | undefined): boolean {
-    return (answer ?? "").trim().toLowerCase() == "yes, i am ready"
+export function isAffirmativeAcknowledgementAnswer(answer: string | null | undefined): boolean {
+    return (answer ?? "").trim().toLowerCase() == "yes"
+}
+
+export function normalizeAcceptedRulesPasswords(values: readonly string[]): string[] {
+    const normalized: string[] = []
+    const seen = new Set<string>()
+    for (const value of values) {
+        const candidate = value.trim().toLowerCase()
+        if (candidate.length < 1 || seen.has(candidate)) continue
+        seen.add(candidate)
+        normalized.push(candidate)
+    }
+    return normalized
+}
+
+export interface BridgeFormValidationResult {
+    ok: boolean
+    errors: string[]
+    alderonIds: string[]
+}
+
+export function validateCompletedFormForHandoff(
+    completedForm: BridgeCompletedFormSnapshot,
+    formContract: BridgeFormContractData,
+    acceptedRulesPasswords: readonly string[],
+    creatorIdentityAliases: readonly string[] | null = null
+): BridgeFormValidationResult {
+    const errors: string[] = []
+    const normalizedPasswords = normalizeAcceptedRulesPasswords(acceptedRulesPasswords)
+    const discordUsernameAnswer = extractFormAnswer(completedForm, formContract.discordUsernamePosition)
+    const rulesPasswordAnswer = extractFormAnswer(completedForm, formContract.rulesPasswordPosition)
+    const alderonIdParse = parseAlderonGameIds(extractFormAnswer(completedForm, formContract.alderonIdsPosition))
+
+    if (normalizedPasswords.length < 1) {
+        errors.push("Set EOTFS_OT_WHITELIST_RULES_PASSWORDS in the OT runtime environment before staging whitelist applications.")
+    } else if (!rulesPasswordAnswer || !normalizedPasswords.includes(rulesPasswordAnswer.trim().toLowerCase())) {
+        errors.push(`Q${formContract.rulesPasswordPosition} rules password did not match an accepted value.`)
+    }
+
+    if (normalizeCreatorIdentityAliases(creatorIdentityAliases).length > 0 && !matchesCreatorIdentityAlias(discordUsernameAnswer, creatorIdentityAliases)) {
+        errors.push(`Q${formContract.discordUsernamePosition} must match the ticket creator's live Discord username, global name, or server nickname.`)
+    }
+
+    if (!alderonIdParse.hadAny) {
+        errors.push(`Q${formContract.alderonIdsPosition} field must contain at least one AGID.`)
+    }
+    if (alderonIdParse.invalid) {
+        errors.push(`Q${formContract.alderonIdsPosition} each AGID must be \`123456789\` or \`123-456-789\`.`)
+    }
+    if (alderonIdParse.duplicates) {
+        errors.push(`Q${formContract.alderonIdsPosition} duplicate AGIDs are not allowed.`)
+    }
+
+    for (const position of formContract.requiredAcknowledgementPositions) {
+        if (isAffirmativeAcknowledgementAnswer(extractFormAnswer(completedForm, position))) continue
+        const question = completedForm.answers.find((entry) => entry.position == position)?.question ?? "Acknowledgement"
+        errors.push(`Q${position} must be answered Yes: ${question}`)
+    }
+
+    return {
+        ok: errors.length < 1,
+        errors,
+        alderonIds: alderonIdParse.ids
+    }
 }
 
 export function extractTranscriptUrl(record: { publicUrl: string | null } | null): string | null {
@@ -330,14 +490,14 @@ export function buildCaseCreatedPayload(
     ticket: BridgeTicketContext,
     completedForm: BridgeCompletedFormSnapshot,
     handoffDiscordUserId: string,
-    targetGroupKey: string
+    targetGroupKey: string,
+    alderonIds: readonly string[]
 ): BridgeCaseCreatedPayload {
     const creatorDiscordUserId = (completedForm.applicantDiscordUserId || ticket.creatorDiscordUserId || "").trim()
     if (creatorDiscordUserId.length < 1) {
         throw new Error("Whitelist bridge payload requires the ticket creator Discord user id.")
     }
 
-    const alderonIds = normalizeDelimitedValues(extractFormAnswer(completedForm, 2))
     if (alderonIds.length < 1) {
         throw new Error("Whitelist bridge payload requires at least one Alderon ID.")
     }
@@ -369,8 +529,8 @@ export function buildCaseCreatedPayload(
         source_form_id: completedForm.formId,
         source_form_completed_at: completedForm.completedAt,
         answers: orderedAnswers,
-        applicant_ready: isApplicantReadyAnswer(extractFormAnswer(completedForm, 6)),
-        alderon_ids: alderonIds,
+        applicant_ready: true,
+        alderon_ids: [...alderonIds],
         alderon_ids_csv: alderonIds.join(", "),
         target_selector: {
             mode: "group",

@@ -75,13 +75,35 @@ test("normal staged card shows adjudication actions and transfer warning", () =>
     const descriptor = buildBridgeControlDescriptor(state)
 
     assert.equal(descriptor.renderState, BRIDGE_CASE_STATUS_PENDING_REVIEW)
+    assert.equal(descriptor.lines[0], "Staff whitelist review control.")
     assert.deepEqual(descriptor.buttons.map((button) => button.action), [
         "accept",
         "retry",
-        "hard_deny_review"
+        "hard_deny_review",
+        "refresh_review_packet"
     ])
     assert.equal(descriptor.lines.some((line) => line.includes("Attempt history stays pinned")), true)
     assert.equal(descriptor.lines.some((line) => line.includes("Next Retry will trigger the long lockout.")), true)
+})
+
+test("unstaged card uses the staff-facing handoff wording", () => {
+    const descriptor = buildBridgeControlDescriptor(createInitialBridgeState(
+        "423456789012345678",
+        "community_mirror",
+        "111111111111111111",
+        "111111111111111111",
+        "2026-03-31T00:00:00.000Z"
+    ))
+
+    assert.equal(descriptor.lines[0], "Staff whitelist review control.")
+    assert.equal(
+        descriptor.lines.includes("Complete the whitelist application form first, then send this ticket to staff review."),
+        true
+    )
+    assert.deepEqual(
+        descriptor.buttons.map((button) => [button.action, button.label, button.disabled]),
+        [["send", "Send to Staff Review", false]]
+    )
 })
 
 test("duplicate and accepted_failed states render contextual button rows", () => {
@@ -139,6 +161,7 @@ test("duplicate and accepted_failed states render contextual button rows", () =>
 
     assert.deepEqual(buildBridgeControlDescriptor(duplicateState).buttons.map((button) => button.action), [
         "duplicate",
+        "refresh_review_packet",
         "refresh_status"
     ])
     assert.deepEqual(buildBridgeControlDescriptor(failedState).buttons.map((button) => button.action), [
@@ -163,7 +186,14 @@ test("degraded unstaged controls stay disabled and polling gates on persisted me
     const descriptor = buildBridgeControlDescriptor(state)
 
     assert.equal(descriptor.renderState, "degraded")
-    assert.deepEqual(descriptor.buttons.map((button) => [button.action, button.disabled]), [["send", true]])
+    assert.equal(
+        descriptor.lines.includes("Complete the whitelist application form first, then send this ticket to staff review."),
+        true
+    )
+    assert.deepEqual(
+        descriptor.buttons.map((button) => [button.action, button.label, button.disabled]),
+        [["send", "Send to Staff Review", true]]
+    )
     assert.equal(
         shouldPollBridgeState(state, "2026-03-31T00:00:40.000Z"),
         true

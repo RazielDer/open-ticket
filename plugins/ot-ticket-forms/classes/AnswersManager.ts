@@ -1,10 +1,53 @@
 import { api, opendiscord } from "#opendiscord";
 import * as discord from "discord.js";
-import { OTForms_Question } from "../types/configDefaults";
-import { OT_FORMS_PLUGIN_SERVICE_ID, type OTFormsCompletedTicketFormContext } from "../service/forms-service";
+import {
+    OTFormsAnswerTarget,
+    OTFormsCapturedAnswer,
+    OTFormsDraftState
+} from "../types/configDefaults";
+import {
+    OT_FORMS_PLUGIN_SERVICE_ID,
+    createTicketDraftKey,
+    type OTFormsCompletedTicketFormContext,
+    type OTFormsService,
+    type OTFormsTicketDraftSnapshot
+} from "../service/forms-service";
+import {
+    buildManagedRecordFields,
+    buildTicketManagedRecordMessagePayload,
+    rebindManagedRecordSnapshot,
+    splitManagedRecordFields
+} from "../service/ticket-managed-record-runtime";
 
-const MAX_EMBED_SIZE = 6000;
-const MAX_EMBED_FIELDS = 25;
+interface OTFormsBridgeSyncService {
+    syncReviewableDraftUpdate(ticketChannelId: string): Promise<void>
+}
+
+function cloneAnswers(answers: readonly OTFormsCapturedAnswer[]): OTFormsCapturedAnswer[] {
+    return answers.map((entry) => ({
+        question: { ...entry.question },
+        answer: entry.answer
+    }));
+}
+
+function resolveDraftKey(
+    formId: string,
+    answerTarget: OTFormsAnswerTarget,
+    ticketContext: OTFormsCompletedTicketFormContext | null
+): string | null {
+    if (answerTarget != "ticket_managed_record" || !ticketContext) return null;
+    return createTicketDraftKey(
+        ticketContext.ticketChannelId,
+        formId,
+        ticketContext.applicantDiscordUserId
+    );
+}
+
+function isGuildTextBasedChannel(
+    channel: discord.Channel | null
+): channel is discord.GuildTextBasedChannel {
+    return !!channel && channel.isTextBased() && "guildId" in channel;
+}
 
 /**## OTForms_AnswersManager `class`
  * This is an OT Forms plugin answers message manager.
@@ -12,23 +55,38 @@ const MAX_EMBED_FIELDS = 25;
  * It is responsible for rendering the entire answers message.
  */
 export class OTForms_AnswersManager {
-    private static _instances: Map<string, OTForms_AnswersManager> = new Map();
+    private static _instancesByMessageId: Map<string, OTForms_AnswersManager> = new Map();
+    private static _instancesByDraftKey: Map<string, OTForms_AnswersManager> = new Map();
+
     private formId: string;
     private formInstanceId: string;
     private sessionId: string;
     private _message: discord.Message<boolean> | null;
     private pages: api.ODEmbedBuildResult[];
     private source: "button" | "other";
-    private _type: "initial" | "partial" | "completed";
+    private _type: OTFormsDraftState;
     private _user: discord.User;
     private _formColor: discord.ColorResolvable;
-    private _answers: { question: OTForms_Question, answer: string | null }[];
+    private _answers: OTFormsCapturedAnswer[];
     private _currentPage: number = 1;
     private timestamp: Date = new Date();
     private completedAt: Date | null = null;
+    private readonly answerTarget: OTFormsAnswerTarget;
     private readonly ticketContext: OTFormsCompletedTicketFormContext | null;
+    private readonly draftKey: string | null;
 
-    constructor(formId: string, formInstanceId: string, sessionId: string, source: "button" | "other", type: "initial" | "partial" | "completed", user: discord.User, formColor: discord.ColorResolvable, answers: { question: OTForms_Question, answer: string | null }[], ticketContext: OTFormsCompletedTicketFormContext | null = null) {
+    constructor(
+        formId: string,
+        formInstanceId: string,
+        sessionId: string,
+        source: "button" | "other",
+        type: OTFormsDraftState,
+        user: discord.User,
+        formColor: discord.ColorResolvable,
+        answers: OTFormsCapturedAnswer[],
+        answerTarget: OTFormsAnswerTarget = "response_channel",
+        ticketContext: OTFormsCompletedTicketFormContext | null = null
+    ) {
         this.formId = formId;
         this.formInstanceId = formInstanceId;
         this.sessionId = sessionId;
@@ -38,8 +96,10 @@ export class OTForms_AnswersManager {
         this._type = type;
         this._user = user;
         this._formColor = formColor;
-        this._answers = answers;
+        this._answers = cloneAnswers(answers);
+        this.answerTarget = answerTarget;
         this.ticketContext = ticketContext;
+        this.draftKey = resolveDraftKey(formId, answerTarget, ticketContext);
         if (type === "completed") this.completedAt = new Date();
     }
 
@@ -50,129 +110,261 @@ export class OTForms_AnswersManager {
     get user(): discord.User {
         return this._user;
     }
-    
+
     get formColor(): discord.ColorResolvable {
         return this._formColor;
     }
 
-    set type(type: "initial" | "partial" | "completed") {
+    get answers(): OTFormsCapturedAnswer[] {
+        return cloneAnswers(this._answers);
+    }
+
+    get draftState(): OTFormsDraftState {
+        return this._type;
+    }
+
+    set type(type: OTFormsDraftState) {
         this._type = type;
         if (type === "completed" && !this.completedAt) this.completedAt = new Date();
     }
 
-    set answers(answers: { question: OTForms_Question, answer: string | null }[]) {
-        this._answers = answers;
+    set answers(answers: OTFormsCapturedAnswer[]) {
+        this._answers = cloneAnswers(answers);
     }
 
-    /* getInstance
-     * Returns the instance of the answers message manager.
-     */
     static getInstance(messageId: string): OTForms_AnswersManager | undefined {
-        return OTForms_AnswersManager._instances.get(messageId);
+        return OTForms_AnswersManager._instancesByMessageId.get(messageId);
     }
 
-    /* removeInstance
-     * Removes the instance of the answers message manager.
-     */
+    static getDraftInstance(
+        formId: string,
+        ticketChannelId: string,
+        applicantDiscordUserId: string
+    ): OTForms_AnswersManager | undefined {
+        return OTForms_AnswersManager._instancesByDraftKey.get(
+            createTicketDraftKey(ticketChannelId, formId, applicantDiscordUserId)
+        );
+    }
+
     static removeInstance(messageId: string): void {
-        OTForms_AnswersManager._instances.delete(messageId);
+        const existing = OTForms_AnswersManager._instancesByMessageId.get(messageId);
+        if (existing?.draftKey) {
+            OTForms_AnswersManager._instancesByDraftKey.delete(existing.draftKey);
+        }
+        OTForms_AnswersManager._instancesByMessageId.delete(messageId);
     }
 
-    /* render
-     * Renders the answers message.
-     */
+    private registerInstance(): void {
+        if (this._message) {
+            OTForms_AnswersManager._instancesByMessageId.set(this._message.id, this);
+        }
+        if (this.draftKey) {
+            OTForms_AnswersManager._instancesByDraftKey.set(this.draftKey, this);
+        }
+    }
+
     async render(): Promise<void> {
-        this.pages = await this.splitAnswersIntoEmbeds(this.source, this._type, this._user, this._formColor, this._answers);
+        this.pages = await this.splitAnswersIntoEmbeds(
+            this.source,
+            this._type,
+            this._user,
+            this._formColor,
+            this._answers
+        );
     }
 
-    /* send
-     * Sends the answers message.
-     */
-    async sendMessage(channel: discord.GuildTextBasedChannel, pageNumber: number = this._currentPage): Promise<void> {
-        if(this.pages.length === 0) return;
+    async sendMessage(
+        channel: discord.GuildTextBasedChannel,
+        pageNumber: number = this._currentPage
+    ): Promise<void> {
+        if (this.pages.length === 0) return;
         this._currentPage = pageNumber;
-        this._message = await channel.send((await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(this.source, { formId: this.formId, formInstanceId: this.formInstanceId, sessionId: this.sessionId, type: this._type, currentPageNumber: pageNumber, totalPages: this.pages.length, currentPage: this.pages[pageNumber - 1] })).message);
-        const message = this._message;
-        if(!message) return;
-        OTForms_AnswersManager._instances.set(message.id, this);
+
+        if (this.answerTarget == "ticket_managed_record") {
+            this._message = await channel.send(
+                buildTicketManagedRecordMessagePayload(
+                    this.pages
+                        .map((entry) => entry.embed)
+                        .filter((embed): embed is discord.EmbedBuilder => embed !== null)
+                )
+            );
+            this.registerInstance();
+            await this.save();
+            return;
+        }
+
+        this._message = await channel.send(
+            (
+                await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(
+                    this.source,
+                    {
+                        formId: this.formId,
+                        formInstanceId: this.formInstanceId,
+                        sessionId: this.sessionId,
+                        type: this._type,
+                        currentPageNumber: pageNumber,
+                        totalPages: this.pages.length,
+                        currentPage: this.pages[pageNumber - 1]
+                    }
+                )
+            ).message
+        );
+        this.registerInstance();
         await this.save();
     }
 
-    /* setPage
-     * Sets the page of the answers message.
-     */
     async editMessage(pageNumber: number = this._currentPage): Promise<void> {
-        if(!this._message) return;
         this._currentPage = pageNumber;
-        await this._message.edit((await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(this.source, { formId: this.formId, formInstanceId: this.formInstanceId, sessionId: this.sessionId, type: this._type, currentPageNumber: pageNumber, totalPages: this.pages.length, currentPage: this.pages[pageNumber - 1] })).message);
+
+        if (this.answerTarget == "ticket_managed_record") {
+            await this.editManagedRecordMessage();
+            return;
+        }
+
+        if (!this._message) return;
+        await this._message.edit(
+            (
+                await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(
+                    this.source,
+                    {
+                        formId: this.formId,
+                        formInstanceId: this.formInstanceId,
+                        sessionId: this.sessionId,
+                        type: this._type,
+                        currentPageNumber: pageNumber,
+                        totalPages: this.pages.length,
+                        currentPage: this.pages[pageNumber - 1]
+                    }
+                )
+            ).message
+        );
         await this.save();
     }
 
-    /* getEmbedSize
-     * Returns the size of an embed in characters.
-     */
-    private getEmbedSize = (embed: discord.EmbedBuilder | null): number => {
-        return JSON.stringify(embed).length;
-    };
+    private async editManagedRecordMessage(): Promise<void> {
+        const payload = buildTicketManagedRecordMessagePayload(
+            this.pages
+                .map((entry) => entry.embed)
+                .filter((embed): embed is discord.EmbedBuilder => embed !== null)
+        );
 
-    /* splitAnswersIntoEmbeds
-     * Splits the answers into multiple embeds if the total size exceeds the Discord limit.
-     */
-    private async splitAnswersIntoEmbeds(source: "button" | "other", type: "initial" | "partial" | "completed", user: discord.User, formColor: discord.ColorResolvable, answers: { question: OTForms_Question, answer: string | null }[]): Promise<api.ODEmbedBuildResult[]> {
-        let embeds: api.ODEmbedBuildResult[] = [];
-        let currentEmbedStructure: api.ODEmbedBuildResult;
-        let currentEmbed: discord.EmbedBuilder | null;
-
-        let fields: api.ODEmbedData["fields"] = [];
-
-        for (const answer of answers) {
-            // Limit the question to 256 characters on the embed field title
-            const fieldName = answer.question.question.length > 256 ? answer.question.question.slice(0, 252) + "..." : answer.question.question;
-            // Answer are already limited to 1017 characters so are considered safe to use
-            const fieldValue = answer.answer || "Unanswered question.";
-            fields.push({ name: fieldName, value: `\`\`\`${fieldValue}\`\`\``, inline: false });
-
-            // Creates a new embed with the new field
-            currentEmbedStructure = await opendiscord.builders.embeds.getSafe("ot-ticket-forms:answers-embed").build(source, { type, user, formColor, fields, timestamp: this.timestamp });
-            currentEmbed = currentEmbedStructure.embed;
-            if(!currentEmbed) return embeds;
-            // Checks the size of the new embed
-            const newEmbedSize = this.getEmbedSize(currentEmbed);
-            const embedFields = currentEmbed.data.fields;
-            if(!embedFields) return embeds;
-    
-            // If the total size exceeds the 6000 characters limit or the fields are more than 25, creates a new embed
-            if (newEmbedSize > MAX_EMBED_SIZE || embedFields.length >= MAX_EMBED_FIELDS) {
-                fields.pop();
-                currentEmbedStructure = await opendiscord.builders.embeds.getSafe("ot-ticket-forms:answers-embed").build(source, { type, user, formColor, fields, timestamp: this.timestamp });
-                embeds.push(currentEmbedStructure);
-                fields = [{ name: fieldName, value: `\`\`\`${fieldValue}\`\`\`` }];
+        if (this._message) {
+            try {
+                await this._message.edit(payload);
+                this.registerInstance();
+                await this.save();
+                return;
+            } catch {
+                OTForms_AnswersManager.removeInstance(this._message.id);
+                this._message = null;
             }
-        };
-  
-        // Adds the last embed
-        if (fields.length > 0) {
-            currentEmbedStructure = await opendiscord.builders.embeds.getSafe("ot-ticket-forms:answers-embed").build(source, { type, user, formColor, fields, timestamp: this.timestamp });
+        }
+
+        const channel = await this.resolveManagedRecordChannel();
+        if (!channel) return;
+        this._message = await channel.send(payload);
+        this.registerInstance();
+        await this.save();
+    }
+
+    private async resolveManagedRecordChannel(): Promise<discord.GuildTextBasedChannel | null> {
+        if (!this.ticketContext) return null;
+        try {
+            const channel = await opendiscord.client.client.channels.fetch(this.ticketContext.ticketChannelId);
+            if (!isGuildTextBasedChannel(channel)) return null;
+            return channel;
+        } catch {
+            return null;
+        }
+    }
+
+    private async splitAnswersIntoEmbeds(
+        source: "button" | "other",
+        type: OTFormsDraftState,
+        user: discord.User,
+        formColor: discord.ColorResolvable,
+        answers: OTFormsCapturedAnswer[]
+    ): Promise<api.ODEmbedBuildResult[]> {
+        const embeds: api.ODEmbedBuildResult[] = [];
+        const fieldPages = splitManagedRecordFields(buildManagedRecordFields(answers));
+
+        for (const fields of fieldPages) {
+            const currentEmbedStructure = await opendiscord.builders.embeds.getSafe("ot-ticket-forms:answers-embed").build(
+                source,
+                { type, user, formColor, fields, timestamp: this.timestamp }
+            );
             embeds.push(currentEmbedStructure);
         }
-    
-        return embeds;
-    };
 
-    /* save
-     * Saves the answers message to the database so the AnswersManager could be restored if bot restarts.
-     */
+        return embeds;
+    }
+
     private async save(): Promise<void> {
-        // Save the answers message to the database
+        if (this.answerTarget == "ticket_managed_record" && this.ticketContext) {
+            const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+            const previousDraft = await service.getTicketDraft(
+                this.ticketContext.ticketChannelId,
+                this.formId,
+                this.ticketContext.applicantDiscordUserId
+            );
+            const completedAt = this._type == "completed"
+                ? (this.completedAt ?? new Date()).toISOString()
+                : previousDraft?.completedAt ?? null;
+            if (this._type == "completed" && !this.completedAt && completedAt) {
+                this.completedAt = new Date(completedAt);
+            }
+
+            const fallbackSnapshot: OTFormsTicketDraftSnapshot = {
+                ...this.ticketContext,
+                formId: this.formId,
+                answerTarget: this.answerTarget,
+                draftState: this._type,
+                formColor: String(this._formColor),
+                updatedAt: new Date().toISOString(),
+                completedAt,
+                managedRecordMessageId: this._message?.id ?? null,
+                answers: cloneAnswers(this._answers)
+            };
+
+            await service.storeTicketDraft(
+                rebindManagedRecordSnapshot(previousDraft ?? fallbackSnapshot, {
+                    managedRecordMessageId: this._message?.id ?? previousDraft?.managedRecordMessageId ?? null,
+                    draftState: this._type,
+                    updatedAt: fallbackSnapshot.updatedAt,
+                    completedAt,
+                    answers: cloneAnswers(this._answers)
+                })
+            );
+
+            if (this._type != "completed" || !completedAt) return;
+            await service.storeCompletedTicketForm({
+                ...this.ticketContext,
+                formId: this.formId,
+                completedAt,
+                answers: this._answers.map((entry) => ({
+                    position: entry.question.position,
+                    question: entry.question.question,
+                    answer: entry.answer
+                }))
+            });
+            try {
+                const bridgeService = opendiscord.plugins.classes.get("ot-eotfs-bridge:service") as unknown as OTFormsBridgeSyncService;
+                await bridgeService.syncReviewableDraftUpdate(this.ticketContext.ticketChannelId);
+            } catch {
+                // The bridge plugin is optional; completed draft persistence remains authoritative.
+            }
+            return;
+        }
+
         const data: {
             formId: string,
             sessionId: string,
             messageId: string | null,
             source: "button" | "other",
-            type: "initial" | "partial" | "completed",
+            type: OTFormsDraftState,
             userId: string,
             formColor: discord.ColorResolvable,
-            answers: { question: OTForms_Question, answer: string | null }[],
+            answers: OTFormsCapturedAnswer[],
             currentPage: number,
             timestamp: number
         } = {
@@ -183,7 +375,7 @@ export class OTForms_AnswersManager {
             type: this._type,
             userId: this._user.id,
             formColor: this._formColor,
-            answers: this._answers,
+            answers: cloneAnswers(this._answers),
             currentPage: this._currentPage,
             timestamp: this.timestamp.getTime()
         };
@@ -191,13 +383,17 @@ export class OTForms_AnswersManager {
         const channelId = this._message ? this._message.channel.id : null;
         const messageId = this._message ? this._message.id : null;
 
-        opendiscord.databases.get("opendiscord:global").set("ot-ticket-forms:answers-manager", `${channelId}_${messageId}`, data);
+        opendiscord.databases.get("opendiscord:global").set(
+            "ot-ticket-forms:answers-manager",
+            `${channelId}_${messageId}`,
+            data
+        );
         if (this._type !== "completed" || !this.ticketContext) return;
 
         const completedAt = this.completedAt ?? new Date();
         this.completedAt = completedAt;
 
-        const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID);
+        const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
         await service.storeCompletedTicketForm({
             ...this.ticketContext,
             formId: this.formId,
@@ -210,11 +406,61 @@ export class OTForms_AnswersManager {
         });
     }
 
-    /* restore
-     * Restores the answers message from the database.
-     */
+    private static async restoreManagedDrafts(): Promise<void> {
+        const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+        const snapshots = await service.listTicketDrafts();
+
+        for (const snapshot of snapshots) {
+            if (snapshot.answerTarget != "ticket_managed_record") continue;
+
+            let user: discord.User;
+            try {
+                user = await opendiscord.client.client.users.fetch(snapshot.applicantDiscordUserId);
+            } catch {
+                continue;
+            }
+
+            const manager = new OTForms_AnswersManager(
+                snapshot.formId,
+                snapshot.ticketChannelId,
+                `draft:${snapshot.applicantDiscordUserId}`,
+                "other",
+                snapshot.draftState,
+                user,
+                snapshot.formColor as discord.ColorResolvable,
+                cloneAnswers(snapshot.answers),
+                snapshot.answerTarget,
+                {
+                    ticketChannelId: snapshot.ticketChannelId,
+                    ticketChannelName: snapshot.ticketChannelName,
+                    ticketOptionId: snapshot.ticketOptionId,
+                    applicantDiscordUserId: snapshot.applicantDiscordUserId
+                }
+            );
+            if (snapshot.completedAt) {
+                manager.completedAt = new Date(snapshot.completedAt);
+            }
+            await manager.render();
+
+            if (snapshot.managedRecordMessageId) {
+                try {
+                    const channel = await opendiscord.client.client.channels.fetch(snapshot.ticketChannelId);
+                    if (channel && channel.isTextBased()) {
+                        const message = await channel.messages.fetch(snapshot.managedRecordMessageId);
+                        manager._message = message as discord.Message<boolean>;
+                    }
+                } catch {
+                    manager._message = null;
+                }
+            }
+            manager.registerInstance();
+        }
+    }
+
     static async restore(): Promise<void> {
-        const globalDatabase = opendiscord.databases.get("opendiscord:global")
+        await OTForms_AnswersManager.restoreManagedDrafts();
+
+        const globalDatabase = opendiscord.databases.get("opendiscord:global");
         const answersManagerCategory = await globalDatabase.getCategory("ot-ticket-forms:answers-manager") ?? [];
 
         for (const answersManagerData of answersManagerCategory) {
@@ -223,10 +469,10 @@ export class OTForms_AnswersManager {
                 sessionId: string,
                 messageId: string | null,
                 source: "button" | "other",
-                type: "initial" | "partial" | "completed",
+                type: OTFormsDraftState,
                 userId: string,
                 formColor: discord.ColorResolvable,
-                answers: { question: OTForms_Question, answer: string | null }[],
+                answers: OTFormsCapturedAnswer[],
                 currentPage: number,
                 timestamp: number
             } = answersManagerData.value;
@@ -238,57 +484,59 @@ export class OTForms_AnswersManager {
             const type = data.type;
             const userId = data.userId;
             const formColor = data.formColor;
-            const answers = data.answers;
+            const answers = cloneAnswers(data.answers);
             const currentPage = data.currentPage;
 
-            const user = await opendiscord.client.client.users.fetch(userId);
+            let user: discord.User;
+            try {
+                user = await opendiscord.client.client.users.fetch(userId);
+            } catch {
+                continue;
+            }
 
             const channelId = answersManagerData.key.split("_")[0];
             let channel: discord.Channel | null;
             try {
                 channel = await opendiscord.client.client.channels.fetch(channelId);
-            } catch (error) {
-                opendiscord.log("Channel not found for restoring answers manager. Form answers will not be restored.", "plugin", [
-                    {key:"channel", value:channelId}
-                ]);
+            } catch {
                 globalDatabase.delete("ot-ticket-forms:answers-manager", `${channelId}_${messageId}`);
-                return;
+                continue;
             }
-            if(!channel || !channel.isTextBased()) {
-                opendiscord.log("Channel not found for restoring answers manager. Form answers will not be restored.", "plugin", [
-                    {key:"channel", value:channelId}
-                ]);
-                return;
+            if (!channel || !channel.isTextBased()) {
+                continue;
             }
-            
-            if(!messageId) {
-                opendiscord.log("Message ID not found for restoring answers manager. Form answers will not be restored.", "plugin");
-                return;
+
+            if (!messageId) {
+                continue;
             }
+
             let message: discord.Message | null;
             try {
                 message = await channel.messages.fetch(messageId);
-            } catch (error) {
-                opendiscord.log("Message not found for restoring answers manager. Form answers will not be restored.", "plugin", [
-                    {key:"message", value:messageId}
-                ]);
+            } catch {
                 globalDatabase.delete("ot-ticket-forms:answers-manager", `${channelId}_${messageId}`);
-                return;
+                continue;
             }
 
             if (!message) {
-                opendiscord.log("Message not found for restoring answers manager. Form answers will not be restored.", "plugin", [
-                    {key:"message", value:messageId}
-                ]);
-                return;
+                continue;
             }
 
-            const answersManager = new OTForms_AnswersManager(formId, formId, sessionId, source, type, user, formColor, answers);
+            const answersManager = new OTForms_AnswersManager(
+                formId,
+                formId,
+                sessionId,
+                source,
+                type,
+                user,
+                formColor,
+                answers
+            );
             answersManager._currentPage = currentPage;
             answersManager.timestamp = new Date(data.timestamp);
-            answersManager._message = message;
+            answersManager._message = message as discord.Message<boolean>;
             await answersManager.render();
-            OTForms_AnswersManager._instances.set(message.id, answersManager);
+            answersManager.registerInstance();
         }
     }
 }

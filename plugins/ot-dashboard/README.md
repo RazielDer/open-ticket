@@ -13,6 +13,14 @@ This README follows the live contract in [`server/dashboard-config.ts`](server/d
 - Stores dashboard auth/session state in its own SQLite file, separate from transcript storage.
 - Keeps the shared dashboard chrome text-only and footer-free; `/health` stays available as a direct route instead of a visible shortcut.
 
+## EoTFS Pairing
+
+In the EoTFS stack, `ot-dashboard` is the operator-facing browser surface that pairs with:
+
+- [`../ot-html-transcripts/README.md`](../ot-html-transcripts/README.md) for transcript storage, slug lifecycle, and transcript service APIs
+- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) when whitelist tickets later attach transcript URLs into the Discord-side intake workflow
+- [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side bring-up and bridge worker contract
+
 ## Admin Host Vs Viewer Host
 
 Admin host responsibilities:

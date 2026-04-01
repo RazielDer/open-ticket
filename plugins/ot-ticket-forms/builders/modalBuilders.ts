@@ -20,6 +20,7 @@ opendiscord.events.get("onModalBuilderLoad").listen((modals) => {
                     required:!question.optional,
                     placeholder:question.placeholder ? question.placeholder : undefined,
                     maxLength: question.maxLength ?? 1023,
+                    value: question.value ?? undefined,
                 });
             }
         })

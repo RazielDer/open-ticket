@@ -1,0 +1,131 @@
+version: 1
+task:
+  key: ot_whitelist_application_ux_reliability_redesign
+  title: OT whitelist application UX and reliability redesign
+  status: completed
+  mode: implementation
+  roots:
+    - plugins/ot-ticket-forms
+    - plugins/ot-eotfs-bridge
+  source_specs:
+    - workflow.md
+    - evidence/whitelist-application-ux-reliability-planning.md
+    - slices/01-session-transport-and-passive-confirmation-foundation.md
+    - slices/02-smart-continuation-and-recovery.md
+    - slices/03-ticket-card-state-and-managed-record-status.md
+    - slices/04-final-verification-and-doc-sync.md
+  updated_at: 2026-04-01
+
+constraints:
+  write_scope:
+    - workflow.yaml
+    - workflow-ledger.yaml
+    - workflow.md
+    - runtime/controller-state.yaml
+    - active/active-slice.md
+    - slices/**
+    - evidence/**
+    - plugins/ot-ticket-forms/**
+    - plugins/ot-eotfs-bridge/**
+  forbidden_writes:
+    - src/**
+    - config/**
+    - database/**
+    - plugins/ot-dashboard/**
+    - plugins/ot-html-transcripts/**
+    - any path outside the listed write_scope
+  hard_stop_conditions:
+    - A required change lands in src/**, config/**, database/**, or any plugin outside ot-ticket-forms / ot-eotfs-bridge.
+    - The redesign cannot preserve applicant-only mutation plus bridge-owned edit locking.
+    - The implementation cannot prove the saved-vs-unsaved failure behavior through automated tests.
+    - The implementation requires changing the ticket-managed record answer schema instead of layering new UX/status copy on top of it.
+  repo_contracts:
+    - Preserve answerTarget="ticket_managed_record" as the canonical whitelist-application persistence path.
+    - Preserve the existing applicant start-form custom-id prefix ot-ticket-forms:sb_ so bridge placement and repair logic remain compatible.
+    - Preserve bridge review-state semantics and the reviewable statuses pending_review, retry_denied, and limit_locked.
+    - Preserve applicant-only mutation rules and the current bridge-owned edit lock gate canApplicantEdit(ticketChannelId).
+    - Preserve existing question definitions, question ordering, and the current rule that short/paragraph questions batch into modal sections of up to five items.
+    - Keep all work inside plugin scope plus this root controller kernel. Do not modify core Open Ticket responder classes.
+    - Use apply_patch for file edits.
+
+decisions:
+  - The user-facing goal is fewer clicks, clearer saved-state feedback, and reliable recovery, not literal preservation of every old ephemeral prompt.
+  - The ticket-local application card is the durable recovery anchor; ephemeral messages are live workflow guidance only.
+  - Ephemeral history remains visible only as compact passive section confirmations, not full answer previews and not raw prompt history.
+  - Smart continuation is locked:
+    - auto-advance whenever the next step can be rendered as a fresh component prompt
+    - require Continue Application only when a new click is needed to open a modal or recover after a UI-delivery failure
+  - The current single sessionMessage carrier in OTForms_FormSession must be removed; session state must not depend on one mutable ephemeral message.
+  - Stale prompts must never remain interactive after an answer is accepted; retire them in place for button/dropdown prompts and replace them with passive history for modal prompts.
+  - Saved vs unsaved failures must be distinguished:
+    - if draft persistence succeeded and UI delivery failed, preserve progress and route recovery through Continue Application or the ticket card
+    - if draft persistence failed, do not advance the session
+  - Keep the duplicate-interaction gate, but duplicate/stale acknowledgements must use neutral recovery copy instead of red internal-error framing.
+  - The persistent ticket button becomes state-aware:
+    - Fill Out Application
+    - Continue Application
+    - Update Application
+    - Application Locked
+  - The start-form button keeps its existing custom-id and responder path; only its label, enabled state, and supporting embed copy change by draft/review state.
+  - The ticket-managed record remains the canonical full answer transcript and must also show draft/completion state clearly enough that users and staff can tell whether progress was saved.
+  - Recovery cannot rely on old ephemeral messages still being present because users may dismiss them; the ticket card must always be sufficient to resume.
+  - ot-eotfs-bridge remains the source of truth for editability. When bridge state changes editability, it must trigger a ticket-card refresh instead of relying on stale card copy.
+  - The user explicitly approved sequential execution across all locked slices as long as each prior slice is implemented, verified, and the kernel state is updated before promotion.
+
+repo_grounded_clarifications:
+  - OTForms_FormSession currently stores one sessionMessage and routes question/continue/finalize output through reply/update against that single message.
+  - Button and dropdown responders can update the originating interaction message, while modal responders reply via followUp and cannot safely own the prior ephemeral message in the same way.
+  - applyDraftResponses already persists answers before continueSession runs, which makes saved-vs-unsaved failure branching feasible without changing the answer model.
+  - ensureStartFormMessage currently guarantees presence only; it does not yet relabel or re-render the existing ticket card when draft or bridge state changes.
+  - AnswersManager already owns ticket-managed draft persistence and bridge sync on completed drafts, so managed-record status copy can be layered there without replacing the persistence path.
+  - Existing tests cover draft merge/resume, edit hydration, start-form presence, and ticket-managed-record pagination, but they do not cover end-to-end interaction transport or timeout recovery.
+
+execution_defaults:
+  planning_cadence: planning-basis plus active, next, following, and trailing implementation-ready slices
+  implementation_mode: single-agent, sequential; back-to-back execution across the locked slices is approved when the prior slice verification passes and kernel state is updated before continuing
+  promotion_rule: Only one active slice may be in progress at a time. The next three slices are pre-locked and may be promoted in order without further planning if their blockers are cleared by the verified prior slice.
+
+phases:
+  - id: P01
+    title: Session transport and passive confirmation foundation
+    status: completed
+    depends_on: []
+    slices:
+      - 01-session-transport-and-passive-confirmation-foundation
+    outputs:
+      - FormSession no longer depends on one mutable ephemeral carrier
+      - Passive section confirmations replace destructive prompt overwrites
+      - Stale button/dropdown controls retire cleanly after save
+  - id: P02
+    title: Smart continuation and saved-state recovery
+    status: completed
+    depends_on:
+      - P01
+    slices:
+      - 02-smart-continuation-and-recovery
+    outputs:
+      - Auto-advance for component-based next steps
+      - Continue Application only where a new click is required
+      - Saved-vs-unsaved failure behavior plus duplicate-interaction recovery
+  - id: P03
+    title: Ticket card state and managed-record clarity
+    status: completed
+    depends_on:
+      - P02
+    slices:
+      - 03-ticket-card-state-and-managed-record-status
+    outputs:
+      - State-aware ticket button labels and embed copy
+      - Managed-record draft/completion status copy
+      - Bridge-triggered ticket-card refresh when editability changes
+  - id: P04
+    title: Final verification and operator-doc sync
+    status: completed
+    depends_on:
+      - P03
+    slices:
+      - 04-final-verification-and-doc-sync
+    outputs:
+      - Compiled build plus full targeted automated verification
+      - README updates for the new application-flow contract
+      - Final evidence and kernel closeout

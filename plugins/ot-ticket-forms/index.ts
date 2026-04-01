@@ -10,6 +10,7 @@ import {
     resolveOriginalApplicantDiscordUserId,
     type OTFormsCompletedTicketFormContext
 } from "./service/forms-service";
+import type { OTForms_Form as OTFormsFormConfig } from "./types/configDefaults";
 
 import "./config/configRegistration";
 import "./builders/messageBuilders";
@@ -21,6 +22,12 @@ import "./builders/commandBuilders";
 
 const forms = new Map<string, OTForms_Form>();
 
+function isGuildTextBasedChannel(
+    channel: discord.Channel | null
+): channel is discord.GuildTextBasedChannel {
+    return !!channel && channel.isTextBased() && "guildId" in channel
+}
+
 function resolveTicketFormContext(ticket: api.ODTicket, channel: discord.GuildTextBasedChannel, applicantDiscordUserId: string | null): OTFormsCompletedTicketFormContext | null {
     if (!applicantDiscordUserId) return null
     return {
@@ -29,6 +36,106 @@ function resolveTicketFormContext(ticket: api.ODTicket, channel: discord.GuildTe
         ticketOptionId: ticket.option.id.value,
         applicantDiscordUserId
     }
+}
+
+async function resolveAnswerChannel(
+    guild: discord.Guild,
+    ticketChannel: discord.GuildTextBasedChannel,
+    formConfig: OTFormsFormConfig
+): Promise<discord.GuildTextBasedChannel | null> {
+    if (formConfig.answerTarget == "ticket_managed_record") {
+        return ticketChannel;
+    }
+    const answersChannel = await guild.channels.fetch(formConfig.responseChannel);
+    if (!isGuildTextBasedChannel(answersChannel)) {
+        opendiscord.log("Error: Invalid answers channel.", "plugin");
+        return null;
+    }
+    return answersChannel;
+}
+
+function registerForm(
+    formConfig: OTFormsFormConfig,
+    channel: discord.GuildTextBasedChannel,
+    answersChannel: discord.GuildTextBasedChannel | null,
+    ticketContext: OTFormsCompletedTicketFormContext | null
+): OTForms_Form {
+    const questions = [...formConfig.questions].sort((a, b) => a.position - b.position);
+    const form = new OTForms_Form(
+        formConfig.id,
+        channel.id,
+        channel,
+        formConfig.name,
+        formConfig.color,
+        questions,
+        formConfig.answerTarget,
+        answersChannel,
+        ticketContext
+    );
+    forms.set(form.instanceId, form);
+    return form;
+}
+
+async function restoreTicketForms(): Promise<void> {
+    const formsConfig = opendiscord.configs.get("ot-ticket-forms:config").data;
+    const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+    for (const ticket of opendiscord.tickets.getFiltered((entry) => !entry.get("opendiscord:closed").value)) {
+        const matchingForms = formsConfig.filter((formConfig) => formConfig.autoSendOptionIds.includes(ticket.option.id.value));
+        if (matchingForms.length < 1) continue;
+
+        let channel: discord.GuildTextBasedChannel | null = null;
+        try {
+            const fetchedChannel = await opendiscord.client.client.channels.fetch(ticket.id.value);
+            if (isGuildTextBasedChannel(fetchedChannel)) {
+                channel = fetchedChannel;
+            }
+        } catch {
+            channel = null;
+        }
+        if (!channel) continue;
+
+        const applicantDiscordUserId = resolveOriginalApplicantDiscordUserId(
+            ticket.get("opendiscord:opened-by").value,
+            ticket.get("opendiscord:previous-creators").value
+        );
+        for (const formConfig of matchingForms) {
+            const answersChannel = await resolveAnswerChannel(channel.guild, channel, formConfig);
+            if (!answersChannel) continue;
+            if (!forms.has(channel.id)) {
+                registerForm(
+                    formConfig,
+                    channel,
+                    answersChannel,
+                    resolveTicketFormContext(ticket, channel, applicantDiscordUserId)
+                );
+            }
+            await service.refreshTicketStartFormMessage(channel.id, formConfig.id);
+        }
+    }
+}
+
+async function rejectUnauthorizedMutation(
+    instance: api.ODButtonResponderInstance | api.ODDropdownResponderInstance | api.ODModalResponderInstance,
+    form: OTForms_Form
+): Promise<boolean> {
+    const rejectionMessage = form.getMutationBlockReason(instance.user.id);
+    if (!rejectionMessage) return false;
+
+    if (!instance.didReply && !instance.interaction.deferred && !instance.interaction.replied) {
+        if (instance instanceof api.ODModalResponderInstance) {
+            await instance.defer("reply", true);
+            await instance.interaction.editReply({ content: rejectionMessage });
+        } else {
+            await instance.reply({
+                id: new api.ODId("ot-ticket-forms:not-applicant"),
+                ephemeral: true,
+                message: {
+                    content: rejectionMessage
+                }
+            });
+        }
+    }
+    return true;
 }
 
 opendiscord.events.get("onPluginClassLoad").listen((classes) => {
@@ -41,8 +148,11 @@ opendiscord.events.get("afterCodeExecuted").listen(async () => {
         formConfig.questions.sort((a, b) => a.position - b.position);
     }
     opendiscord.log("Plugin \"ot-ticket-forms\" restoring answers...", "plugin");
-    await opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID).restoreCompletedTicketForms();
+    const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+    await service.restoreCompletedTicketForms();
+    await service.restoreTicketDrafts();
     await OTForms_AnswersManager.restore();
+    await restoreTicketForms();
 })
 
 /* TICKET CREATED EVENT
@@ -52,34 +162,16 @@ opendiscord.events.get("afterCodeExecuted").listen(async () => {
 opendiscord.events.get("afterTicketCreated").listen(async (ticket, creator, channel) => {
     const formsConfig = opendiscord.configs.get("ot-ticket-forms:config").data;
     const ticketId = ticket.option.id.value;
+    const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
 
     for(const formConfig of formsConfig) {
         if (formConfig.autoSendOptionIds.includes(ticketId)) {
+            const answersChannel = await resolveAnswerChannel(channel.guild, channel, formConfig);
+            if(!answersChannel) return;
 
-            const startMessageTemplate = await opendiscord.builders.messages.getSafe("ot-ticket-forms:start-form-message").build("ticket", {
-                formId: formConfig.id,
-                formInstanceId: channel.id,
-                formName: formConfig.name,
-                formDescription: formConfig.description,
-                formColor: formConfig.color,
-                acceptAnswers: true
-            });
-
-            const startMessage = await channel.send(startMessageTemplate.message);
-            const answersChannel = await channel.guild.channels.fetch(formConfig.responseChannel);
-            if(!answersChannel || !answersChannel.isTextBased()) {
-                opendiscord.log("Error: Invalid answers channel.", "plugin");
-                return;
-            }
-            
-            const questions = formConfig.questions.sort((a, b) => a.position - b.position);
-            const form = new OTForms_Form(
-                formConfig.id,
-                channel.id,
-                startMessage,
-                formConfig.name,
-                formConfig.color,
-                questions,
+            registerForm(
+                formConfig,
+                channel,
                 answersChannel,
                 resolveTicketFormContext(
                     ticket,
@@ -90,7 +182,7 @@ opendiscord.events.get("afterTicketCreated").listen(async (ticket, creator, chan
                     )
                 )
             );
-            forms.set(form.instanceId, form);
+            await service.refreshTicketStartFormMessage(channel.id, formConfig.id);
         }
     };
 });
@@ -124,6 +216,7 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
             if (scope == "send"){
                 const formId = instance.options.getString("id",true)
                 const formChannel = instance.options.getChannel("channel",true) as discord.GuildTextBasedChannel
+                const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService
                 
                 const formConfig = formsConfig.find((form) => form.id == formId)
                 if (!formConfig){
@@ -139,15 +232,11 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
                     formColor: formConfig.color,
                     acceptAnswers: true
                 });
-
-                const startMessage = await formChannel.send(startMessageTemplate.message);
-                const answersChannel = await guild.channels.fetch(formConfig.responseChannel);
-                if(!answersChannel || !answersChannel.isTextBased()) {
-                    opendiscord.log("Error: Invalid answers channel.", "plugin");
+                const answersChannel = await resolveAnswerChannel(guild, formChannel, formConfig);
+                if(!answersChannel) {
                     return;
                 }
 
-                const questions = formConfig.questions.sort((a, b) => a.position - b.position);
                 const ticket = opendiscord.tickets.get(formChannel.id);
                 const applicantDiscordUserId = ticket
                     ? resolveOriginalApplicantDiscordUserId(
@@ -155,8 +244,17 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
                         ticket.get("opendiscord:previous-creators").value
                     )
                     : null;
-                const form = new OTForms_Form(formConfig.id, formChannel.id, startMessage, formConfig.name, formConfig.color, questions, answersChannel, ticket ? resolveTicketFormContext(ticket, formChannel, applicantDiscordUserId) : null);
-                forms.set(form.instanceId, form);
+                registerForm(
+                    formConfig,
+                    formChannel,
+                    answersChannel,
+                    ticket ? resolveTicketFormContext(ticket, formChannel, applicantDiscordUserId) : null
+                );
+                if (ticket) {
+                    await service.refreshTicketStartFormMessage(formChannel.id, formConfig.id);
+                } else {
+                    await formChannel.send(startMessageTemplate.message);
+                }
             }
 
             await instance.reply(await opendiscord.builders.messages.getSafe("ot-ticket-forms:success-message").build(source,{}))
@@ -191,6 +289,7 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
         const formInstanceId = instance.interaction.customId.split("_")[1];
         const form = forms.get(formInstanceId);
         if (!form) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
         const session = form.createSession(instance.interaction.user, instance.message);
         await session.setInstance(instance);
@@ -211,8 +310,9 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
 
         const session = form.getSession(sessionId);
         if (!session) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
-        session.setInstance(instance);
+        await session.setInstance(instance);
 
         await session.continue("question");
     }));
@@ -222,14 +322,15 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
      */
     buttons.add(new api.ODButtonResponder("ot-ticket-forms:delete-answers-button", /^ot-ticket-forms:db_/));
     opendiscord.responders.buttons.get("ot-ticket-forms:delete-answers-button").workers.add(new api.ODWorker("ot-ticket-forms:delete-answers-button", 0, async (instance, params, source, cancel) => {
-        await instance.defer("update",true);
-        OTForms_AnswersManager.removeInstance(instance.message.id);
-        instance.message.delete();
-
         const customIdParts = instance.interaction.customId.split("_");
         const formInstanceId = customIdParts[1];
         const form = forms.get(formInstanceId);
         if (!form) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+
+        await instance.defer("update",true);
+        OTForms_AnswersManager.removeInstance(instance.message.id);
+        instance.message.delete();
 
         const sessionId = customIdParts[2];
 
@@ -250,8 +351,9 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
 
         const session = form.getSession(sessionId);
         if (!session) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
-        session.setInstance(instance);
+        await session.setInstance(instance);
 
         const answer = customIdParts.slice(3).join("_");
         await session.handleButtonResponse(answer);
@@ -302,6 +404,7 @@ opendiscord.events.get("onModalResponderLoad").listen((modals, responders, actio
         const sessionId = customIdParts[2];
         const session = form.getSession(sessionId);
         if (!session) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
         const answeredQuestions: {number: number,required:boolean}[] = customIdParts[3].split('-').map(pair => {
             const [num, required] = pair.split('/');
@@ -312,7 +415,7 @@ opendiscord.events.get("onModalResponderLoad").listen((modals, responders, actio
         });
 
         const response = instance.values;
-        session.setInstance(instance, true);
+        await session.setInstance(instance, true);
 
         await session.handleModalResponse(response, answeredQuestions);
     }));
@@ -332,9 +435,10 @@ opendiscord.events.get("onDropdownResponderLoad").listen((dropdowns, responders,
         const sessionId = customIdParts[2];
         const session = form.getSession(sessionId);
         if (!session) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
         const response = instance.values;
-        session.setInstance(instance);
+        await session.setInstance(instance);
         
         await session.handleDropdownResponse(response);
     }));

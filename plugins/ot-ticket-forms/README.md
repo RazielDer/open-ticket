@@ -1,127 +1,155 @@
 # OT Ticket Forms
-This plugin allows you to create advanced forms with 4 types of questions. You can add unlimited questions to a form. The available types are:
-- short text
-- paragraph text
-- dropdown
-- buttons
 
-> This README.md explains how to configure these forms using the provided JSON structure. 
-> The configuration allows for highly customizable forms, including various question types like text, dropdowns and buttons.
+Local EoTFS plugin for structured ticket forms. Supported question types are:
 
-### Structure of the Configuration File
-Each form in the configuration file is defined as a JSON object with the following fields:
+- `short`
+- `paragraph`
+- `dropdown`
+- `button`
 
-#### Form-Level Properties
-- **`id`**: A unique identifier for the form. 
-  - Example: `"example-form"`.
+## Form Configuration
 
-- **`name`**: The name of the form.
-  - Example: `"Example Form"`.
+Each form entry in `config.json` is a JSON object with these form-level properties:
 
-- **`description`**: A brief description of the form (optional).
-  - Example: `"This is an example form (or leave it empty)"`.
+- `id`: unique form identifier
+- `name`: operator-facing form name
+- `description`: optional summary shown with the form
+- `color`: hex color string used for embeds
+- `answerTarget`: where answers are rendered
+  - `response_channel`: post answer messages into `responseChannel`
+  - `ticket_managed_record`: keep one managed answer record inside the ticket and update it in place
+- `responseChannel`: channel id used only when `answerTarget` is `response_channel`
+- `autoSendOptionIds`: OT option ids that auto-send the form on ticket creation
 
-- **`color`**: A hexadecimal color code representing the form's visual theme.
-  - Example: `"#f8ba00"`.
+## Question Configuration
 
-- **`responseChannel`**: The ID of the channel where responses will be sent.
-  - Example: `"1331729987518201916"`.
+Each question entry supports these common properties:
 
-- **`autoSendOptionIds`**: An array of Open Ticket option IDs where the form will be auto-sent when a user creates a ticket of this type.
-  - Example: `["example-ticket-1", "example-ticket-2"]`.
+- `position`: the ordered question number
+- `question`: rendered prompt text
+- `type`: `short`, `paragraph`, `dropdown`, or `button`
 
-#### Questions Section
-The `questions` array defines the form's questions. Each question object includes the following properties:
+Text questions (`short`, `paragraph`) also support:
 
-> #### Common Question Properties
-> 1. **`number`**: The question's unique number in the form.
-> 2. **`question`**: The text of the question.
-> 3. **`type`**: Specifies the question type. Supported values are:
->    - `"short"`: Short answer (single line) by a discord modal.
->    - `"paragraph"`: Paragraph answer (multiple lines) by a discord modal.
->    - `"dropdown"`: Dropdown menu with multiple options. It lets you select single or multiple answers.
->    - `"button"`: Button options.
+- `optional`: whether the field may be skipped
+- `placeholder`: optional input hint
+- `maxLength`: optional maximum answer length
 
-> #### Type Text Properties
-> For questions of type `short` or `long`:
-> - **`optional`**: A boolean indicating if the question is optional (`true`) or required (`false`).
-> - **`placeholder`**: A text placeholder for the response input (optional).
-> - **`maxLength`**: A number to set the max length size of the response (optional, default 1023).
+Dropdown questions also support:
 
-> #### Dropdown-Specific Properties
-> For questions of type `dropdown`:
-> - **`minAnswerChoices`**: The minimum number of choices a user must select.
-> - **`maxAnswerChoices`**: The maximum number of choices a user can select.
-> - **`placeholder`**: A text placeholder for the response input (optional).
-> - **`choices`**: An array of dropdown choices. Each choice includes:
->   - **`name`**: The name of the choice.
->   - **`emoji`**: An emoji to display with the choice (optional).
->   - **`description`**: A description of the choice (optional).
+- `placeholder`
+- `minAnswerChoices`
+- `maxAnswerChoices`
+- `choices`
+  - `name`
+  - `emoji`
+  - `description`
 
-> #### Button-Specific Properties
-> For questions of type `button`:
-> - **`choices`**: An array of button choices. Each button includes:
->   - **`name`**: The name of the button.
->   - **`emoji`**: An emoji to display with the button (optional).
->   - **`color`**: The button's color. Supported values: `"gray"`, `"red"`, `"green"`, `"blue"`.
+Button questions also support:
 
-### Example Form
+- `choices`
+  - `name`
+  - `emoji`
+  - `color` as `gray`, `red`, `green`, or `blue`
+
+## EoTFS Whitelist Local Contract
+
+The released `whitelist-review-form` uses the ticket-local draft path:
+
+- `answerTarget` must stay `ticket_managed_record`
+- `responseChannel` must stay blank
+- one managed application record exists per applicant, ticket, and form
+- normal ticket discussion remains available, but only the structured ticket-card application flow mutates saved whitelist answers
+- `Q1` remains an applicant-entered consistency check and must match the live ticket creator username or global name or nickname before OT handoff when aliases are available
+- `Q2` must contain one or more AGIDs written as `123456789` or `123-456-789`; accepted values are canonicalized by the OT bridge to grouped `123-456-789`
+- the ticket flow still does not perform live external Alderon-account existence verification
+- the OT-side handoff contract lives in [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md)
+
+## Released Applicant Flow
+
+The applicant ticket card is the durable recovery anchor for the whitelist application.
+
+Released card states:
+
+- `Fill Out Application`: no saved draft or only the implicit `initial` state exists
+- `Continue Application`: a partial draft is saved and the next step needs a fresh click
+- `Update Application`: the application is submitted and bridge review still allows applicant edits
+- `Application Locked`: bridge review is no longer editable, so the applicant card disables further edits
+
+Released continuation rules:
+
+- the flow auto-sends the next prompt when the next unanswered section is button- or dropdown-based
+- `Continue Application` appears only when the next unanswered section must open a modal or when saved progress needs a recovery click
+- if a saved UI delivery fails after persistence, the draft remains authoritative and the ticket card plus any recovery `Continue Application` prompt are the supported resume path
+
+Released ephemeral vs managed-record responsibilities:
+
+- retained ephemerals are compact passive section confirmations only
+- stale prompts must not remain the active recovery path
+- the ticket-managed record inside the ticket remains the canonical answer transcript
+- the managed record now distinguishes draft-saved vs submitted state so applicants and staff can tell whether progress is merely saved or fully submitted
+
+## Companion Docs
+
+- [OT EoTFS Bridge](../ot-eotfs-bridge/README.md)
+- [Discord Staff Operator Guide](../../../../EoTFS Discord Bot/docs/staff-operators/README.md)
+- [Discord Host / Admin Guide](../../../../EoTFS Discord Bot/docs/host-admin/README.md)
+
+## Example
+
 ```json
 {
-    "id": "example-form",
-    "name": "Example Form",
-    "description": "This is an example form (or leave it empty)",
-    "color": "#99DD99",
-    "responsesChannel": "channel id where the responses will be sent",
-    "OTTicketAutoSend": ["example-ticket", "ticket id"],
-    "questions": [
+  "id": "example-form",
+  "name": "Example Form",
+  "description": "Example ticket-local form",
+  "color": "#99dd99",
+  "answerTarget": "ticket_managed_record",
+  "responseChannel": "",
+  "autoSendOptionIds": ["example-ticket"],
+  "questions": [
+    {
+      "position": 1,
+      "question": "Short answer example?",
+      "type": "short",
+      "optional": false,
+      "placeholder": "Single-line response",
+      "maxLength": 120
+    },
+    {
+      "position": 2,
+      "question": "Paragraph answer example?",
+      "type": "paragraph",
+      "optional": false,
+      "placeholder": "Multi-line response",
+      "maxLength": 500
+    },
+    {
+      "position": 3,
+      "question": "Choose one option",
+      "type": "dropdown",
+      "placeholder": "Select one",
+      "minAnswerChoices": 1,
+      "maxAnswerChoices": 1,
+      "choices": [
         {
-            "number": 1,
-            "question": "That's an example of short answer question? You can add as many questions as you want.",
-            "type": "short",
-            "optional": false,
-            "placeholder": "Single line response, no paragraphs allowed. (or leave it empty)"
+          "name": "Option one",
+          "emoji": "",
+          "description": "First option"
         },
         {
-            "number": 2,
-            "question": "That's an example of paragraph answer question?",
-            "type": "long",
-            "optional": false,
-            "placeholder": "Multiple lines response, paragraphs allowed. (or leave it empty)",
-            "maxLength": 500
-        },
-        {
-            "number": 4,
-            "question": "That's an example of multiple options dropdown question?",
-            "type": "dropdown",
-            "placeholder": "You can select only one option from the dropdown",
-            "minAnswerOptions": 1,
-            "maxAnswerOptions": 1,
-            "options": [
-                {
-                    "option": "This is the first option.",
-                    "emoji": "emoji (or leave it empty)",
-                    "description": "description (or leave it empty)"
-                },
-                {
-                    "option": "And this is the second option. You can add up to 25 options...",
-                    "emoji": "emoji (or leave it empty)",
-                    "description": "description (or leave it empty)"
-                }
-            ]
+          "name": "Option two",
+          "emoji": "",
+          "description": "Second option"
         }
-    ]
+      ]
+    }
+  ]
 }
 ```
 
-### Notes
-1. Each form must have a unique `id`.
-2. The maximum number of dropdown or button options is 25.
-3. Use meaningful and concise placeholders to guide users.
-4. Keep required questions clear to ensure proper response handling.
-5. A form does not have a question limit. But try to make it as shorter as you can so the user can answer in a short time.
-6. You can add as many forms as you want.
-7. The forms will be sent automatically when a user creates a ticket from which the option id is on the `autoSendOptionIds` field.
-8. You can also send a form using the slash command `/form send <form> <channel>`. This command allows sending the form to a text channel or a thread.
+## Notes
 
-By following this structure, you can create robust and flexible forms with the OT plugin.
+1. Each form must have a unique `id`.
+2. Dropdown and button questions may contain up to 25 choices.
+3. The form can be auto-sent from eligible ticket options through `autoSendOptionIds`.
+4. You can also send a form manually with `/form send <form> <channel>`.

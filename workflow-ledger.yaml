@@ -1,0 +1,49 @@
+version: 1
+overall_status: completed
+last_updated: 2026-04-01
+active_slice: null
+prepared_next_slice: null
+prepared_following_slice: null
+prepared_trailing_slice: null
+
+slices:
+  - id: 01-session-transport-and-passive-confirmation-foundation
+    phase: P01
+    title: Session transport and passive confirmation foundation
+    status: completed
+    blockers: []
+    next_gate:
+      - OTForms_FormSession no longer routes the entire workflow through one mutable sessionMessage.
+      - Accepted button/dropdown prompts retire their controls and remain visible only as passive history.
+      - Passive section confirmations are compact and do not echo full answer text.
+      - Targeted session-flow tests cover the new prompt-retirement path.
+  - id: 02-smart-continuation-and-recovery
+    phase: P02
+    title: Smart continuation and saved-state recovery
+    status: completed
+    blockers: []
+    next_gate:
+      - The next prompt auto-sends when it is component-based and Continue Application appears only when a new click is required.
+      - Saved-after-persist UI failures preserve progress and expose a clean recovery path.
+      - Unsaved failures do not advance the session.
+      - Duplicate/stale interactions no longer surface as internal-error UX.
+  - id: 03-ticket-card-state-and-managed-record-status
+    phase: P03
+    title: Ticket card state and managed-record clarity
+    status: completed
+    blockers: []
+    next_gate:
+      - The persistent ticket button relabels to Fill Out / Continue / Update / Locked using draft plus bridge-editability state.
+      - The ticket-managed record visibly distinguishes draft-saved from completed-submitted states.
+      - Bridge status changes refresh the ticket card when editability changes.
+      - Start-form runtime and bridge compatibility tests cover the relabel/update path.
+  - id: 04-final-verification-and-doc-sync
+    phase: P04
+    title: Final verification and operator-doc sync
+    status: completed
+    blockers: []
+    next_gate:
+      - npm run build passes after all slices land.
+      - The full targeted ot-ticket-forms and ot-eotfs-bridge compiled test sweep passes.
+      - README/operator docs describe the shipped smart-continuation, ticket-card labels, and recovery model.
+      - Final evidence records the automated and any available live/manual verification outcomes.

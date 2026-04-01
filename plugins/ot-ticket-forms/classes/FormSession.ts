@@ -1,8 +1,44 @@
 import { api, opendiscord } from "#opendiscord"
 import * as discord from "discord.js"
-import { OTForms_Question, OTForms_ButtonQuestion, OTForms_DropdownQuestion, OTForms_ModalQuestion } from "../types/configDefaults"
+import {
+    OTForms_ButtonQuestion,
+    OTForms_DropdownQuestion,
+    OTForms_ModalQuestion,
+    OTFormsCapturedAnswer
+} from "../types/configDefaults"
 import { OTForms_Form } from "./Form"
 import { OTForms_AnswersManager } from "./AnswersManager"
+import {
+    OT_FORMS_PLUGIN_SERVICE_ID,
+    type OTFormsService
+} from "../service/forms-service"
+import {
+    applyDraftResponses,
+    OTFormsInteractionGate,
+    resolveNextSessionAction,
+    resolveDraftResumeQuestionIndex
+} from "../service/draft-runtime"
+import {
+    findSavedAnswer,
+    hydrateModalQuestionsWithSavedAnswers
+} from "../service/edit-mode-runtime"
+import {
+    buildEphemeralStatusMessage,
+    deliverLiveContinuePrompt,
+    deliverLiveQuestionPrompt,
+    deliverPassiveAnsweredConfirmation,
+    deliverStatusReply,
+    OT_FORMS_NEUTRAL_RECOVERY_MESSAGE,
+    OT_FORMS_SAVE_FAILURE_MESSAGE,
+    type OTFormsSessionMessageDeliveryMode,
+    type OTFormsSessionResponderInstance,
+    type OTFormsSessionTransportKind
+} from "../service/session-message-runtime"
+
+type OTFormsResponderInstance =
+    | api.ODButtonResponderInstance
+    | api.ODDropdownResponderInstance
+    | api.ODModalResponderInstance
 
 /* FORM SESSION CLASS
  * This is the main clas of a form session (every user answering a form is a OTForms_FormSession).
@@ -15,10 +51,11 @@ export class OTForms_FormSession {
     private form: OTForms_Form;
     private currentSection: number = 1;
     private currentQuestionNumber: number = 0;
-    private answers: { question: OTForms_Question, answer: string | null }[] = [];
-    private instance: api.ODButtonResponderInstance | api.ODDropdownResponderInstance | api.ODModalResponderInstance | undefined;
+    private answers: OTFormsCapturedAnswer[] = [];
+    private instance: OTFormsResponderInstance | undefined;
     private answersManager: OTForms_AnswersManager | undefined;
-    private sessionMessage: api.ODMessageBuildSentResult<boolean> | null = null;
+    private readonly interactionGate = new OTFormsInteractionGate();
+    private hydratedFromDraft = false;
 
     constructor(id: string, user: discord.User, form: OTForms_Form) {
         this.id = id;
@@ -26,285 +63,523 @@ export class OTForms_FormSession {
         this.form = form;
     }
 
-    /* START FORM SESSION
-     * Starts the form session. Sends the first question to the user.
-     */
     public async start(): Promise<void> {
+        await this.hydrateFromDraftState();
         await this.sendNextQuestion();
     }
 
-    /* CONTINUE FORM SESSION
-     * Moves to the next step on the form session. It sends the next question, the continue message or finalize the session.
-     */
-    public async continue(mode:"question" | "continue"): Promise<void> {
-        if(this.currentQuestionNumber >= this.form.questions.length) {
+    public async continue(mode:"question" | "continue"): Promise<boolean> {
+        if (this.currentQuestionNumber >= this.form.questions.length) {
             this.currentSection++;
-            await this.finalize();
-            return;
-        } else if(mode === "question") {
-            await this.sendNextQuestion();
-            return;
-        } else if(mode === "continue") {
-            this.currentSection++;
-            await this.sendContinueMessage();
-            return;
-        } else {
-            this.currentSection++;
-            await this.finalize();
-            return;
+            return this.finalize();
+        }
+        if (mode === "question") {
+            return this.sendNextQuestion();
+        }
+        this.currentSection++;
+        switch (resolveNextSessionAction(this.form.questions, this.currentQuestionNumber)) {
+            case "auto_advance_question":
+                await this.sendPassiveSectionConfirmation();
+                return this.sendNextQuestion();
+            case "finalize":
+                return this.finalize();
+            case "continue_prompt":
+            default:
+                return this.sendContinueMessage(true);
         }
     }
 
-    /* HANDLE RESPONSE
-     * Handles the response of a type button or dropdown question. 
-     * Stores the answer and sends the next question.
-     */
-    private handleResponse(answers: { question: OTForms_Question; answer: string | null; }[]): void {
-        this.currentQuestionNumber++;
-        this.answers = this.answers.concat(answers);
-        this.updateAnswersMessage();
-        this.continue("continue");
+    private async handleResponse(answers: OTFormsCapturedAnswer[]): Promise<void> {
+        const previousQuestionNumber = this.currentQuestionNumber;
+        const previousSection = this.currentSection;
+        const previousAnswers = this.answers.map((entry) => ({
+            question: { ...entry.question },
+            answer: entry.answer
+        }));
+        const advancedQuestionNumber = this.currentQuestionNumber + answers.length;
+        try {
+            const nextState = await applyDraftResponses({
+                currentQuestionIndex: this.currentQuestionNumber,
+                existingAnswers: this.answers,
+                incomingAnswers: answers,
+                updateDraft: async (mergedAnswers) => {
+                    this.answers = mergedAnswers;
+                    this.currentQuestionNumber = advancedQuestionNumber;
+                    await this.updateAnswersMessage();
+                },
+                continueSession: async () => {
+                    this.currentQuestionNumber = advancedQuestionNumber;
+                    return this.continue("continue");
+                }
+            });
+            this.currentQuestionNumber = nextState.currentQuestionIndex;
+            this.answers = nextState.answers;
+
+            if (!nextState.uiDeliverySucceeded && nextState.currentQuestionIndex < this.form.questions.length) {
+                await this.sendContinueMessage(false);
+            }
+        } catch {
+            this.currentQuestionNumber = previousQuestionNumber;
+            this.currentSection = previousSection;
+            this.answers = previousAnswers;
+            await this.acknowledgeUnsavedFailure();
+        }
     }
 
-    /* HANDLE BUTTON RESPONSE
-     * Handles the response of a button question.
-     */
     public async handleButtonResponse(response: string): Promise<void> {
-        const question = this.form.questions[this.currentQuestionNumber];
-        const answers = [{ question, answer: response }];
-        this.handleResponse(answers);
+        await this.withInteractionGuard(async () => {
+            if (!this.isCurrentComponentPromptActive()) {
+                await this.acknowledgeNeutralRecovery(this.instance);
+                return;
+            }
+            const question = this.form.questions[this.currentQuestionNumber];
+            await this.handleResponse([{ question, answer: response }]);
+        });
     }
 
-    /* HANDLE DROPDOWN RESPONSE
-     * Handles the response of a dropdown question.
-     */
-    public async handleDropdownResponse(response: api.ODDropdownResponderInstanceValues): Promise<void> {
-        const question = this.form.questions[this.currentQuestionNumber];
-        const answer = response.getStringValues().join(", ");
-        const answers = [{ question, answer }];
-        this.handleResponse(answers);
+    public async handleDropdownResponse(
+        response: api.ODDropdownResponderInstanceValues
+    ): Promise<void> {
+        await this.withInteractionGuard(async () => {
+            if (!this.isCurrentComponentPromptActive()) {
+                await this.acknowledgeNeutralRecovery(this.instance);
+                return;
+            }
+            const question = this.form.questions[this.currentQuestionNumber];
+            const answer = response.getStringValues().join(", ");
+            await this.handleResponse([{ question, answer }]);
+        });
     }
 
-    /* HANDLE MODAL RESPONSE
-     * Handles the response of a modal question.
-     */
-    public async handleModalResponse(response: api.ODModalResponderInstanceValues, answeredQuestions: { number: number; required: boolean; }[]): Promise<void> {
-        const answers = answeredQuestions.map(q => ({
-            question: this.form.questions[q.number-1],
-            answer: q.required 
+    public async handleModalResponse(
+        response: api.ODModalResponderInstanceValues,
+        answeredQuestions: { number: number; required: boolean; }[]
+    ): Promise<void> {
+        await this.withInteractionGuard(async () => {
+            const answers = answeredQuestions.map((q) => ({
+                question: this.form.questions[q.number - 1],
+                answer: q.required
                     ? response.getTextField(q.number.toString(), true)
                     : response.getTextField(q.number.toString(), false)
-        }))
-        this.currentQuestionNumber = this.currentQuestionNumber + answers.length - 1;
-        this.handleResponse(answers);
+            }));
+            await this.handleResponse(answers);
+        });
     }
 
-    /* SET INSTANCE
-     * Sets the instance of the current interaction for the form session.
-     */
-    public async setInstance(instance: api.ODButtonResponderInstance | api.ODDropdownResponderInstance | api.ODModalResponderInstance, onlyIfNotSessionMessage: boolean = false) {
-        if(!onlyIfNotSessionMessage) this.instance = instance;
-        else if(!this.sessionMessage) {
-            this.instance = instance
-        } else {
-            await instance.defer("update", true);
-        }
+    public async setInstance(
+        instance: OTFormsResponderInstance,
+        onlyIfNotSessionMessage: boolean = false
+    ) {
+        this.instance = instance;
+        void onlyIfNotSessionMessage;
     }
 
-    /* SEND NEXT QUESTION
-     * Sends the next question to the user.
-     */
-    private async sendNextQuestion(): Promise<void> {
+    private async sendNextQuestion(): Promise<boolean> {
         const question = this.form.questions[this.currentQuestionNumber];
         switch (question.type) {
-            case 'short':
-            case 'paragraph':
-                await this.sendModalQuestions();
-                break;
-            case 'dropdown':
-                await this.sendDropdownQuestion(question as OTForms_DropdownQuestion);
-                break;
-            case 'button':
-                await this.sendButtonQuestion(question as OTForms_ButtonQuestion);
-                break;
+            case "short":
+            case "paragraph":
+                return this.sendModalQuestions();
+            case "dropdown":
+                return this.sendDropdownQuestion(question as OTForms_DropdownQuestion);
+            case "button":
+                return this.sendButtonQuestion(question as OTForms_ButtonQuestion);
             default:
-                console.error('Unknown question type: ', question.type);
+                console.error("Unknown question type: ", question.type);
+                return false;
         }
     }
 
-    /* MODAL QUESTIONS
-     * Sends a modal with maximum 5 question to the user. Questions are added to the modal only if they are consecutive.
-     */
-    private async sendModalQuestions(): Promise<void> {
+    private async sendModalQuestions(): Promise<boolean> {
         const modalQuestions: OTForms_ModalQuestion[] = [];
         let count = 0;
 
-        if(!this.instance || this.instance.didReply) {
+        if (!this.instance || this.instance.didReply) {
             opendiscord.log("Error: Modal questions have not been sent. Instance not found or already replied.", "plugin");
-            return;
+            return false;
         }
 
-        if(!(this.instance instanceof api.ODButtonResponderInstance)) {
+        if (!(this.instance instanceof api.ODButtonResponderInstance)) {
             opendiscord.log("Error: Modal questions have not been sent. Current instance is not valid for modals.", "plugin");
-            return;
+            return false;
         }
-        
-        // Max 5 questions per modal
-        while (count < 5 && this.currentQuestionNumber + 1 <= this.form.questions.length) {
+
+        while (count < 5 && this.currentQuestionNumber + count < this.form.questions.length) {
             const question = this.form.questions[this.currentQuestionNumber + count];
             if (!question || (question.type !== "short" && question.type !== "paragraph")) break;
             modalQuestions.push(question as OTForms_ModalQuestion);
             count++;
         }
 
-        // Show modal
-        await this.instance.modal(
-            await opendiscord.builders.modals.getSafe("ot-ticket-forms:questions-modal").build("other", {
-                formId: this.form.id,
-                formInstanceId: this.form.instanceId,
-                sessionId: this.id,
-                formName: this.form.name,
-                questions: modalQuestions,
-                currentSection: this.currentSection,
-                totalSections: this.form.totalSections
-            })
+        return this.instance.modal(
+            await opendiscord.builders.modals.getSafe("ot-ticket-forms:questions-modal").build(
+                "other",
+                {
+                    formId: this.form.id,
+                    formInstanceId: this.form.instanceId,
+                    sessionId: this.id,
+                    formName: this.form.name,
+                    questions: hydrateModalQuestionsWithSavedAnswers(modalQuestions, this.answers),
+                    currentSection: this.currentSection,
+                    totalSections: this.form.totalSections
+                }
+            )
         );
     }
 
-    /* DROPDOWN QUESTION
-     * Sends a dropdown question to the user.
-     */
-    private async sendDropdownQuestion(question: OTForms_DropdownQuestion): Promise<void> {
-        if(!this.instance) {
+    private async sendDropdownQuestion(question: OTForms_DropdownQuestion): Promise<boolean> {
+        if (!this.instance) {
             opendiscord.log("Error: Dropdown question has not been sent. Interaction not found.", "plugin");
-            return;
+            return false;
         }
+        const savedAnswer = findSavedAnswer(this.answers, question);
 
-        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:question-message").build("other", {
-            formId: this.form.id,
-            formInstanceId: this.form.instanceId,
-            sessionId: this.id,
-            question: question,
-            currentSection: this.currentSection,
-            totalSections: this.form.totalSections,
-            formColor: this.form.color
-        });
-
-        if(!this.sessionMessage) {
-            // Send dropdown question message
-            if(this.instance.didReply) {
-                opendiscord.log("Error: Dropdown question has not been sent. Interaction already replied.", "plugin");
-                return;
+        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:question-message").build(
+            "other",
+            {
+                formId: this.form.id,
+                formInstanceId: this.form.instanceId,
+                sessionId: this.id,
+                question,
+                currentSection: this.currentSection,
+                totalSections: this.form.totalSections,
+                formColor: this.form.color,
+                savedAnswer,
+                displayMode: "live_prompt"
             }
-            this.sessionMessage = await this.instance.reply(message);
-        } else {
-            // Update to dropdown question message
-            this.instance.update(message);
-        }
+        );
+
+        const delivery = await deliverLiveQuestionPrompt({
+            transportKind: this.resolveTransportKind(),
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message,
+            deliveryMode: this.resolveQuestionPromptDeliveryMode()
+        });
+        return delivery.success;
     }
 
-    /* BUTTON QUESTION
-     * Sends a button question to de user.
-     */
-    private async sendButtonQuestion(question: OTForms_ButtonQuestion): Promise<void> {
-        if(!this.instance) {
+    private async sendButtonQuestion(question: OTForms_ButtonQuestion): Promise<boolean> {
+        if (!this.instance) {
             opendiscord.log("Error: Button question has not been sent. Interaction not found.", "plugin");
-            return;
+            return false;
         }
+        const savedAnswer = findSavedAnswer(this.answers, question);
 
-        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:question-message").build("other", {
-            formId: this.form.id,
-            formInstanceId: this.form.instanceId,
-            sessionId: this.id,
-            question: question,
-            currentSection: this.currentSection,
-            totalSections: this.form.totalSections,
-            formColor: this.form.color
-        });
-
-        if(!this.sessionMessage) {
-            // Send button question message
-            if(this.instance.didReply) {
-                opendiscord.log("Error: Button question has not been sent. Interaction already replied.", "plugin");
-                return;
+        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:question-message").build(
+            "other",
+            {
+                formId: this.form.id,
+                formInstanceId: this.form.instanceId,
+                sessionId: this.id,
+                question,
+                currentSection: this.currentSection,
+                totalSections: this.form.totalSections,
+                formColor: this.form.color,
+                savedAnswer,
+                displayMode: "live_prompt"
             }
-            this.sessionMessage = await this.instance.reply(message);
-        } else {
-            // Update to button question message
-            this.instance.update(message);
-        }
-    }
+        );
 
-    /* CONTINUE MESSAGE
-     * Sends a continue message to the user. The message between sections.
-     */
-    private async sendContinueMessage(): Promise<void> {
-        if(!this.instance) {
-            opendiscord.log("Error: The continue message has not been sent. Interaction not found.", "plugin");
-            return;
-        }
-
-        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:continue-message").build("button", {
-            formId:this.form.id,
-            formInstanceId: this.form.instanceId,
-            sessionId: this.id,
-            currentSection: this.currentSection,
-            totalSections: this.form.totalSections,
-            formColor: this.form.color
+        const delivery = await deliverLiveQuestionPrompt({
+            transportKind: this.resolveTransportKind(),
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message,
+            deliveryMode: this.resolveQuestionPromptDeliveryMode()
         });
-
-        if(!this.sessionMessage) {
-            // Send continue message
-            this.sessionMessage = await this.instance.reply(message);
-        } else {
-            // Update to continue message
-            this.instance.update(message);
-        }
+        return delivery.success;
     }
 
-    /* UPDATE ANSWERS MESSAGE
-     * Updates the answers message with the current answers. It's the message that stores all the answers of the user.
-     */
-    private async updateAnswersMessage(): Promise<void> {
-        if(!this.answersManager) {
-            this.answersManager = new OTForms_AnswersManager(this.form.id, this.form.instanceId, this.id, "other", "initial", this.user, this.form.color, this.answers, this.form.getCompletedTicketFormContext());
-            await this.answersManager.render();
-            await this.answersManager.sendMessage(this.form.answersChannel);
-        } else {
-            const type: "initial" | "partial" | "completed" = this.currentQuestionNumber >= this.form.questions.length ? "completed" : "partial";
-            this.answersManager.answers = this.answers;
-            this.answersManager.type = type;
-
-            await this.answersManager.render();
-            await this.answersManager.editMessage();
+    private async sendContinueMessage(includePassiveConfirmation: boolean): Promise<boolean> {
+        if (!this.instance) {
+            opendiscord.log("Error: The continue message has not been sent. Interaction not found.", "plugin");
+            return false;
         }
-    }
 
-    /* FINALIZE FORM SESSION
-     * Sends the final message to the user.
-     */
-    private async finalize(): Promise<void> {
-        if(this.instance) {
-            const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:continue-message").build("button", {
-                formId:this.form.id,
+        if (includePassiveConfirmation) {
+            await this.sendPassiveSectionConfirmation();
+        }
+
+        const message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:continue-message").build(
+            "button",
+            {
+                formId: this.form.id,
                 formInstanceId: this.form.instanceId,
                 sessionId: this.id,
                 currentSection: this.currentSection,
                 totalSections: this.form.totalSections,
-                formColor: this.form.color
-            });
+                formColor: this.form.color,
+                displayMode: "continue_prompt"
+            }
+        );
 
-            if(this.sessionMessage) {
-                // Update to continue message
-                this.instance.update(message);
-            } else {
-                // Send continue message
-                this.sessionMessage = await this.instance.reply(message);
+        const delivery = await deliverLiveContinuePrompt({
+            transportKind: this.resolveTransportKind(),
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message,
+            deliveryMode: "follow_up"
+        });
+        return delivery.success;
+    }
+
+    private async updateAnswersMessage(): Promise<void> {
+        const type = this.currentQuestionNumber >= this.form.questions.length ? "completed" : "partial";
+
+        if (!this.answersManager) {
+            const ticketContext = this.form.getCompletedTicketFormContext();
+            if (ticketContext) {
+                this.answersManager = OTForms_AnswersManager.getDraftInstance(
+                    this.form.id,
+                    ticketContext.ticketChannelId,
+                    ticketContext.applicantDiscordUserId
+                );
             }
         }
-        opendiscord.log(`Form answered.`, "plugin", [
-            {key:"Form", value:this.form.name},
-            {key:"User", value:this.user.tag}
-        ])
+
+        if (!this.answersManager) {
+            this.answersManager = new OTForms_AnswersManager(
+                this.form.id,
+                this.form.instanceId,
+                this.id,
+                "other",
+                type,
+                this.user,
+                this.form.color,
+                this.answers,
+                this.form.answerTarget,
+                this.form.getCompletedTicketFormContext()
+            );
+            await this.answersManager.render();
+            await this.answersManager.sendMessage(this.form.getAnswerDeliveryChannel());
+            return;
+        }
+
+        this.answersManager.answers = this.answers;
+        this.answersManager.type = type;
+        await this.answersManager.render();
+        await this.answersManager.editMessage();
+    }
+
+    private async finalize(): Promise<boolean> {
+        let deliverySucceeded = true;
+        if (this.instance) {
+            deliverySucceeded = await this.sendPassiveSectionConfirmation();
+        }
+        opendiscord.log("Form answered.", "plugin", [
+            { key: "Form", value: this.form.name },
+            { key: "User", value: this.user.tag }
+        ]);
+        this.form.finalizeSession(this.id, this.form.name, this.user);
+        return deliverySucceeded;
+    }
+
+    private async hydrateFromDraftState(): Promise<void> {
+        if (this.hydratedFromDraft) return;
+        this.hydratedFromDraft = true;
+
+        const ticketContext = this.form.getCompletedTicketFormContext();
+        if (!ticketContext || this.form.answerTarget != "ticket_managed_record") return;
+
+        this.answersManager = OTForms_AnswersManager.getDraftInstance(
+            this.form.id,
+            ticketContext.ticketChannelId,
+            ticketContext.applicantDiscordUserId
+        );
+        if (this.answersManager) {
+            this.answers = this.answersManager.answers;
+            this.currentQuestionNumber = resolveDraftResumeQuestionIndex(
+                this.form.questions,
+                this.answersManager.draftState,
+                this.answers
+            );
+            return;
+        }
+
+        const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+        const draft = await service.getTicketDraft(
+            ticketContext.ticketChannelId,
+            this.form.id,
+            ticketContext.applicantDiscordUserId
+        );
+        if (!draft) return;
+
+        this.answers = draft.answers.map((entry) => ({
+            question: { ...entry.question },
+            answer: entry.answer
+        }));
+        this.currentQuestionNumber = resolveDraftResumeQuestionIndex(
+            this.form.questions,
+            draft.draftState,
+            this.answers
+        );
+    }
+
+    private async withInteractionGuard(callback: () => Promise<void>): Promise<void> {
+        if (!this.instance) return;
+        const interactionId = this.instance.interaction.id;
+        if (!this.interactionGate.begin(interactionId)) {
+            await this.acknowledgeDuplicateInteraction(this.instance);
+            return;
+        }
+        try {
+            await callback();
+        } finally {
+            this.interactionGate.finish(interactionId);
+        }
+    }
+
+    private async acknowledgeDuplicateInteraction(instance: OTFormsResponderInstance): Promise<void> {
+        if (instance.didReply || instance.interaction.deferred || instance.interaction.replied) {
+            return;
+        }
+        await this.acknowledgeNeutralRecovery(instance);
+    }
+
+    private resolveTransportKind(): OTFormsSessionTransportKind {
+        if (!this.instance) {
+            throw new Error("Session interaction is not available.");
+        }
+        if (this.instance instanceof api.ODModalResponderInstance) return "modal";
+        if (this.instance instanceof api.ODDropdownResponderInstance) return "dropdown";
+        return "button";
+    }
+
+    private resolveTransportKindForInstance(instance: OTFormsResponderInstance): OTFormsSessionTransportKind {
+        if (instance instanceof api.ODModalResponderInstance) return "modal";
+        if (instance instanceof api.ODDropdownResponderInstance) return "dropdown";
+        return "button";
+    }
+
+    private resolveQuestionPromptDeliveryMode(): OTFormsSessionMessageDeliveryMode {
+        const customId = this.resolveInteractionCustomId();
+        if (!customId) return "initial_reply";
+        if (customId.startsWith("ot-ticket-forms:cb_")) return "replace_active_prompt";
+        if (
+            customId.startsWith("ot-ticket-forms:qb_")
+            || customId.startsWith("ot-ticket-forms:qd_")
+            || customId.startsWith("ot-ticket-forms:qm_")
+        ) {
+            return "follow_up";
+        }
+        return "initial_reply";
+    }
+
+    private resolveInteractionCustomId(): string | null {
+        if (!this.instance) return null;
+        const interaction = this.instance.interaction as { customId?: string };
+        return typeof interaction.customId == "string" ? interaction.customId : null;
+    }
+
+    private getAnsweredComponentQuestion(): OTForms_ButtonQuestion | OTForms_DropdownQuestion | null {
+        const answeredQuestion = this.form.questions[this.currentQuestionNumber - 1];
+        if (!answeredQuestion) return null;
+        if (answeredQuestion.type != "button" && answeredQuestion.type != "dropdown") {
+            return null;
+        }
+        return answeredQuestion as OTForms_ButtonQuestion | OTForms_DropdownQuestion;
+    }
+
+    private async sendPassiveSectionConfirmation(): Promise<boolean> {
+        if (!this.instance) return false;
+
+        const transportKind = this.resolveTransportKind();
+        let message: api.ODMessageBuildResult;
+
+        if (transportKind == "modal") {
+            message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:continue-message").build(
+                "button",
+                {
+                    formId: this.form.id,
+                    formInstanceId: this.form.instanceId,
+                    sessionId: this.id,
+                    currentSection: this.currentSection,
+                    totalSections: this.form.totalSections,
+                    formColor: this.form.color,
+                    displayMode: "passive_confirmation"
+                }
+            );
+        } else {
+            const answeredQuestion = this.getAnsweredComponentQuestion();
+            if (!answeredQuestion) {
+                message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:continue-message").build(
+                    "button",
+                    {
+                        formId: this.form.id,
+                        formInstanceId: this.form.instanceId,
+                        sessionId: this.id,
+                        currentSection: this.currentSection,
+                        totalSections: this.form.totalSections,
+                        formColor: this.form.color,
+                        displayMode: "passive_confirmation"
+                    }
+                );
+            } else {
+                message = await opendiscord.builders.messages.getSafe("ot-ticket-forms:question-message").build(
+                    "other",
+                    {
+                        formId: this.form.id,
+                        formInstanceId: this.form.instanceId,
+                        sessionId: this.id,
+                        question: answeredQuestion,
+                        currentSection: this.currentSection,
+                        totalSections: this.form.totalSections,
+                        formColor: this.form.color,
+                        savedAnswer: findSavedAnswer(this.answers, answeredQuestion),
+                        displayMode: "passive_confirmation"
+                    }
+                );
+            }
+        }
+
+        const delivery = await deliverPassiveAnsweredConfirmation({
+            transportKind,
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message
+        });
+        return delivery.success;
+    }
+
+    private isCurrentComponentPromptActive(): boolean {
+        if (
+            !this.instance
+            || this.instance instanceof api.ODModalResponderInstance
+        ) {
+            return false;
+        }
+        const expectedQuestion = this.form.questions[this.currentQuestionNumber];
+        if (!expectedQuestion || (expectedQuestion.type != "button" && expectedQuestion.type != "dropdown")) {
+            return false;
+        }
+
+        const title = this.instance.message?.embeds?.[0]?.title ?? "";
+        const match = /^Question (\d+)$/.exec(title);
+        return match !== null && Number(match[1]) == expectedQuestion.position;
+    }
+
+    private async acknowledgeNeutralRecovery(instance: OTFormsResponderInstance | undefined): Promise<void> {
+        if (!instance || instance.didReply || instance.interaction.deferred || instance.interaction.replied) {
+            return;
+        }
+
+        await deliverStatusReply({
+            transportKind: this.resolveTransportKindForInstance(instance),
+            instance: instance as OTFormsSessionResponderInstance,
+            message: buildEphemeralStatusMessage(
+                "ot-ticket-forms:stale-recovery",
+                OT_FORMS_NEUTRAL_RECOVERY_MESSAGE
+            )
+        });
+    }
+
+    private async acknowledgeUnsavedFailure(): Promise<void> {
+        if (!this.instance) return;
+
+        await deliverStatusReply({
+            transportKind: this.resolveTransportKind(),
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message: buildEphemeralStatusMessage(
+                "ot-ticket-forms:save-failure",
+                OT_FORMS_SAVE_FAILURE_MESSAGE
+            )
+        });
     }
 }

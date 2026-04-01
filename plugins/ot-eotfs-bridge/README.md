@@ -8,36 +8,24 @@ Local plugin only. Do not treat this as an upstream Open Ticket plugin.
 
 ## What It Does
 
-`ot-eotfs-bridge` owns the OT-side control card for the whitelist ticket adjudication chain.
+`ot-eotfs-bridge` owns the OT-side control card for the staged EoTFS whitelist workflow.
 
-It now covers four phases:
+Released responsibilities:
 
 1. pre-create gating against Discord-side whitelist ticket eligibility
-2. ticket-side staging from OT into the Discord-bot whitelist bridge
-3. ticket-side adjudication controls driven by the Discord-bot status/action endpoints
-4. bounded apply-closeout polling until the OT ticket can close after terminal whitelist apply success
+2. ticket-side handoff from Open Ticket into the Discord-bot whitelist intake worker
+3. ticket-side adjudication controls driven by the Discord-bot status and action endpoints
+4. later transcript attach delivery
+5. bounded apply-closeout polling until the OT ticket can close after terminal whitelist apply success
 
 The bridge is intentionally narrow:
 
 - OT never becomes the authoritative permission gate
-- OT never edits the reviewed hard-deny target list
-- OT never rebinds whitelist attempt history away from the original applicant snapshot
-- OT never creates a parallel moderation plane outside the Discord-bot whitelist workflow
+- OT never auto-runs Discord `/identity`
+- OT never auto-runs Discord `/whitelist`
+- OT never creates a second moderation plane outside the Discord-side whitelist workflow
 
-## Discord-Side Retry Defaults
-
-The bridge reads retry policy from the Discord bot. The locked runtime defaults are:
-
-- `EOTFS_RUNTIME_WHITELIST_TICKET_MAX_RETRY_DENIALS=99`
-- `EOTFS_RUNTIME_WHITELIST_TICKET_RETRY_COOLDOWN_MINUTES=5`
-- `EOTFS_RUNTIME_WHITELIST_TICKET_LIMIT_COOLDOWN_MINUTES=43200`
-
-Behavior tied to those defaults:
-
-- duplicate closures do not increment the retry ladder
-- the limit attempt produces `limit_locked` plus long lockout instead of automatic hard deny
-- the active retry ladder resets only after the long lockout expires
-- lifetime totals remain intact even after that reset
+Working-tree-only review-packet refresh behavior, stricter pre-handoff validation details, and control-card placement or repair notes live in [`../../CURRENT_BRANCH.md`](../../CURRENT_BRANCH.md), not in this released README.
 
 ## Exact Config Fields
 
@@ -49,6 +37,7 @@ Current [`config.json`](config.json) fields:
 - `eligibleOptionIds`
 - `formId`
 - `targetGroupKey`
+- `formContract`
 
 Current local sample:
 
@@ -59,7 +48,13 @@ Current local sample:
   "sharedSecret": "change-me-local-bridge-secret",
   "eligibleOptionIds": ["whitelist-application-ticket-81642e12"],
   "formId": "whitelist-review-form",
-  "targetGroupKey": "community_mirror"
+  "targetGroupKey": "community_mirror",
+  "formContract": {
+    "discordUsernamePosition": 1,
+    "alderonIdsPosition": 2,
+    "rulesPasswordPosition": 19,
+    "requiredAcknowledgementPositions": [5, 6, 7, 8, 9, 17, 18]
+  }
 }
 ```
 
@@ -71,11 +66,57 @@ What each field means:
 - `eligibleOptionIds`: only these OT ticket option ids get the whitelist bridge gate and control card
 - `formId`: completed form id the bridge requires before staging
 - `targetGroupKey`: whitelist target group key included in the staged payload
+- `formContract`: bridge-owned mapping for the ticket-creator Discord-username consistency check, the machine-readable AGIDs, the rules password, and the required acknowledgement answers inside the full application
 
 `integrationId` and `sharedSecret` must match:
 
 - the bridge plugin config here
 - the Discord-side env values `TICKET_BRIDGE_WHITELIST_INTEGRATION_ID` and `TICKET_BRIDGE_WHITELIST_SHARED_SECRET`
+
+## Rules Password And Form Contract
+
+The OT-side rules-password gate is separate from `config.json` and must come from local runtime env:
+
+- `EOTFS_OT_WHITELIST_RULES_PASSWORDS=password-one,password-two`
+- values are trimmed, matched case-insensitively, and may include more than one active password during rotation
+- if the env is missing or empty, `Send to Staff Review` fails closed
+
+`whitelist-review-form` is the full twenty-question whitelist application, not the earlier six-question review form.
+
+Locked machine-owned positions:
+
+- `Q1` is the typed `Discord username` consistency-check field
+- `Q2` is the machine-readable `Alderon ID(s)` field
+- `Q19` is the rules-password gate
+- `Q5`, `Q6`, `Q7`, `Q8`, `Q9`, `Q17`, and `Q18` are required acknowledgement positions
+
+Released hardening rules:
+
+- `Q1` must match the live ticket creator username, global name, or server nickname when OT can resolve those aliases
+- `Q2` must contain one or more AGIDs written as `123456789` or `123-456-789`
+- accepted AGIDs are canonicalized to grouped `123-456-789` before the bridge payload is sent
+- the bridge rejects duplicate AGIDs after normalization
+- this plugin still does not prove live external Alderon-account existence
+
+The form answers live inside the applicant ticket as one managed record through `ot-ticket-forms`. Freeform ticket replies may continue, but only the structured OT application flow mutates the saved whitelist answers.
+
+Released applicant-card contract:
+
+- the applicant resumes from the ticket card, not from dismissed ephemeral prompts
+- `Continue Application` only appears when the next form step needs a fresh click or recovery after a saved UI-delivery failure
+- bridge status changes that make the review non-editable must refresh the applicant card to `Application Locked`
+- when the bridge still allows edits after submission, the applicant card relabels to `Update Application`
+
+## Released Workflow
+
+1. The player opens an eligible whitelist ticket in Open Ticket.
+2. The player starts from `Fill Out Application`, resumes with `Continue Application` when modal or recovery clicks are required, and later sees `Update Application` while bridge review remains editable.
+3. An OT staff/admin participant uses `Send to Staff Review`, which now blocks malformed AGIDs and Q1 creator-identity mismatches before staging.
+4. The bridge posts the signed `case_created` event to the Discord-side intake worker.
+5. The Discord bot stages a read-only review case for `/whitelist intake`.
+6. `ot-html-transcripts` can later supply a transcript URL, which the bridge posts through `transcript_attached`.
+7. Staff adjudication continues through the bridge control card plus the Discord-side status/action endpoints.
+8. OT closes only after duplicate closeout or terminal whitelist apply success.
 
 ## Create-Ticket Gate
 
@@ -88,110 +129,34 @@ That worker:
 - still enforces a fallback duplicate-live-ticket check for eligible options without OT core edits
 - warns at startup if an eligible option is not configured with `userMaximum=1`
 
-The fallback duplicate-live-ticket check stays active even if the option drifted away from `userMaximum=1`.
+## Released Control States
 
-## Which Tickets Get The Card
+Before staging:
 
-Only tickets whose option id appears in `eligibleOptionIds` get the bridge control card.
+- the player completes the whitelist application in the ticket
+- staff use `Send to Staff Review` for the OT-to-Discord handoff
 
-For eligible tickets:
-
-- the plugin persists exactly one canonical control-card record per ticket
-- the record stores the control message id, render state, render version, last policy snapshot, and poll metadata
-- restart or message deletion triggers control-card repair by recreating one canonical card
-
-For ineligible tickets:
-
-- no bridge control card is posted
-- no whitelist adjudication controls are rendered
-
-## Original Applicant Authority
-
-Applicant identity stays pinned to the original whitelist applicant snapshot.
-
-The bridge resolves that applicant id in this order:
-
-1. completed whitelist form snapshot applicant
-2. live OT ticket owner only as fallback when no applicant snapshot exists
-
-If the staged applicant differs from the current ticket owner:
-
-- the bridge keeps the original applicant authoritative
-- the control card renders a warning
-- whitelist attempt history is not rebound to the transferred owner
-- Discord-side dossier and timeline projections mirror that authoritative applicant history onto related Alderon-ID dossiers with explicit labeling
-
-## Control Card Flow
-
-### Before staging
-
-The card shows:
-
-- `Send to whitelist review`
-- degraded-state messaging when create-time eligibility failed open and recovery has not happened yet
-
-### Normal staged case
-
-When the Discord bot reports a normal staged reviewable case, the card shows:
+Normal staged case:
 
 - `Accept`
 - `Retry`
 - `Hard Deny`
 
-Behavior rules:
-
-- `Accept` stays disabled until a real transcript URL is attached
-- retry warning text is rendered when the next retry becomes `limit_locked`
-- OT never trusts local role membership as final authorization; the bot response is authoritative
-
-### Duplicate-active-whitelist case
-
-When the bot reports `duplicate_active_whitelist=true`, the card shows:
+Duplicate-active-whitelist case:
 
 - `Close as Duplicate`
 - `Refresh Status`
 
-Duplicate close stays canonical and non-punitive.
-
-### Apply-failed case
-
-When the bot reports `accepted_failed`, the card shows:
+Apply-failed case:
 
 - `Retry Apply`
 - `Refresh Status`
 
-The ticket stays open in this state.
-
-### Pending apply closeout
-
-When the bot reports `accepted_pending_apply`, the card shows:
+Pending apply closeout:
 
 - `Refresh Status`
 
-The bridge starts bounded polling against the status endpoint until:
-
-- whitelist apply succeeds and the ticket can close
-- whitelist apply fails and the card moves to `Retry Apply` plus `Refresh Status`
-- bridge recovery is needed
-
-## Modal Behavior
-
-### Retry
-
-`Retry` opens a modal for the player-visible critique.
-
-If the next retry becomes `limit_locked`, the modal label warns the operator before submit.
-
-### Hard Deny
-
-`Hard Deny` is a confirm-only review flow:
-
-1. the bridge fetches the latest reviewed hard-deny target list from the bot
-2. OT shows that list in an ephemeral review message
-3. the operator confirms and submits a staff-only rationale modal
-4. the backend reuses the Discord-bot `whitelist.workflow.deny` path
-
-OT never adds or removes targets from that reviewed list.
+When the bridge moves the staged case out of a reviewable state, `ot-ticket-forms` must refresh the applicant card to `Application Locked` so the bridge remains authoritative for editability.
 
 ## Transcript Handling
 
@@ -201,17 +166,8 @@ The bridge:
 
 - resolves transcript URLs through `ot-html-transcripts:service.resolveAdminTarget(ticketChannelId)`
 - posts the signed transcript event to the Discord bot
-- rerenders the control card immediately afterward
-- unlocks `Accept` only once the bot-side case reflects a real transcript URL
-
-## Degraded Behavior
-
-If the bridge cannot reach the Discord bot:
-
-- ticket creation still fails open only at the create-time eligibility gate
-- the OT control card renders a degraded state
-- adjudication controls stay disabled until recovery
-- the bridge keeps bounded poll metadata and retries recovery on its loop
+- rerenders the control card after status changes
+- keeps transcript attach additive rather than replacing the original staged case
 
 ## Closeout Rules
 
@@ -243,11 +199,19 @@ Signed headers:
 - `X-Bridge-Event-Id`
 - `X-Bridge-Signature`
 
+## Companion Docs
+
+- [OT Ticket Forms](../ot-ticket-forms/README.md)
+- [OT HTML Transcripts](../ot-html-transcripts/README.md)
+- [OT Dashboard](../ot-dashboard/README.md)
+- [Discord Staff Operator Guide](../../../../EoTFS Discord Bot/docs/staff-operators/README.md)
+- [Discord Host / Admin Guide](../../../../EoTFS Discord Bot/docs/host-admin/README.md)
+
 ## Verification
 
 From the workspace root:
 
 ```bash
 npm --prefix open-ticket run build
-node --test open-ticket/dist/plugins/ot-eotfs-bridge/test/*.test.js open-ticket/dist/plugins/ot-ticket-forms/test/forms-service.test.js
+node --test open-ticket/dist/plugins/ot-eotfs-bridge/test/*.test.js open-ticket/dist/plugins/ot-ticket-forms/test/forms-service.test.js open-ticket/dist/plugins/ot-ticket-forms/test/draft-session.test.js open-ticket/dist/plugins/ot-ticket-forms/test/edit-mode.test.js
 ```

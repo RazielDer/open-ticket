@@ -1,5 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import path from "node:path"
 
 import {
     BRIDGE_BLOCK_STATE_LIMIT_LOCKOUT
@@ -8,6 +10,48 @@ import {
     evaluateCreateTicketDecision,
     findMisconfiguredEligibleOptionIds
 } from "../bridge-runtime"
+
+test("bridge config keeps the locked whitelist application form contract mapping", () => {
+    const configPath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "config.json")
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
+        formId: string
+        targetGroupKey: string
+        formContract: {
+            discordUsernamePosition: number
+            alderonIdsPosition: number
+            rulesPasswordPosition: number
+            requiredAcknowledgementPositions: number[]
+        }
+    }
+
+    assert.equal(config.formId, "whitelist-review-form")
+    assert.equal(config.targetGroupKey, "community_mirror")
+    assert.deepEqual(config.formContract, {
+        discordUsernamePosition: 1,
+        alderonIdsPosition: 2,
+        rulesPasswordPosition: 19,
+        requiredAcknowledgementPositions: [5, 6, 7, 8, 9, 17, 18]
+    })
+})
+
+test("bridge loads after ot-ticket-forms so the applicant button renders above the staff control card", () => {
+    const bridgePluginPath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "plugin.json")
+    const formsPluginPath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-ticket-forms", "plugin.json")
+    const bridgePlugin = JSON.parse(fs.readFileSync(bridgePluginPath, "utf8")) as { priority: number }
+    const formsPlugin = JSON.parse(fs.readFileSync(formsPluginPath, "utf8")) as { priority: number }
+
+    assert.equal(bridgePlugin.priority < formsPlugin.priority, true)
+})
+
+test("bridge repair logic checks applicant start-form placement before rerendering controls", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "index.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+
+    assert.equal(source.includes("findApplicantStartFormMessage(channel, channel.id)"), true)
+    assert.equal(source.includes("shouldRecreateBridgeControlForPlacement("), true)
+    assert.equal(source.includes("await controlMessage.delete()"), true)
+    assert.equal(source.includes("await formsService.refreshTicketStartFormMessage(channel.id, getBridgeConfig().formId)"), true)
+})
 
 test("create-ticket decision blocks duplicate live whitelist tickets", () => {
     const decision = evaluateCreateTicketDecision(

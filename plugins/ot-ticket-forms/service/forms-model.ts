@@ -1,5 +1,8 @@
+import type { OTFormsAnswerTarget, OTFormsCapturedAnswer, OTFormsDraftState } from "../types/configDefaults"
+
 export const OT_FORMS_PLUGIN_SERVICE_ID = "ot-ticket-forms:service" as const
 export const OT_FORMS_COMPLETED_TICKET_FORM_CATEGORY = "ot-ticket-forms:completed-ticket-forms" as const
+export const OT_FORMS_TICKET_DRAFT_CATEGORY = "ot-ticket-forms:ticket-drafts" as const
 
 export interface OTFormsCompletedTicketFormAnswer {
     position: number
@@ -18,6 +21,17 @@ export interface OTFormsCompletedTicketFormSnapshot extends OTFormsCompletedTick
     formId: string
     completedAt: string
     answers: OTFormsCompletedTicketFormAnswer[]
+}
+
+export interface OTFormsTicketDraftSnapshot extends OTFormsCompletedTicketFormContext {
+    formId: string
+    answerTarget: OTFormsAnswerTarget
+    draftState: OTFormsDraftState
+    formColor: string
+    updatedAt: string
+    completedAt: string | null
+    managedRecordMessageId: string | null
+    answers: OTFormsCapturedAnswer[]
 }
 
 export function normalizeDiscordUserId(value: string | null | undefined): string | null {
@@ -41,6 +55,28 @@ export function createCompletedTicketFormKey(ticketChannelId: string, formId: st
     return `${ticketChannelId}:${formId}`
 }
 
+export function createTicketDraftKey(
+    ticketChannelId: string,
+    formId: string,
+    applicantDiscordUserId: string
+): string {
+    return `${ticketChannelId}:${formId}:${applicantDiscordUserId}`
+}
+
+function normalizeAnswerTarget(value: OTFormsAnswerTarget): OTFormsAnswerTarget {
+    if (value == "response_channel" || value == "ticket_managed_record") {
+        return value
+    }
+    throw new Error("Ticket draft snapshot requires a supported answerTarget.")
+}
+
+function normalizeDraftState(value: OTFormsDraftState): OTFormsDraftState {
+    if (value == "initial" || value == "partial" || value == "completed") {
+        return value
+    }
+    throw new Error("Ticket draft snapshot requires a supported draftState.")
+}
+
 export function normalizeCompletedTicketFormSnapshot(snapshot: OTFormsCompletedTicketFormSnapshot): OTFormsCompletedTicketFormSnapshot {
     const applicantDiscordUserId = normalizeDiscordUserId(snapshot.applicantDiscordUserId)
     if (!applicantDiscordUserId) {
@@ -58,6 +94,33 @@ export function normalizeCompletedTicketFormSnapshot(snapshot: OTFormsCompletedT
             question: answer.question,
             answer: answer.answer
         }))
+    }
+}
+
+export function normalizeTicketDraftSnapshot(snapshot: OTFormsTicketDraftSnapshot): OTFormsTicketDraftSnapshot {
+    const applicantDiscordUserId = normalizeDiscordUserId(snapshot.applicantDiscordUserId)
+    if (!applicantDiscordUserId) {
+        throw new Error("Ticket draft snapshot requires applicantDiscordUserId.")
+    }
+    const managedRecordMessageId = normalizeDiscordUserId(snapshot.managedRecordMessageId)
+    return {
+        ticketChannelId: snapshot.ticketChannelId,
+        ticketChannelName: snapshot.ticketChannelName,
+        ticketOptionId: snapshot.ticketOptionId,
+        applicantDiscordUserId,
+        formId: snapshot.formId,
+        answerTarget: normalizeAnswerTarget(snapshot.answerTarget),
+        draftState: normalizeDraftState(snapshot.draftState),
+        formColor: String(snapshot.formColor ?? ""),
+        updatedAt: snapshot.updatedAt,
+        completedAt: snapshot.completedAt,
+        managedRecordMessageId,
+        answers: [...snapshot.answers]
+            .sort((left, right) => left.question.position - right.question.position)
+            .map((entry) => ({
+                question: { ...entry.question },
+                answer: entry.answer
+            }))
     }
 }
 
@@ -79,5 +142,43 @@ export class OTFormsCompletedTicketFormStore {
 
     getCompletedTicketForm(ticketChannelId: string, formId: string): OTFormsCompletedTicketFormSnapshot | null {
         return this.completedForms.get(createCompletedTicketFormKey(ticketChannelId, formId)) ?? null
+    }
+}
+
+export class OTFormsTicketDraftStore {
+    private readonly drafts = new Map<string, OTFormsTicketDraftSnapshot>()
+
+    restore(snapshots: OTFormsTicketDraftSnapshot[]): void {
+        this.drafts.clear()
+        for (const snapshot of snapshots) {
+            this.upsert(snapshot)
+        }
+    }
+
+    upsert(snapshot: OTFormsTicketDraftSnapshot): OTFormsTicketDraftSnapshot {
+        const normalized = normalizeTicketDraftSnapshot(snapshot)
+        this.drafts.set(
+            createTicketDraftKey(
+                normalized.ticketChannelId,
+                normalized.formId,
+                normalized.applicantDiscordUserId
+            ),
+            normalized
+        )
+        return normalized
+    }
+
+    getTicketDraft(
+        ticketChannelId: string,
+        formId: string,
+        applicantDiscordUserId: string
+    ): OTFormsTicketDraftSnapshot | null {
+        return this.drafts.get(
+            createTicketDraftKey(ticketChannelId, formId, applicantDiscordUserId)
+        ) ?? null
+    }
+
+    listTicketDrafts(): OTFormsTicketDraftSnapshot[] {
+        return [...this.drafts.values()]
     }
 }

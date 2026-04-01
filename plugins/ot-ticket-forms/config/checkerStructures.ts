@@ -7,6 +7,7 @@ export const formsConfigStructure = new api.ODCheckerArrayStructure("ot-ticket-f
     {key:"description",optional:false,priority:0,checker:new api.ODCheckerStringStructure("ot-ticket-forms:form-description",{maxLength:4096})},
     {key:"color",optional:false,priority:0,checker:new api.ODCheckerCustomStructure_HexColor("ot-ticket-forms:form-color",true,false)},
 
+    {key:"answerTarget",optional:false,priority:0,checker:new api.ODCheckerStringStructure("ot-ticket-forms:answer-target",{choices:["response_channel","ticket_managed_record"]})},
     {key:"responseChannel",optional:false,priority:0,checker:new api.ODCheckerCustomStructure_DiscordId("ot-ticket-forms:responses-channel","channel",true,[],{})}, // Empty allowed
     {key:"autoSendOptionIds",optional:false,priority:0,checker:new api.ODCheckerCustomStructure_UniqueIdArray("ot-ticket-forms:auto-send-ticket","openticket","option-ids","option-ids-used",{allowDoubles:false,maxLength:25})},
 
