@@ -30,6 +30,7 @@ export interface OTFormsTicketDraftSnapshot extends OTFormsCompletedTicketFormCo
     formColor: string
     updatedAt: string
     completedAt: string | null
+    startFormMessageId: string | null
     managedRecordMessageId: string | null
     answers: OTFormsCapturedAnswer[]
 }
@@ -102,6 +103,7 @@ export function normalizeTicketDraftSnapshot(snapshot: OTFormsTicketDraftSnapsho
     if (!applicantDiscordUserId) {
         throw new Error("Ticket draft snapshot requires applicantDiscordUserId.")
     }
+    const startFormMessageId = normalizeDiscordUserId(snapshot.startFormMessageId)
     const managedRecordMessageId = normalizeDiscordUserId(snapshot.managedRecordMessageId)
     return {
         ticketChannelId: snapshot.ticketChannelId,
@@ -114,6 +116,7 @@ export function normalizeTicketDraftSnapshot(snapshot: OTFormsTicketDraftSnapsho
         formColor: String(snapshot.formColor ?? ""),
         updatedAt: snapshot.updatedAt,
         completedAt: snapshot.completedAt,
+        startFormMessageId,
         managedRecordMessageId,
         answers: [...snapshot.answers]
             .sort((left, right) => left.question.position - right.question.position)

@@ -95,6 +95,15 @@ function parseBodyData(html: string, key: string) {
   return match ? match[1] : ""
 }
 
+async function waitForCondition(predicate: () => boolean, attempts = 20, delayMs = 25) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate()) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+}
+
 function createSnapshot(): DashboardRuntimeSnapshot {
   return {
     capturedAt: new Date("2026-03-25T12:00:00.000Z").toISOString(),
@@ -936,7 +945,7 @@ async function stopTestServer(runtime: Awaited<ReturnType<typeof startTestServer
 
   await runtime.context.authStore.close()
   runtime.server.unref()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 25))
 
   fs.rmSync(runtime.projectRoot, { recursive: true, force: true })
 }
@@ -1094,7 +1103,7 @@ test("transcript workspace preserves advanced filter state, filtered summaries, 
     }).toString()
   })
   const bulkExportBody = await bulkExportResponse.text()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await waitForCondition(() => fixture.calls.releaseExport.includes("bulk-export-1"))
 
   assert.equal(bulkExportResponse.status, 200)
   assert.match(String(bulkExportResponse.headers.get("content-disposition") || ""), /attachment; filename="transcripts-bulk\.zip"/)
@@ -1162,7 +1171,7 @@ test("transcript workspace preserves advanced filter state, filtered summaries, 
     }).toString()
   })
   const detailExportBody = await detailExportResponse.text()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await waitForCondition(() => fixture.calls.releaseExport.includes("export-2"))
 
   assert.equal(detailExportResponse.status, 200)
   assert.match(String(detailExportResponse.headers.get("content-disposition") || ""), /attachment; filename="transcript-tr-001\.zip"/)
@@ -1240,7 +1249,7 @@ test("transcript admin pages show private-mode and viewer-readiness notices with
     accessPolicy: {
       mode: "private-discord",
       viewerReady: false,
-      message: "Dashboard transcript viewer URLs are unavailable. Load ot-dashboard and configure a valid publicBaseUrl before issuing private transcript links."
+      message: "Dashboard transcript viewer URLs are unavailable. Load ot-dashboard and configure a valid publicBaseUrl before issuing private transcript links. Whitelist review submit stays blocked until the viewer host is ready."
     },
     publicUrl: null
   })
@@ -1259,8 +1268,10 @@ test("transcript admin pages show private-mode and viewer-readiness notices with
   assert.match(listHtml, /require Discord sign-in/i)
   assert.match(listHtml, /Viewer links cannot be issued/)
   assert.match(listHtml, /Dashboard transcript viewer URLs are unavailable/i)
+  assert.match(listHtml, /Whitelist review submit stays blocked/i)
   assert.match(listHtml, /Viewer routes are not ready/)
   assert.match(listHtml, /Dashboard publicBaseUrl must be set/i)
+  assert.match(listHtml, /dedicated OT-guild transcript archive lane/i)
   assert.match(listHtml, /Review transcript archives here\. Single-record actions stay on transcript detail pages, and bulk tools stay with the table below\./)
   assert.doesNotMatch(listHtml, /Search transcript records, inspect archived details, and open advanced transcript actions only on the detail page\./)
 
@@ -1269,6 +1280,7 @@ test("transcript admin pages show private-mode and viewer-readiness notices with
   })).text()
   assert.match(detailHtml, /Private transcript mode/)
   assert.match(detailHtml, /Viewer routes are not ready/)
+  assert.match(detailHtml, /Whitelist review submit stays blocked/i)
   assert.match(detailHtml, /This transcript does not currently expose an active public URL\./)
   assert.match(detailHtml, /Revoke active link/)
   assert.match(detailHtml, /Delete archive/)

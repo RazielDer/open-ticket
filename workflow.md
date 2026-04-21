@@ -4,6 +4,10 @@
 
 This kernel locks the implementation plan for the EoTFS whitelist application flow inside `open-ticket`. The work is intentionally scoped to `plugins/ot-ticket-forms/**`, the narrow compatibility surface in `plugins/ot-eotfs-bridge/**`, and the controller-kernel files at repo root.
 
+This kernel is now a historical record for that completed task. Its plugin-scoped write boundaries applied only to that whitelist UX redesign and do not constrain later consolidated whole-project work, which should follow the workspace-root whole-stack kernel instead.
+
+The overall consolidated project is still active and incomplete under the workspace-root parity kernel. Only this historical sub-kernel is complete.
+
 The product target is:
 
 - fewer clicks

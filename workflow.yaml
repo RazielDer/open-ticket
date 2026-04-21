@@ -14,7 +14,7 @@ task:
     - slices/02-smart-continuation-and-recovery.md
     - slices/03-ticket-card-state-and-managed-record-status.md
     - slices/04-final-verification-and-doc-sync.md
-  updated_at: 2026-04-01
+  updated_at: 2026-04-20
 
 constraints:
   write_scope:
@@ -47,6 +47,7 @@ constraints:
     - Preserve existing question definitions, question ordering, and the current rule that short/paragraph questions batch into modal sections of up to five items.
     - Keep all work inside plugin scope plus this root controller kernel. Do not modify core Open Ticket responder classes.
     - Use apply_patch for file edits.
+historical_scope_note: "This closed whitelist UX redesign kernel remains authoritative for its shipped outcomes only. Its plugin-scoped write_scope and forbidden_writes were task-specific, the overall consolidated project remains active and incomplete under the workspace-root parity kernel, and this historical kernel does not constrain later whole-project work."
 
 decisions:
   - The user-facing goal is fewer clicks, clearer saved-state feedback, and reliable recovery, not literal preservation of every old ephemeral prompt.

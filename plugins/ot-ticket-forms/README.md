@@ -60,8 +60,8 @@ The released `whitelist-review-form` uses the ticket-local draft path:
 - `responseChannel` must stay blank
 - one managed application record exists per applicant, ticket, and form
 - normal ticket discussion remains available, but only the structured ticket-card application flow mutates saved whitelist answers
-- `Q1` remains an applicant-entered consistency check and must match the live ticket creator username or global name or nickname before OT handoff when aliases are available
-- `Q2` must contain one or more AGIDs written as `123456789` or `123-456-789`; accepted values are canonicalized by the OT bridge to grouped `123-456-789`
+- the Discord name field at `Q1` remains an applicant-entered consistency check and must match the live ticket creator username or global name or nickname before OT handoff when aliases are available
+- the `Alderon ID(s)` field at `Q2` must contain one or more AGIDs written as `123456789` or `123-456-789`; accepted values are canonicalized by the OT bridge to grouped `123-456-789`
 - the ticket flow still does not perform live external Alderon-account existence verification
 - the OT-side handoff contract lives in [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md)
 
@@ -72,22 +72,36 @@ The applicant ticket card is the durable recovery anchor for the whitelist appli
 Released card states:
 
 - `Fill Out Application`: no saved draft or only the implicit `initial` state exists
-- `Continue Application`: a partial draft is saved and the next step needs a fresh click
-- `Update Application`: the application is submitted and bridge review still allows applicant edits
+- `Continue Application`: a partial draft is saved and the next unanswered step needs a fresh click
+- `Update Application`: a completed draft is still applicant-editable, including after staff reopen the same case with `Retry`
+- `Submit for Review`: a companion ticket-card button that appears only when a completed draft is still applicant-editable
+- `Submitted for Staff Review`: the applicant already used `Submit for Review`, so active `pending_review` stays locked until staff use `Retry`
 - `Application Locked`: bridge review is no longer editable, so the applicant card disables further edits
+- `Edit a saved answer`: a ticket-card select menu that appears only when saved answers exist and the applicant is still allowed to edit
 
 Released continuation rules:
 
 - the flow auto-sends the next prompt when the next unanswered section is button- or dropdown-based
 - `Continue Application` appears only when the next unanswered section must open a modal or when saved progress needs a recovery click
+- `Update Application` reopens a completed draft without staging a new review packet by itself
+- `Submit for Review` is the only applicant action that stages or refreshes the OT-to-Discord review packet
+- `Edit a saved answer` opens a one-question edit flow for an answered field and saves only that field without replaying later sections
+- unanswered questions still belong to the normal `Continue Application` flow
 - if a saved UI delivery fails after persistence, the draft remains authoritative and the ticket card plus any recovery `Continue Application` prompt are the supported resume path
 
 Released ephemeral vs managed-record responsibilities:
 
 - retained ephemerals are compact passive section confirmations only
 - stale prompts must not remain the active recovery path
+- stale-step recovery now points the applicant back to the ticket card, using state-aware wording for draft, saved-for-review, and locked cases
 - the ticket-managed record inside the ticket remains the canonical answer transcript
 - the managed record now distinguishes draft-saved vs submitted state so applicants and staff can tell whether progress is merely saved or fully submitted
+
+Released whitelist stack order:
+
+- before submit: opening whitelist embed, `whitelist-process`, `whitelist-expectations`, and the bottom-positioned applicant ticket card
+- after submit: opening whitelist embed, `whitelist-process`, `whitelist-expectations`, submitted answers mirror, applicant ticket card, and bottom-positioned `Whitelist Staff Review`
+- normal applicant-card and submitted-answer refreshes reuse stored message IDs and update in place; delete-or-recreate is reserved for one-time legacy normalization or true missing-message recovery
 
 ## Companion Docs
 

@@ -66,9 +66,17 @@ function createFakeDocument(transcriptId: string): LocalTranscriptDocument {
     }
 }
 
-function createFakeTextChannel(id: string, behavior: "text" | "voice" | "fails", sent: Array<{ id: string; message: unknown }>) {
+function createFakeTextChannel(
+    id: string,
+    behavior: "text" | "voice" | "fails",
+    sent: Array<{ id: string; message: unknown }>,
+    guildId = "guild-1"
+) {
     return {
         id,
+        guild: {
+            id: guildId
+        },
         isTextBased() {
             return behavior != "voice"
         },
@@ -218,13 +226,104 @@ test("direct channel delivery skips invalid and non-text targets and continues a
     })
 
     assert.deepEqual(result.deliveredTargetIds, ["123456789012345678", "456789012345678901"])
-    assert.deepEqual(result.skippedTargetIds, ["bad-id", "234567890123456789", "345678901234567890"])
+    assert.deepEqual(result.skippedTargetIds, ["bad-id", "345678901234567890", "234567890123456789"])
     assert.deepEqual(sent.map((entry) => entry.id), ["123456789012345678", "456789012345678901"])
     assert.deepEqual(warnings, [
         "invalid-id:bad-id",
-        "send-failed:234567890123456789",
-        "non-text-channel:345678901234567890"
+        "non-text-channel:345678901234567890",
+        "send-failed:234567890123456789"
     ])
+})
+
+test("transcript channel validation rejects targets from the wrong guild before delivery", async () => {
+    const warnings: string[] = []
+    const result = await deliverMessageToTranscriptTargets({
+        guild: { id: "guild-1" },
+        targetIds: ["123456789012345678", "234567890123456789"],
+        channelMessage: { message: { content: "ready" } },
+        optionId: "billing"
+    }, {
+        fetchChannel: async (_guild, targetId) => (
+            targetId == "123456789012345678"
+                ? createFakeTextChannel(targetId, "text", [], "guild-1")
+                : createFakeTextChannel(targetId, "text", [], "guild-2")
+        ),
+        sendMessage: async () => undefined,
+        logWarning: (warning) => {
+            warnings.push(`${warning.code}:${warning.destinationId}`)
+        }
+    })
+
+    assert.deepEqual(result.deliveredTargetIds, ["123456789012345678"])
+    assert.deepEqual(result.skippedTargetIds, ["234567890123456789"])
+    assert.deepEqual(warnings, ["wrong-guild:234567890123456789"])
+})
+
+test("default transcript channel fetch keeps the guild channel manager binding intact", async () => {
+    const warnings: string[] = []
+    const guild = {
+        id: "guild-1",
+        channels: {
+            async fetch(this: { ownerId: string }, targetId: string) {
+                assert.equal(this.ownerId, "guild-channel-manager")
+                return createFakeTextChannel(targetId, "text", [], "guild-1")
+            },
+            ownerId: "guild-channel-manager"
+        }
+    }
+
+    const result = await deliverMessageToTranscriptTargets({
+        guild,
+        targetIds: ["123456789012345678"],
+        channelMessage: { message: { content: "ready" } },
+        optionId: "billing"
+    }, {
+        sendMessage: async () => undefined,
+        logWarning: (warning) => {
+            warnings.push(`${warning.code}:${warning.destinationId}`)
+        }
+    })
+
+    assert.deepEqual(result.deliveredTargetIds, ["123456789012345678"])
+    assert.deepEqual(result.skippedTargetIds, [])
+    assert.deepEqual(warnings, [])
+})
+
+test("default transcript channel fetch falls back to the client channel manager when the guild fetch throws", async () => {
+    const warnings: string[] = []
+    const guild = {
+        id: "guild-1",
+        channels: {
+            async fetch() {
+                throw new Error("guild channel manager unavailable")
+            }
+        },
+        client: {
+            channels: {
+                async fetch(this: { ownerId: string }, targetId: string) {
+                    assert.equal(this.ownerId, "client-channel-manager")
+                    return createFakeTextChannel(targetId, "text", [], "guild-1")
+                },
+                ownerId: "client-channel-manager"
+            }
+        }
+    }
+
+    const result = await deliverMessageToTranscriptTargets({
+        guild,
+        targetIds: ["123456789012345678"],
+        channelMessage: { message: { content: "ready" } },
+        optionId: "billing"
+    }, {
+        sendMessage: async () => undefined,
+        logWarning: (warning) => {
+            warnings.push(`${warning.code}:${warning.destinationId}`)
+        }
+    })
+
+    assert.deepEqual(result.deliveredTargetIds, ["123456789012345678"])
+    assert.deepEqual(result.skippedTargetIds, [])
+    assert.deepEqual(warnings, [])
 })
 
 test("routeTranscriptReadyMessages suppresses the core channel post when an option resolves to no targets", async () => {

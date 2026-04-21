@@ -83,6 +83,7 @@ test("managed-record snapshot rebinding updates message linkage and answer state
         formColor: "#2f855a",
         updatedAt: "2026-03-29T00:00:00.000Z",
         completedAt: null,
+        startFormMessageId: "start-message-1",
         managedRecordMessageId: "managed-message-1",
         answers: buildManagedAnswers(2)
     }
@@ -98,6 +99,7 @@ test("managed-record snapshot rebinding updates message linkage and answer state
     assert.equal(rebound.managedRecordMessageId, "managed-message-2")
     assert.equal(rebound.draftState, "completed")
     assert.equal(rebound.answers.length, 3)
+    assert.equal(rebound.startFormMessageId, "start-message-1")
     assert.equal(original.managedRecordMessageId, "managed-message-1")
     assert.equal(original.answers.length, 2)
 })
@@ -106,6 +108,6 @@ test("answers embed copy distinguishes saved drafts from submitted applications"
     const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-ticket-forms", "builders", "embedBuilders.ts")
     const source = fs.readFileSync(sourcePath, "utf8")
 
-    assert.equal(source.includes("Draft saved. Use the ${OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL} button in this ticket to resume."), true)
-    assert.equal(source.includes("Application submitted. Use the ${OT_FORMS_UPDATE_APPLICATION_BUTTON_LABEL} button while staff review remains editable."), true)
+    assert.equal(source.includes("Draft saved. Use the ${OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL} button or the Edit a saved answer menu on the ticket card to keep working."), true)
+    assert.equal(source.includes("Submitted for staff review. This mirror stays pinned to the last submitted answers until the applicant sends an updated retry submission."), true)
 })

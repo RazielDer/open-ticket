@@ -18,7 +18,7 @@ When used on its own, the plugin:
 In the EoTFS stack, this plugin pairs with:
 
 - [`../ot-dashboard/README.md`](../ot-dashboard/README.md) for Discord-gated browser viewing in `private-discord` mode
-- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) for transcript URL lookup and later `transcript_attached` delivery into the staged whitelist workflow
+- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) for pre-close whitelist transcript compilation, transcript URL lookup, and fallback-only `transcript_attached` repair delivery into the staged whitelist workflow
 - [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side intake worker and host coordination contract
 
 ## What Changes When `ot-dashboard` Is Installed
@@ -33,6 +33,14 @@ When the dashboard is installed and `links.access.mode = "private-discord"`:
 - global transcript inventory stays on the dashboard admin host
 
 The transcript files, slugs, events, retention, and export logic still belong to `ot-html-transcripts`.
+
+## Requirements
+
+- Public transcript links work with `ot-html-transcripts` alone.
+- `ot-dashboard` adds dashboard-protected private viewer mode for `private-discord`.
+- `ot-sqlite-database` is not required because this plugin owns its SQLite storage directly.
+- The global/default transcript channel still lives in `config/transcripts.json`.
+- Per-option transcript routing is plugin-owned and additive in the dashboard ticket option editor through `transcripts.useGlobalDefault` and `transcripts.channels`.
 
 ## What You Need To Fill Out
 
@@ -103,7 +111,7 @@ Important rule:
 
 ### 3. `config/options.json`
 
-Per-option transcript routing is additive and ticket-option only.
+Per-option transcript routing is plugin-owned and additive, and it is ticket-option only.
 
 Example block:
 
@@ -146,7 +154,7 @@ Use `private-discord` when you want transcript viewing to require Discord member
 
 Behavior changes:
 
-- the plugin's public slug routes intentionally return `404`
+- plugin public transcript routes intentionally return `404` in private mode
 - the dashboard viewer host becomes the canonical transcript surface
 - transcript URLs resolve through `ot-dashboard`
 
@@ -250,7 +258,7 @@ Link outcomes:
 
 - `410 Gone`: the transcript link expired
 - `404 Not Found`: the transcript was revoked, deleted, or the slug is unknown
-- pending transcript on the Discord side usually means the bridge is still waiting for transcript creation or later transcript attach
+- a missing transcript on a newly staged whitelist case usually means transcript-readiness repair or legacy fallback work, not the normal released path
 
 ## Service Surface For Other Plugins
 
@@ -261,10 +269,20 @@ High-value service methods include:
 - `resolveTranscript(target)`
 - `resolveAdminTarget(target)`
 - `listTranscripts(query)`
+- `listOperationalTranscripts(query)`
+- `getAccessPolicy()`
+- `listTranscriptStylePresets()`
+- `renderTranscriptStylePreview(styleDraft)`
 - `getTranscriptDetail(target)`
+- `listTranscriptEvents(target, query)`
+- `previewRetentionSweep()`
+- `getIntegritySummary()`
 - `revokeTranscript(id, reason?)`
 - `reissueTranscript(id, reason?)`
 - `deleteTranscript(id, reason?)`
+- `releasePreparedTranscriptExport(exportId)`
+- `bulkRevokeTranscripts(ids, reason?)`
+- `bulkDeleteTranscripts(ids, reason?)`
 - `listViewerAccessibleTranscripts(viewerUserId, viewerAccess, query?)`
 - `renderViewerTranscript(slug, viewerUserId, assetBasePath, viewerAccess)`
 - `resolveViewerTranscriptAsset(slug, assetName, viewerUserId, viewerAccess)`
@@ -272,6 +290,10 @@ High-value service methods include:
 - `prepareBulkTranscriptExport(ids)`
 
 `ot-eotfs-bridge` uses `resolveAdminTarget()` for transcript URL lookup. Do not replace that with message scraping or direct file-path assumptions.
+
+Common operational list filters include `creatorId`, `channelId`, `createdFrom`, `createdTo`, `status`, `sort`, `limit`, and paging controls. Useful sort values include `created-desc` and `updated-asc`, and list pages typically expose an aggregate `matchingSummary`.
+
+successful private viewer document opens are audit-worthy events. dashboard-side draft helpers only belong to the dashboard plugin; transcript archive and lifecycle calls stay service-owned here.
 
 ## Verification
 
@@ -281,3 +303,10 @@ From the Open Ticket repo root:
 npm run build
 node --test dist/plugins/ot-html-transcripts/test
 ```
+
+This README is part of the maintained operator contract.
+
+Before treating a deployment as ready:
+
+- confirm the local/dev public URL (`http://127.0.0.1:8456`) is replaced or intentionally unused for `private-discord`
+- confirm the plugin logs additive deployment warnings when viewer-host or transcript-route prerequisites are not ready

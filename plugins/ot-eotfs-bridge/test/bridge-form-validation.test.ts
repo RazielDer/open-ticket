@@ -96,7 +96,7 @@ test("form validation rejects duplicate AGIDs after normalization", () => {
 
     assert.equal(validation.ok, false)
     assert.deepEqual(validation.alderonIds, ["123-456-789"])
-    assert.equal(validation.errors.includes("Q2 duplicate AGIDs are not allowed."), true)
+    assert.equal(validation.errors.includes("Remove duplicate Alderon ID(s)."), true)
 })
 
 test("form validation rejects malformed AGIDs", () => {
@@ -111,7 +111,7 @@ test("form validation rejects malformed AGIDs", () => {
     )
 
     assert.equal(validation.ok, false)
-    assert.equal(validation.errors.includes("Q2 each AGID must be `123456789` or `123-456-789`."), true)
+    assert.equal(validation.errors.includes("Use Alderon ID(s) in `123456789` or `123-456-789` format."), true)
 })
 
 test("form validation enforces the live Discord identity alias check when aliases are available", () => {
@@ -137,7 +137,7 @@ test("form validation enforces the live Discord identity alias check when aliase
 
     assert.equal(mismatched.ok, false)
     assert.equal(
-        mismatched.errors.includes("Q1 must match the ticket creator's live Discord username, global name, or server nickname."),
+        mismatched.errors.includes("The Discord name in the application must match the ticket owner's current Discord name."),
         true
     )
 })
@@ -165,7 +165,7 @@ test("form validation rejects a rules password mismatch", () => {
 
     assert.equal(prepared.status, "invalid-form")
     if (prepared.status == "invalid-form") {
-        assert.equal(prepared.message.includes("Q19 rules password did not match an accepted value."), true)
+        assert.equal(prepared.message.includes("The rules password is incorrect."), true)
     }
 })
 
@@ -192,7 +192,7 @@ test("form validation rejects acknowledgement answers that are not Yes", () => {
 
     assert.equal(prepared.status, "invalid-form")
     if (prepared.status == "invalid-form") {
-        assert.equal(prepared.message.includes("Q5 must be answered Yes"), true)
+        assert.equal(prepared.message.includes("Answer \"Yes\" to this required acknowledgement"), true)
     }
 })
 
@@ -219,7 +219,7 @@ test("form validation fails closed when no accepted rules password env values ar
     }
 })
 
-test("refresh review packet preparation stays available only while the case remains pending_review", () => {
+test("refresh review packet preparation stays available only while the case remains retry_denied", () => {
     const refreshReady = prepareCaseCreatedEvent(
         {
             ticketChannelId: "123456789012345678",
@@ -246,14 +246,17 @@ test("refresh review packet preparation stays available only while the case rema
             transcriptEventId: null,
             transcriptUrl: null,
             transcriptStatus: null,
+            presentationStackVersion: 1,
+            whitelistProcessMessageId: "process-message",
+            whitelistExpectationsMessageId: "expectations-message",
             controlMessageId: "control-message",
-            lastRenderedState: "pending_review",
+            lastRenderedState: "retry_denied",
             renderVersion: 1,
             lastPolicySnapshot: null,
             lastStatus: {
                 bridge_case_id: "bridge-case-1",
                 source_ticket_ref: "ot:123456789012345678",
-                status: "pending_review",
+                status: "retry_denied",
                 render_version: 1,
                 transcript_ready: false,
                 ticket_log_link: null,
@@ -290,6 +293,7 @@ test("refresh review packet preparation stays available only while the case rema
                     retry_warning: null
                 },
                 apply_closeout_state: "ticket_open",
+                player_visible_apply_summary: null,
                 reviewed_hard_deny_targets: []
             },
             pollAttemptCount: 0,
@@ -297,6 +301,7 @@ test("refresh review packet preparation stays available only while the case rema
             nextPollAt: null,
             lastPollError: null,
             degradedReason: null,
+            operatorWarning: null,
             updatedAt: "2026-03-29T00:00:00.000Z"
         },
         { allowRefresh: true }
@@ -334,6 +339,9 @@ test("refresh review packet preparation stays available only while the case rema
             transcriptEventId: null,
             transcriptUrl: null,
             transcriptStatus: null,
+            presentationStackVersion: 1,
+            whitelistProcessMessageId: "process-message",
+            whitelistExpectationsMessageId: "expectations-message",
             controlMessageId: "control-message",
             lastRenderedState: "accepted_applied",
             renderVersion: 1,
@@ -378,6 +386,7 @@ test("refresh review packet preparation stays available only while the case rema
                     retry_warning: null
                 },
                 apply_closeout_state: "close_ready",
+                player_visible_apply_summary: null,
                 reviewed_hard_deny_targets: []
             },
             pollAttemptCount: 0,
@@ -385,6 +394,7 @@ test("refresh review packet preparation stays available only while the case rema
             nextPollAt: null,
             lastPollError: null,
             degradedReason: null,
+            operatorWarning: null,
             updatedAt: "2026-03-29T00:00:00.000Z"
         },
         { allowRefresh: true }
@@ -392,6 +402,6 @@ test("refresh review packet preparation stays available only while the case rema
 
     assert.equal(refreshBlocked.status, "refresh-blocked")
     if (refreshBlocked.status == "refresh-blocked") {
-        assert.equal(refreshBlocked.message.includes("pending_review"), true)
+        assert.equal(refreshBlocked.message.includes("returns the application with Retry"), true)
     }
 })

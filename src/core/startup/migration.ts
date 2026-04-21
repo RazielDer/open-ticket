@@ -144,4 +144,18 @@ export const migrations = [
 
     //MIGRATE TO v4.1.3
     new utilities.ODVersionMigration(api.ODVersion.fromString("opendiscord:version","v4.1.3"),async () => {},async () => {}),
+
+    //MIGRATE TO v4.1.4
+    new utilities.ODVersionMigration(api.ODVersion.fromString("opendiscord:version","v4.1.4"),async () => {
+        const ticketDatabase = opendiscord.databases.get("opendiscord:tickets")
+
+        for (const ticket of (await ticketDatabase.getCategory("opendiscord:ticket") ?? [])){
+            const ticketData = ticket.value
+            if (!ticketData || !Array.isArray(ticketData.data)) continue
+
+            const changed = api.appendMissingTicketPlatformMetadataFields(ticketData.data)
+            if (!changed) continue
+            ticketDatabase.set("opendiscord:ticket",ticket.key,ticketData)
+        }
+    },async () => {}),
 ]

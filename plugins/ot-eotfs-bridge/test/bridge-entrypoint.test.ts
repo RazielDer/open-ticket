@@ -16,6 +16,8 @@ test("bridge config keeps the locked whitelist application form contract mapping
     const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
         formId: string
         targetGroupKey: string
+        authorizedRoleIds: string[]
+        canonicalStaffGuildId: string | null
         formContract: {
             discordUsernamePosition: number
             alderonIdsPosition: number
@@ -26,6 +28,8 @@ test("bridge config keeps the locked whitelist application form contract mapping
 
     assert.equal(config.formId, "whitelist-review-form")
     assert.equal(config.targetGroupKey, "community_mirror")
+    assert.deepEqual(config.authorizedRoleIds, [])
+    assert.equal(config.canonicalStaffGuildId, "1433418426029834305")
     assert.deepEqual(config.formContract, {
         discordUsernamePosition: 1,
         alderonIdsPosition: 2,
@@ -34,7 +38,7 @@ test("bridge config keeps the locked whitelist application form contract mapping
     })
 })
 
-test("bridge loads after ot-ticket-forms so the applicant button renders above the staff control card", () => {
+test("bridge loads after ot-ticket-forms so the applicant card can stay above the staff control card", () => {
     const bridgePluginPath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "plugin.json")
     const formsPluginPath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-ticket-forms", "plugin.json")
     const bridgePlugin = JSON.parse(fs.readFileSync(bridgePluginPath, "utf8")) as { priority: number }
@@ -43,14 +47,60 @@ test("bridge loads after ot-ticket-forms so the applicant button renders above t
     assert.equal(bridgePlugin.priority < formsPlugin.priority, true)
 })
 
-test("bridge repair logic checks applicant start-form placement before rerendering controls", () => {
+test("bridge presentation source keeps the applicant card as the bottom application block and renders the review card last", () => {
     const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "index.ts")
     const source = fs.readFileSync(sourcePath, "utf8")
+    const followupSourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-followups", "index.ts")
+    const followupSource = fs.readFileSync(followupSourcePath, "utf8")
 
     assert.equal(source.includes("findApplicantStartFormMessage(channel, channel.id)"), true)
     assert.equal(source.includes("shouldRecreateBridgeControlForPlacement("), true)
-    assert.equal(source.includes("await controlMessage.delete()"), true)
-    assert.equal(source.includes("await formsService.refreshTicketStartFormMessage(channel.id, getBridgeConfig().formId)"), true)
+    assert.equal(source.includes("await formsService.refreshTicketStartFormMessage(channel.id, config.formId, {"), true)
+    assert.equal(source.includes("await formsService.hideSubmittedTicketFormMessage(channel.id, config.formId)"), true)
+    assert.equal(source.includes("await formsService.syncSubmittedTicketFormMessage(channel.id, config.formId"), true)
+    assert.equal(source.includes("await ensureControlMessage(channel, nextState"), true)
+    assert.equal(source.includes("await syncConfiguredFollowupMessages(ticket, channel, nextState, anchorTimestamp)"), true)
+    assert.equal(source.includes("await normalizeConfiguredFollowupMessages(ticket, channel, nextState, anchorTimestamp)"), true)
+    assert.equal(source.includes("placementRepairAfterMessageTimestamp: anchorTimestamp"), true)
+    assert.equal(source.includes("presentationStackVersion"), true)
+    assert.equal(source.includes("whitelistProcessMessageId"), true)
+    assert.equal(source.includes("whitelistExpectationsMessageId"), true)
+    assert.equal(source.includes("placementRepairAfterMessageTimestamp"), true)
+    assert.equal(followupSource.includes("ownsTicketFollowups"), true)
+    assert.equal(followupSource.includes("afterTicketMainMessageCreated"), true)
+})
+
+test("bridge source reuses the shared authorization helper for button clicks and modal submits", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "index.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+    const helperMatches = source.match(/getBridgeInteractionAuthorization\(/g) ?? []
+
+    assert.equal(helperMatches.length >= 2, true)
+    assert.equal(source.includes("getBridgeAuthorizationDeniedMessage()"), true)
+    assert.equal(source.includes("getCanonicalWhitelistPermissionDeniedMessage()"), true)
+    assert.equal(source.includes("resolveBridgeActionAuthorizationContext("), true)
+    assert.equal(source.includes("actor_user_id: actorUserId"), true)
+    assert.equal(source.includes("actor_role_ids: actorRoleIds"), true)
+    assert.equal(source.includes("source_guild_id: sourceGuildId"), true)
+    assert.equal(source.includes("Number(actorUserId)"), false)
+    assert.equal(source.includes("Number(sourceGuildId)"), false)
+    assert.equal(source.includes("Staff warning:"), true)
+    assert.equal(source.includes("result.operator_warning"), true)
+})
+
+test("submit for review compiles a transcript before case_created and keeps transcript_attached as fallback-only", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "index.ts")
+    const servicePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-html-transcripts", "service", "transcript-service.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+    const serviceSource = fs.readFileSync(servicePath, "utf8")
+
+    assert.equal(serviceSource.includes("validateWhitelistBridgeTranscriptReadiness"), true)
+    assert.equal(serviceSource.includes("compileWhitelistBridgeTranscript"), true)
+    assert.equal(serviceSource.includes("resolveTranscriptTargetChannels"), true)
+    assert.equal(source.includes("compileWhitelistBridgeTranscript("), true)
+    assert.equal(source.includes("prepared.payload.transcript_url = transcriptCompile.transcriptUrl"), true)
+    assert.equal(source.includes('opendiscord.events.get("afterTranscriptReady")'), true)
+    assert.equal(source.includes("prepareTranscriptAttachedEvent(channel.id, transcriptUrl, existingState)"), true)
 })
 
 test("create-ticket decision blocks duplicate live whitelist tickets", () => {

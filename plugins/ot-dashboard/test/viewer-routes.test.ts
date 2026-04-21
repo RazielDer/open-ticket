@@ -667,6 +667,7 @@ test("private viewer routes return 503 when dashboard viewer config is not ready
 
   assert.equal(response.status, 503)
   assert.match(body, /publicBaseUrl/i)
+  assert.match(body, /whitelist review submit stays blocked/i)
 })
 
 test("private viewer routes redirect before slug checks, reject invalid OAuth state, and keep admin auth separate from viewer auth", async (t) => {

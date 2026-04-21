@@ -8,6 +8,10 @@ import {
     createTranscriptPrepareBulkExportErrorResult
 } from "../contracts/factories"
 import { TRANSCRIPT_PLUGIN_SERVICE_ID } from "../contracts/constants"
+import type { TranscriptChannelDeliveryWarning } from "../routing/channel-delivery"
+import { resolveTranscriptTargetChannels } from "../routing/channel-delivery"
+import type { TicketOptionTranscriptRoutingTargets } from "../routing/option-routing"
+import { resolveEffectiveTranscriptChannelTargets } from "../routing/option-routing"
 import type {
     ActionResult,
     ListViewerAccessibleTranscriptsQuery,
@@ -40,6 +44,49 @@ import type {
 } from "../contracts/types"
 import { TranscriptHttpServer } from "../http/server"
 import { TranscriptServiceCore } from "./transcript-service-core"
+
+export interface TranscriptWhitelistBridgeReadinessResult {
+    ready: boolean
+    message: string
+    routing: TicketOptionTranscriptRoutingTargets | null
+    targetChannelId: string | null
+    warnings: TranscriptChannelDeliveryWarning[]
+}
+
+export interface TranscriptWhitelistBridgeCompileResult extends TranscriptWhitelistBridgeReadinessResult {
+    success: boolean
+    transcriptUrl: string | null
+}
+
+function getRuntime() {
+    return require("#opendiscord") as typeof import("#opendiscord")
+}
+
+function getTicketOptionId(ticket: unknown): string | null {
+    const optionId = (ticket as { option?: { id?: { value?: unknown } } } | null)?.option?.id?.value
+    return typeof optionId == "string" && optionId.trim().length > 0 ? optionId.trim() : null
+}
+
+function normalizeOptionalUrl(value: unknown): string | null {
+    return typeof value == "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+function describeWhitelistBridgeReadinessWarning(warning: TranscriptChannelDeliveryWarning | null): string {
+    switch (warning?.code) {
+        case "invalid-id":
+            return "Whitelist review cannot start until the transcript archive lane uses a valid Discord channel id."
+        case "fetch-failed":
+            return "Whitelist review cannot start until the transcript archive lane can be fetched from the OT guild and verified as a text channel."
+        case "missing-channel":
+            return "Whitelist review cannot start until the transcript archive lane points to an existing OT-guild text channel. The configured lane may have been deleted."
+        case "non-text-channel":
+            return "Whitelist review cannot start until the transcript archive lane points to an OT-guild text channel."
+        case "wrong-guild":
+            return "Whitelist review cannot start until the transcript archive lane points to a text channel in the same OT guild as the ticket."
+        default:
+            return "Whitelist review cannot start until the transcript archive lane is ready."
+    }
+}
 
 export class OTHtmlTranscriptService extends api.ODManagerData {
     readonly core = new TranscriptServiceCore()
@@ -190,6 +237,147 @@ export class OTHtmlTranscriptService extends api.ODManagerData {
 
     async compileHtmlTranscript(ticket: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[0], channel: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[1], user: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[2]) {
         return await this.core.compileHtmlTranscript(ticket, channel, user)
+    }
+
+    async validateWhitelistBridgeTranscriptReadiness(
+        ticket: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[0],
+        channel: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[1]
+    ): Promise<TranscriptWhitelistBridgeReadinessResult> {
+        if (!this.core.isHealthy()) {
+            return {
+                ready: false,
+                message: "Whitelist review cannot start until the transcript service is healthy.",
+                routing: null,
+                targetChannelId: null,
+                warnings: []
+            }
+        }
+
+        const accessPolicy = await this.getAccessPolicy()
+        if (accessPolicy.mode == "private-discord" && !accessPolicy.viewerReady) {
+            return {
+                ready: false,
+                message: accessPolicy.message,
+                routing: null,
+                targetChannelId: null,
+                warnings: []
+            }
+        }
+
+        const optionId = getTicketOptionId(ticket)
+        if (!optionId) {
+            return {
+                ready: false,
+                message: "Whitelist review cannot start until transcript routing is configured for this ticket option.",
+                routing: null,
+                targetChannelId: null,
+                warnings: []
+            }
+        }
+
+        const routing = resolveEffectiveTranscriptChannelTargets(optionId)
+        if (!routing || routing.targets.length < 1) {
+            return {
+                ready: false,
+                message: "Whitelist review cannot start until a dedicated transcript archive lane is configured for this whitelist ticket option.",
+                routing,
+                targetChannelId: null,
+                warnings: []
+            }
+        }
+
+        if (routing.targets.length != 1) {
+            return {
+                ready: false,
+                message: "Whitelist review cannot start until exactly one dedicated transcript archive lane is configured for this whitelist ticket option.",
+                routing,
+                targetChannelId: null,
+                warnings: []
+            }
+        }
+
+        const resolution = await resolveTranscriptTargetChannels({
+            guild: channel.guild,
+            targetIds: routing.targets,
+            optionId
+        })
+        if (resolution.resolvedTargets.length != 1) {
+            return {
+                ready: false,
+                message: describeWhitelistBridgeReadinessWarning(resolution.warnings[0] ?? null),
+                routing,
+                targetChannelId: null,
+                warnings: resolution.warnings
+            }
+        }
+
+        return {
+            ready: true,
+            message: "Whitelist transcript staging is ready.",
+            routing,
+            targetChannelId: resolution.resolvedTargets[0].targetId,
+            warnings: resolution.warnings
+        }
+    }
+
+    async compileWhitelistBridgeTranscript(
+        ticket: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[0],
+        channel: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[1],
+        user: Parameters<TranscriptServiceCore["compileHtmlTranscript"]>[2]
+    ): Promise<TranscriptWhitelistBridgeCompileResult> {
+        const readiness = await this.validateWhitelistBridgeTranscriptReadiness(ticket, channel)
+        if (!readiness.ready) {
+            return {
+                ...readiness,
+                success: false,
+                transcriptUrl: null
+            }
+        }
+
+        const runtime = getRuntime()
+        const action = runtime.opendiscord.actions.get("opendiscord:create-transcript")
+        if (!action) {
+            return {
+                ...readiness,
+                success: false,
+                message: "Whitelist review cannot start until the Open Ticket transcript action is available.",
+                transcriptUrl: null
+            }
+        }
+
+        const actionResult = await action.run("other", {
+            guild: channel.guild as never,
+            channel: channel as never,
+            user: user as never,
+            ticket: ticket as never
+        })
+        const knownError = normalizeOptionalUrl(actionResult.errorReason)
+            ?? normalizeOptionalUrl(actionResult.result?.errorReason)
+        if (actionResult.success !== true || actionResult.result?.success !== true) {
+            return {
+                ...readiness,
+                success: false,
+                message: knownError ?? "Whitelist review cannot start until transcript generation succeeds.",
+                transcriptUrl: null
+            }
+        }
+
+        const transcriptUrl = normalizeOptionalUrl((await this.resolveAdminTarget(channel.id))?.publicUrl)
+        if (!transcriptUrl) {
+            return {
+                ...readiness,
+                success: false,
+                message: "Whitelist review cannot start because the compiled transcript URL could not be resolved.",
+                transcriptUrl: null
+            }
+        }
+
+        return {
+            ...readiness,
+            success: true,
+            message: "Whitelist transcript staging is ready.",
+            transcriptUrl
+        }
     }
 
     async revokeTranscript(id: string, reason?: string): Promise<ActionResult> {

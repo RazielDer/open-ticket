@@ -119,6 +119,24 @@ export interface LocalTranscriptParticipant {
     role: "creator" | "participant" | "admin"
 }
 
+export interface LocalTranscriptTicketMetadata {
+    transportMode: string
+    transportParentChannelId: string | null
+    transportParentMessageId: string | null
+    assignedTeamId: string | null
+    assignedStaffUserId: string | null
+    assignmentStrategy: string | null
+    firstStaffResponseAt: number | null
+    resolvedAt: number | null
+    awaitingUserState: string | null
+    awaitingUserSince: number | null
+    closeRequestState: string | null
+    closeRequestBy: string | null
+    closeRequestAt: number | null
+    integrationProfileId: string | null
+    aiAssistProfileId: string | null
+}
+
 export interface LocalTranscriptDocument {
     version: "1.0"
     transcriptId: string
@@ -182,6 +200,7 @@ export interface LocalTranscriptDocument {
         claimedBy: LocalTranscriptActor | null
         pinnedBy: LocalTranscriptActor | null
         deletedBy: LocalTranscriptActor | null
+        metadata?: LocalTranscriptTicketMetadata
     }
     participants: LocalTranscriptParticipant[]
     messages: LocalTranscriptMessage[]

@@ -30,26 +30,26 @@
     "htmlTranscriptStyle":{
         "background":{
             "enableCustomBackground":false,
-            "backgroundColor":"#f8ba00 (or leave empty)",
-            "backgroundImage":"https://www.example.com/image.png (or leave empty)" 
+            "backgroundColor":"#313338",
+            "backgroundImage":""
         },
         "header":{
             "enableCustomHeader":false,
-            "backgroundColor":"#202225",
-            "decoColor":"#f8ba00",
-            "textColor":"#ffffff"
+            "backgroundColor":"#1e1f22",
+            "decoColor":"#5865f2",
+            "textColor":"#f2f3f5"
         },
         "stats":{
             "enableCustomStats":false,
-            "backgroundColor":"#202225",
-            "keyTextColor":"#737373",
-            "valueTextColor":"#ffffff",
-            "hideBackgroundColor":"#40444a",
-            "hideTextColor":"#ffffff"
+            "backgroundColor":"#2b2d31",
+            "keyTextColor":"#b5bac1",
+            "valueTextColor":"#f2f3f5",
+            "hideBackgroundColor":"#404249",
+            "hideTextColor":"#dbdee1"
         },
         "favicon":{
             "enableCustomFavicon":false,
-            "imageUrl":"https://t.dj-dj.be/favicon.png"
+            "imageUrl":""
         }
     }
 }

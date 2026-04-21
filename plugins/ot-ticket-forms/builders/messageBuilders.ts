@@ -9,7 +9,21 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
     messages.add(new api.ODMessage("ot-ticket-forms:start-form-message"));
     messages.get("ot-ticket-forms:start-form-message").workers.add(
         new api.ODWorker("ot-ticket-forms:start-form-message", 0, async (instance, params, source, cancel) => {
-            const { formInstanceId, formName, formDescription, formColor, acceptAnswers, buttonLabel } = params;
+            const {
+                formInstanceId,
+                formName,
+                formDescription,
+                formColor,
+                acceptAnswers,
+                buttonLabel,
+                showEditAnswerSelector,
+                editAnswerEnabled = false,
+                editAnswerPlaceholder = "",
+                editAnswerOptions = [],
+                showSubmitForReviewButton = false,
+                submitForReviewEnabled = false,
+                submitForReviewLabel = ""
+            } = params;
             instance.setEmbeds(
                 await opendiscord.builders.embeds.getSafe("ot-ticket-forms:start-form-embed").build(source, { formName, formDescription, formColor })
             );
@@ -20,6 +34,25 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
                     label: buttonLabel
                 })
             );
+            if (showEditAnswerSelector && editAnswerOptions.length > 0) {
+                instance.addComponent(
+                    await opendiscord.builders.dropdowns.getSafe("ot-ticket-forms:edit-answer-dropdown").build(source, {
+                        formInstanceId,
+                        enabled: editAnswerEnabled,
+                        placeholder: editAnswerPlaceholder,
+                        options: editAnswerOptions
+                    })
+                );
+            }
+            if (showSubmitForReviewButton) {
+                instance.addComponent(
+                    await opendiscord.builders.buttons.getSafe("ot-ticket-forms:submit-for-review-button").build(source, {
+                        formInstanceId,
+                        enabled: submitForReviewEnabled,
+                        label: submitForReviewLabel
+                    })
+                );
+            }
         })
     );
 

@@ -181,6 +181,7 @@ export const registerActions = async () => {
                 new api.ODTicketData("opendiscord:topic",option.get("opendiscord:channel-topic").value),
                 new api.ODTicketData("opendiscord:message-sent",false),
                 new api.ODTicketData("opendiscord:admin-message-sent",false),
+                ...api.createTicketPlatformMetadataEntries()
             ])
 
             //manage stats

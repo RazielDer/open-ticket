@@ -116,6 +116,49 @@ interface DashboardTranscriptHtmlStyleDraftShape {
   }
 }
 
+const LOCKED_DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE: DashboardTranscriptHtmlStyleDraftShape = {
+  background: {
+    enableCustomBackground: false,
+    backgroundColor: "#313338",
+    backgroundImage: ""
+  },
+  header: {
+    enableCustomHeader: false,
+    backgroundColor: "#1e1f22",
+    decoColor: "#5865f2",
+    textColor: "#f2f3f5"
+  },
+  stats: {
+    enableCustomStats: false,
+    backgroundColor: "#2b2d31",
+    keyTextColor: "#b5bac1",
+    valueTextColor: "#f2f3f5",
+    hideBackgroundColor: "#404249",
+    hideTextColor: "#dbdee1"
+  },
+  favicon: {
+    enableCustomFavicon: false,
+    imageUrl: ""
+  }
+}
+
+function cloneLockedDiscordDefaultTranscriptHtmlStyle(): DashboardTranscriptHtmlStyleDraftShape {
+  return {
+    background: {
+      ...LOCKED_DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE.background
+    },
+    header: {
+      ...LOCKED_DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE.header
+    },
+    stats: {
+      ...LOCKED_DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE.stats
+    },
+    favicon: {
+      ...LOCKED_DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE.favicon
+    }
+  }
+}
+
 const DISCORD_ROLE_ID_REGEX = /^\d{17,20}$/
 
 type DashboardGeneralFormValidationCode =
@@ -369,106 +412,16 @@ function normalizeTicketOptionTranscriptRoutingConfig(input: unknown) {
   }
 }
 
-function readTranscriptHtmlStyleValue(input: unknown, pathSegments: string[]): unknown {
-  if (!isPlainObject(input)) {
-    return undefined
-  }
-
-  const flatKey = `htmlTranscriptStyle.${pathSegments.join(".")}`
-  if (flatKey in input) {
-    return input[flatKey]
-  }
-
-  const root = isPlainObject(input.htmlTranscriptStyle)
-    ? input.htmlTranscriptStyle
-    : input
-
-  let current: unknown = root
-  for (const segment of pathSegments) {
-    if (!isPlainObject(current) || !(segment in current)) {
-      return undefined
-    }
-    current = current[segment]
-  }
-
-  return current
-}
-
 function normalizeTranscriptHtmlStyleDraftInput(
   input: Record<string, unknown>,
   fallback?: Partial<DashboardTranscriptHtmlStyleDraftShape> | null
 ): DashboardTranscriptHtmlStyleDraftShape {
-  const backgroundFallback = fallback?.background
-  const headerFallback = fallback?.header
-  const statsFallback = fallback?.stats
-  const faviconFallback = fallback?.favicon
+  void input
+  void fallback
 
-  return {
-    background: {
-      enableCustomBackground: ensureBoolean(
-        readTranscriptHtmlStyleValue(input, ["background", "enableCustomBackground"]) ?? backgroundFallback?.enableCustomBackground
-      ),
-      backgroundColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["background", "backgroundColor"]),
-        backgroundFallback?.backgroundColor || ""
-      ),
-      backgroundImage: ensureString(
-        readTranscriptHtmlStyleValue(input, ["background", "backgroundImage"]),
-        backgroundFallback?.backgroundImage || ""
-      )
-    },
-    header: {
-      enableCustomHeader: ensureBoolean(
-        readTranscriptHtmlStyleValue(input, ["header", "enableCustomHeader"]) ?? headerFallback?.enableCustomHeader
-      ),
-      backgroundColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["header", "backgroundColor"]),
-        headerFallback?.backgroundColor || ""
-      ),
-      decoColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["header", "decoColor"]),
-        headerFallback?.decoColor || ""
-      ),
-      textColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["header", "textColor"]),
-        headerFallback?.textColor || ""
-      )
-    },
-    stats: {
-      enableCustomStats: ensureBoolean(
-        readTranscriptHtmlStyleValue(input, ["stats", "enableCustomStats"]) ?? statsFallback?.enableCustomStats
-      ),
-      backgroundColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["stats", "backgroundColor"]),
-        statsFallback?.backgroundColor || ""
-      ),
-      keyTextColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["stats", "keyTextColor"]),
-        statsFallback?.keyTextColor || ""
-      ),
-      valueTextColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["stats", "valueTextColor"]),
-        statsFallback?.valueTextColor || ""
-      ),
-      hideBackgroundColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["stats", "hideBackgroundColor"]),
-        statsFallback?.hideBackgroundColor || ""
-      ),
-      hideTextColor: ensureString(
-        readTranscriptHtmlStyleValue(input, ["stats", "hideTextColor"]),
-        statsFallback?.hideTextColor || ""
-      )
-    },
-    favicon: {
-      enableCustomFavicon: ensureBoolean(
-        readTranscriptHtmlStyleValue(input, ["favicon", "enableCustomFavicon"]) ?? faviconFallback?.enableCustomFavicon
-      ),
-      imageUrl: ensureString(
-        readTranscriptHtmlStyleValue(input, ["favicon", "imageUrl"]),
-        faviconFallback?.imageUrl || ""
-      )
-    }
-  }
+  // Legacy theme fields are intentionally ignored so every transcript renders
+  // with the locked Discord-default palette.
+  return cloneLockedDiscordDefaultTranscriptHtmlStyle()
 }
 
 function assertPlainObject(value: unknown, label: string): asserts value is Record<string, unknown> {

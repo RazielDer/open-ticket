@@ -215,8 +215,23 @@ opendiscord.events.get("afterBlacklistLoaded").listen(async () => {
 
 //SEND FOLLOWUP MESSAGES
 opendiscord.events.get("afterTicketMainMessageCreated").listen(async (ticket,message,channel,user) => {
+    void message
+    void user
     const config = opendiscord.configs.get("ot-followups:config")
     const followupsManager = opendiscord.plugins.classes.get("ot-followups:manager")
+    const bridgeService = (() => {
+        try {
+            return opendiscord.plugins.classes.get("ot-eotfs-bridge:service") as {
+                ownsTicketFollowups?: (optionId: string) => boolean
+            }
+        } catch {
+            return null
+        }
+    })()
+
+    if (bridgeService?.ownsTicketFollowups?.(ticket.option.id.value) === true) {
+        return
+    }
 
     const messages = config.data.find((c) => c.optionId === ticket.option.id.value)?.messages ?? []
     for (const messageId of messages){

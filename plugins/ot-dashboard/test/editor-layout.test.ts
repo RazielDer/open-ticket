@@ -1037,17 +1037,18 @@ test("core visual editors render the shared workspace shell and advanced tools p
     "Transcript editor workflow",
     "Transcript delivery",
     "Text transcript output",
-    "HTML preview and presets",
+    "HTML preview",
     "HTML appearance",
     "Advanced transcript options"
   ])
   assert.match(transcriptsHtml, /Open transcript workspace/)
   assert.match(transcriptsHtml, /Default transcript channel ID/)
   assert.match(transcriptsHtml, /Ticket option overrides live in the Options workspace/)
-  assert.match(transcriptsHtml, /name="htmlTranscriptStyle\.header\.backgroundColor"/)
+  assert.match(transcriptsHtml, /Discord-default appearance/)
   assert.match(transcriptsHtml, /Preview is unavailable/)
   assert.doesNotMatch(transcriptsHtml, /Common settings/)
   assert.doesNotMatch(transcriptsHtml, /Advanced settings/)
+  assert.doesNotMatch(transcriptsHtml, /name="htmlTranscriptStyle\.header\.backgroundColor"/)
   assert.doesNotMatch(transcriptsHtml, /name="transcript-style-preview"/)
 })
 
@@ -1066,19 +1067,16 @@ test("transcript visual editor renders preset controls and preview iframe when p
     "Transcript editor workflow",
     "Transcript delivery",
     "Text transcript output",
-    "HTML preview and presets",
+    "HTML preview",
     "HTML appearance",
     "Advanced transcript options"
   ])
-  assert.match(transcriptsHtml, /Discord Classic/)
-  assert.match(transcriptsHtml, /Forest Ledger/)
-  assert.match(transcriptsHtml, /Apply preset/)
-  assert.match(transcriptsHtml, /Reset style to saved values/)
+  assert.match(transcriptsHtml, /Discord-default appearance/)
   assert.match(transcriptsHtml, /Refresh preview/)
   assert.match(transcriptsHtml, /id="transcriptPreviewFrame"/)
   assert.match(transcriptsHtml, /name="transcript-style-preview"/)
-  assert.match(transcriptsHtml, /id="transcript-saved-style"/)
-  assert.match(transcriptsHtml, /id="transcript-style-presets"/)
+  assert.doesNotMatch(transcriptsHtml, /id="transcript-saved-style"/)
+  assert.doesNotMatch(transcriptsHtml, /id="transcript-style-presets"/)
   assert.doesNotMatch(transcriptsHtml, /Preview is unavailable/)
 })
 
@@ -1109,8 +1107,9 @@ test("editor save paths preserve advanced values while common fields change", as
     const savedTranscripts = service.readManagedJson<Record<string, any>>("transcripts")
     assert.equal(savedTranscripts.general.mode, "text")
     assert.equal(savedTranscripts.textTranscriptStyle.fileMode, "channel-id")
-    assert.equal(savedTranscripts.htmlTranscriptStyle.favicon.imageUrl, "https://example.com/favicon.png")
-    assert.equal(savedTranscripts.htmlTranscriptStyle.header.backgroundColor, "#202225")
+    assert.equal(savedTranscripts.htmlTranscriptStyle.background.backgroundColor, "#313338")
+    assert.equal(savedTranscripts.htmlTranscriptStyle.favicon.imageUrl, "")
+    assert.equal(savedTranscripts.htmlTranscriptStyle.header.backgroundColor, "#1e1f22")
 
     service.saveOption({
       id: "option-1",
@@ -1208,7 +1207,8 @@ test("general and transcript submit routes still accept the redesigned editor fo
   })
   assert.equal(transcriptsResponse.status, 302)
   assert.equal(transcriptService.readManagedJson<any>("transcripts").general.mode, "text")
-  assert.equal(transcriptService.readManagedJson<any>("transcripts").htmlTranscriptStyle.favicon.imageUrl, "https://example.com/favicon.png")
+  assert.equal(transcriptService.readManagedJson<any>("transcripts").htmlTranscriptStyle.background.backgroundColor, "#313338")
+  assert.equal(transcriptService.readManagedJson<any>("transcripts").htmlTranscriptStyle.favicon.imageUrl, "")
 })
 
 test("general submit route rejects invalid globalAdmins JSON, preserves draft state, and skips success audit writes", async (t) => {

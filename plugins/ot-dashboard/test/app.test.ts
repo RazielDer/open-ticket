@@ -1499,7 +1499,7 @@ test("transcripts visual editor renders runtime-aligned enum choices", async (t)
   assert.doesNotMatch(transcriptsHtml, /value="txt"/)
   assert.doesNotMatch(transcriptsHtml, /value="ticket-id"/)
   assert.doesNotMatch(transcriptsHtml, /<option value="html" selected>html<\/option>/)
-  assert.match(transcriptsHtml, /Control transcript delivery(?: defaults)?, preview, and styling\./)
+  assert.match(transcriptsHtml, /Control transcript delivery defaults and preview the locked Discord-default appearance\./)
 })
 
 test("transcripts visual editor degrades cleanly when preview capability is unavailable", async (t) => {
@@ -1538,9 +1538,9 @@ test("transcript preview routes require auth and render saved and unsaved drafts
   })).text()
   const csrfToken = parseBodyData(editorHtml, "csrf-token")
 
-  assert.match(editorHtml, /Discord Classic/)
+  assert.match(editorHtml, /Discord-default appearance/)
+  assert.match(editorHtml, /locked Discord-default dark appearance/i)
   assert.match(editorHtml, /Refresh preview/)
-  assert.match(editorHtml, /Reset style to saved values/)
   assert.match(editorHtml, /name="transcript-style-preview"/)
 
   const getPreview = await fetch(`${runtime.baseUrl}/dash/visual/transcripts/preview`, {
@@ -1550,7 +1550,8 @@ test("transcript preview routes require auth and render saved and unsaved drafts
 
   assert.equal(getPreview.status, 200)
   assert.match(getPreview.headers.get("content-security-policy") || "", /frame-ancestors 'self'/)
-  assert.match(getPreviewHtml, /#202225/)
+  assert.match(getPreviewHtml, /#1e1f22/)
+  assert.match(getPreviewHtml, /#313338/)
 
   const postPreview = await fetch(`${runtime.baseUrl}/dash/visual/transcripts/preview`, {
     method: "POST",
@@ -1567,8 +1568,10 @@ test("transcript preview routes require auth and render saved and unsaved drafts
   const postPreviewHtml = await postPreview.text()
 
   assert.equal(postPreview.status, 200)
-  assert.match(postPreviewHtml, /#123456/)
-  assert.match(postPreviewHtml, /#010203/)
+  assert.match(postPreviewHtml, /#1e1f22/)
+  assert.match(postPreviewHtml, /#313338/)
+  assert.doesNotMatch(postPreviewHtml, /#123456/)
+  assert.doesNotMatch(postPreviewHtml, /#010203/)
 
   const savedTranscripts = JSON.parse(fs.readFileSync(path.join(runtime.projectRoot, "config", "transcripts.json"), "utf8"))
   assert.equal(savedTranscripts.htmlTranscriptStyle.header.backgroundColor, "#202225")

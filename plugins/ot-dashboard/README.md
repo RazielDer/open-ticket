@@ -18,7 +18,7 @@ This README follows the live contract in [`server/dashboard-config.ts`](server/d
 In the EoTFS stack, `ot-dashboard` is the operator-facing browser surface that pairs with:
 
 - [`../ot-html-transcripts/README.md`](../ot-html-transcripts/README.md) for transcript storage, slug lifecycle, and transcript service APIs
-- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) when whitelist tickets later attach transcript URLs into the Discord-side intake workflow
+- [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) when whitelist tickets stage through pre-close transcript-backed `case_created`, with later `transcript_attached` reserved for fallback repair
 - [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side bring-up and bridge worker contract
 
 ## Admin Host Vs Viewer Host

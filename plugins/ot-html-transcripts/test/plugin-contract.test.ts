@@ -90,6 +90,13 @@ test("config defaults match the source spec", () => {
         server: {
             ...DEFAULT_PLUGIN_CONFIG.server,
             publicBaseUrl: shippedPublicBaseUrl
+        },
+        links: {
+            ...DEFAULT_PLUGIN_CONFIG.links,
+            access: {
+                ...DEFAULT_PLUGIN_CONFIG.links.access,
+                mode: String(rawConfig?.links?.access?.mode || "")
+            }
         }
     })
     assert.equal(DEFAULT_PLUGIN_CONFIG.server.host, "127.0.0.1")
@@ -105,11 +112,8 @@ test("config defaults match the source spec", () => {
     assert.equal(DEFAULT_PLUGIN_CONFIG.retention.statuses.failedDays, 30)
     assert.equal(DEFAULT_PLUGIN_CONFIG.retention.statuses.revokedDays, 365)
     assert.equal(DEFAULT_PLUGIN_CONFIG.retention.statuses.deletedDays, 7)
-    assert.notEqual(shippedPublicBaseUrl.trim(), "")
-
-    const parsedPublicBaseUrl = new URL(shippedPublicBaseUrl)
-    assert.match(parsedPublicBaseUrl.protocol, /^https?:$/)
-    assert.notEqual(parsedPublicBaseUrl.host, "")
+    assert.equal(String(rawConfig?.links?.access?.mode || ""), "private-discord")
+    assert.equal(shippedPublicBaseUrl.trim(), "")
 })
 
 test("checker source enforces the slice 12 access-mode and expiry rules", () => {
@@ -512,6 +516,22 @@ test("deployment warning emission reports one startup warning per detected warni
 
     assert.deepEqual(warnings.map((warning) => warning.code), ["server-bind-public", "public-url-loopback"])
     assert.deepEqual(emitted, warnings)
+})
+
+test("dashboard viewer readiness warnings mention whitelist submit and the dedicated transcript archive lane", () => {
+    const dashboardConfigPath = path.resolve(process.cwd(), "plugins", "ot-dashboard", "server", "dashboard-config.ts")
+    const dashboardConfigSource = fs.readFileSync(dashboardConfigPath, "utf8")
+    const localePath = path.resolve(process.cwd(), "plugins", "ot-dashboard", "locales", "english.json")
+    const locale = JSON.parse(fs.readFileSync(localePath, "utf8")) as {
+        transcripts?: {
+            access?: {
+                privateModeBody?: string
+            }
+        }
+    }
+
+    assert.equal(dashboardConfigSource.includes("Whitelist review submit stays blocked"), true)
+    assert.match(locale.transcripts?.access?.privateModeBody || "", /dedicated OT-guild transcript archive lane/i)
 })
 
 test("dashboard transcript workbench helper builds the locked slice 15 workbench shape", async () => {

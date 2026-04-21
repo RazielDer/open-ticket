@@ -1,6 +1,7 @@
 version: 1
 overall_status: completed
-last_updated: 2026-04-01
+last_updated: 2026-04-20
+historical_scope_note: "This completed whitelist UX redesign ledger is historical task evidence only. The overall consolidated project remains active and incomplete under the workspace-root parity kernel, and this ledger's plugin-scoped limits do not constrain later whole-project work."
 active_slice: null
 prepared_next_slice: null
 prepared_following_slice: null

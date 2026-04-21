@@ -981,12 +981,12 @@
   },
   "transcripts": {
     "title": "Transcripts configuration",
-    "subtitle": "Control transcript delivery defaults, preview, and styling.",
+    "subtitle": "Control transcript delivery defaults and preview the locked Discord-default appearance.",
     "htmlModeWarning": "HTML transcript mode is enabled, but the transcript integration is not ready. {reason}",
     "workspaceAction": "Open transcript workspace",
     "preview": {
-      "title": "HTML preview and presets",
-      "body": "Apply a built-in style draft, then refresh the preview iframe to inspect the current HTML transcript look without saving first.",
+      "title": "HTML preview",
+      "body": "HTML transcripts now use the locked Discord-default dark appearance. Refresh the preview iframe to confirm the current render before saving other transcript settings.",
       "applyPresetAction": "Apply preset",
       "resetAction": "Reset style to saved values",
       "refreshAction": "Refresh preview",
@@ -997,8 +997,8 @@
       "unavailableError": "The transcript preview could not be rendered right now. You can still save transcript settings normally.",
       "presets": {
         "discord-classic": {
-          "label": "Discord Classic",
-          "description": "Keeps the familiar Discord charcoal and gold transcript look."
+          "label": "Discord Default",
+          "description": "Locked Discord dark theme used for every HTML transcript."
         },
         "midnight-cyan": {
           "label": "Midnight Cyan",
@@ -1016,12 +1016,15 @@
     },
     "editor": {
       "introTitle": "Transcript editor workflow",
-      "introBody": "Review delivery defaults first, then tune text output, preview presets, and HTML appearance before you save. Ticket option overrides live in the Options workspace.",
-      "advancedBody": "Open the embed-only transcript options after the main delivery and appearance choices are set.",
+      "introBody": "Review delivery defaults first, then tune text output and preview the locked Discord-default HTML appearance before you save. Ticket option overrides live in the Options workspace.",
+      "advancedBody": "Open the embed-only transcript options after the main delivery choices are set.",
+      "appearanceLockedEyebrow": "Locked default",
+      "appearanceLockedTitle": "Discord-default appearance",
+      "appearanceLockedBody": "Background, header, stats, accent, image, and favicon styling are no longer configurable here. Legacy theme values are ignored and overwritten with the locked Discord-default palette the next time you save this form.",
       "sections": {
         "delivery": "Transcript delivery",
         "text": "Text transcript output",
-        "preview": "HTML preview and presets",
+        "preview": "HTML preview",
         "appearance": "HTML appearance",
         "advanced": "Advanced transcript options"
       },
@@ -1081,8 +1084,8 @@
         }
       },
       "preview": {
-        "title": "HTML preview and presets",
-        "body": "Apply a built-in style draft, then refresh the preview iframe to inspect the current HTML transcript look without saving first.",
+        "title": "HTML preview",
+        "body": "HTML transcripts now use the locked Discord-default dark appearance. Refresh the preview iframe to confirm the current render before saving other transcript settings.",
         "applyPresetAction": "Apply preset",
         "resetAction": "Reset style to saved values",
         "refreshAction": "Refresh preview",
@@ -1094,8 +1097,8 @@
       },
       "presets": {
         "discord-classic": {
-          "label": "Discord Classic",
-          "description": "Keeps the familiar Discord charcoal and gold transcript look."
+          "label": "Discord Default",
+          "description": "Locked Discord dark theme used for every HTML transcript."
         },
         "midnight-cyan": {
           "label": "Midnight Cyan",
@@ -1113,7 +1116,7 @@
     },
     "access": {
       "privateModeTitle": "Private transcript mode",
-      "privateModeBody": "Canonical transcript links now point to the dashboard viewer and require Discord sign-in from the transcript creator or a stored participant.",
+      "privateModeBody": "Canonical transcript links now point to the dashboard viewer and require Discord sign-in from the transcript creator or a stored participant. Whitelist review submit also depends on a dedicated OT-guild transcript archive lane and a ready viewer host.",
       "viewerLinkWarningTitle": "Viewer links cannot be issued",
       "viewerRouteWarningTitle": "Viewer routes are not ready"
     },

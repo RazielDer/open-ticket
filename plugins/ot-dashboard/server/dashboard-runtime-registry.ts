@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import { getDashboardPluginAssetKind, type DashboardPluginAssetKind } from "./dashboard-plugin-registry"
+import { ODTICKET_PLATFORM_METADATA_DEFAULTS, ODTICKET_PLATFORM_METADATA_IDS } from "../../../src/core/api/openticket/ticket-platform"
 
 const MANAGED_CONFIG_FILES = [
   { id: "general", fileName: "general.json" },
@@ -129,6 +130,21 @@ export interface DashboardTicketRecord {
   id: string
   optionId: string | null
   creatorId: string | null
+  transportMode: string
+  transportParentChannelId: string | null
+  transportParentMessageId: string | null
+  assignedTeamId: string | null
+  assignedStaffUserId: string | null
+  assignmentStrategy: string | null
+  firstStaffResponseAt: number | null
+  resolvedAt: number | null
+  awaitingUserState: string | null
+  awaitingUserSince: number | null
+  closeRequestState: string | null
+  closeRequestBy: string | null
+  closeRequestAt: number | null
+  integrationProfileId: string | null
+  aiAssistProfileId: string | null
   openedOn: number | null
   closedOn: number | null
   reopenedOn: number | null
@@ -175,6 +191,21 @@ interface TicketState {
   id: string
   optionId: string | null
   creatorId: string | null
+  transportMode: string
+  transportParentChannelId: string | null
+  transportParentMessageId: string | null
+  assignedTeamId: string | null
+  assignedStaffUserId: string | null
+  assignmentStrategy: string | null
+  firstStaffResponseAt: number | null
+  resolvedAt: number | null
+  awaitingUserState: string | null
+  awaitingUserSince: number | null
+  closeRequestState: string | null
+  closeRequestBy: string | null
+  closeRequestAt: number | null
+  integrationProfileId: string | null
+  aiAssistProfileId: string | null
   openedOn: number | null
   closedOn: number | null
   reopenedOn: number | null
@@ -261,6 +292,21 @@ function extractTicketState(ticket: RuntimeTicket): TicketState | null {
     id,
     optionId: optionRaw ? String(optionRaw) : null,
     creatorId: stringOrNull(safeGetValue(ticket, "opendiscord:opened-by")),
+    transportMode: stringOrDefault(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportMode), ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode),
+    transportParentChannelId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentChannelId)),
+    transportParentMessageId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentMessageId)),
+    assignedTeamId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedTeamId)),
+    assignedStaffUserId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedStaffUserId)),
+    assignmentStrategy: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignmentStrategy)),
+    firstStaffResponseAt: numberOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.firstStaffResponseAt)),
+    resolvedAt: numberOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.resolvedAt)),
+    awaitingUserState: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.awaitingUserState)),
+    awaitingUserSince: numberOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.awaitingUserSince)),
+    closeRequestState: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.closeRequestState)),
+    closeRequestBy: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.closeRequestBy)),
+    closeRequestAt: numberOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.closeRequestAt)),
+    integrationProfileId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.integrationProfileId)),
+    aiAssistProfileId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.aiAssistProfileId)),
     openedOn: numberOrNull(safeGetValue(ticket, "opendiscord:opened-on")),
     closedOn: numberOrNull(safeGetValue(ticket, "opendiscord:closed-on")),
     reopenedOn: numberOrNull(safeGetValue(ticket, "opendiscord:reopened-on")),
@@ -291,6 +337,12 @@ function stringOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function stringOrDefault(value: unknown, fallback: string) {
+  if (typeof value !== "string") return fallback
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback
 }
 
 function stringArray(value: unknown) {
@@ -744,6 +796,21 @@ export function listDashboardTickets(): DashboardTicketRecord[] {
       id: ticket.id,
       optionId: ticket.optionId,
       creatorId: ticket.creatorId,
+      transportMode: ticket.transportMode,
+      transportParentChannelId: ticket.transportParentChannelId,
+      transportParentMessageId: ticket.transportParentMessageId,
+      assignedTeamId: ticket.assignedTeamId,
+      assignedStaffUserId: ticket.assignedStaffUserId,
+      assignmentStrategy: ticket.assignmentStrategy,
+      firstStaffResponseAt: ticket.firstStaffResponseAt,
+      resolvedAt: ticket.resolvedAt,
+      awaitingUserState: ticket.awaitingUserState,
+      awaitingUserSince: ticket.awaitingUserSince,
+      closeRequestState: ticket.closeRequestState,
+      closeRequestBy: ticket.closeRequestBy,
+      closeRequestAt: ticket.closeRequestAt,
+      integrationProfileId: ticket.integrationProfileId,
+      aiAssistProfileId: ticket.aiAssistProfileId,
       openedOn: ticket.openedOn,
       closedOn: ticket.closedOn,
       reopenedOn: ticket.reopenedOn,

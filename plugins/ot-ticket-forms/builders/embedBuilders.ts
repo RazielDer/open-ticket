@@ -2,8 +2,7 @@ import {api, opendiscord, utilities} from "#opendiscord"
 import * as discord from "discord.js"
 import {
     OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL,
-    OT_FORMS_START_FORM_BUTTON_LABEL,
-    OT_FORMS_UPDATE_APPLICATION_BUTTON_LABEL
+    OT_FORMS_START_FORM_BUTTON_LABEL
 } from "../service/start-form-runtime"
 
 // EMBEDS
@@ -96,10 +95,10 @@ opendiscord.events.get("onEmbedBuilderLoad").listen((embeds) => {
             
             if ( type === "completed") {
                 instance.setColor(formColor);
-                instance.setDescription(`<@${user.id}>\nApplication submitted. Use the ${OT_FORMS_UPDATE_APPLICATION_BUTTON_LABEL} button while staff review remains editable.`);
+                instance.setDescription(`<@${user.id}>\nSubmitted for staff review. This mirror stays pinned to the last submitted answers until the applicant sends an updated retry submission.`);
             } else {
                 instance.setColor(formColor);
-                instance.setDescription(`<@${user.id}>\nDraft saved. Use the ${OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL} button in this ticket to resume.`);
+                instance.setDescription(`<@${user.id}>\nDraft saved. Use the ${OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL} button or the Edit a saved answer menu on the ticket card to keep working.`);
             }
 
             instance.addFields(...fields);

@@ -70,8 +70,6 @@ export type BridgeRenderState =
     | typeof BRIDGE_CASE_STATUS_HARD_DENY_REPAIR_REQUIRED
 
 export type BridgeControlButtonAction =
-    | "send"
-    | "refresh_review_packet"
     | "accept"
     | "retry"
     | "duplicate"
@@ -93,6 +91,8 @@ export interface BridgeConfigData {
     eligibleOptionIds: string[]
     formId: string
     targetGroupKey: string
+    authorizedRoleIds: string[]
+    canonicalStaffGuildId: string | null
     formContract: BridgeFormContractData
 }
 
@@ -143,7 +143,7 @@ export interface BridgeCaseCreatedPayload {
     alderon_ids: string[]
     alderon_ids_csv: string
     target_selector: BridgeTargetSelector
-    transcript_url: null
+    transcript_url: string | null
 }
 
 export interface BridgeTranscriptAttachedPayload {
@@ -214,6 +214,7 @@ export interface BridgeStatusResponse {
     policy: BridgePolicySnapshot
     action_availability: BridgeActionAvailability
     apply_closeout_state: string
+    player_visible_apply_summary: string | null
     reviewed_hard_deny_targets: string[]
 }
 
@@ -223,6 +224,7 @@ export interface BridgeActionResponse extends BridgeStatusResponse {
     apply_request_id: string | null
     approval_id: string | null
     player_visible_critique: string | null
+    operator_warning: string | null
 }
 
 export interface BridgeControlButtonDescriptor {
@@ -230,6 +232,19 @@ export interface BridgeControlButtonDescriptor {
     label: string
     style: "success" | "primary" | "secondary" | "danger"
     disabled: boolean
+}
+
+export interface BridgeControlEmbedFieldDescriptor {
+    name: string
+    value: string
+    inline: boolean
+}
+
+export interface BridgeControlEmbedPresentation {
+    title: string
+    description: string
+    color: number
+    fields: BridgeControlEmbedFieldDescriptor[]
 }
 
 export interface BridgeControlDescriptor {
@@ -270,6 +285,9 @@ export interface BridgeHandoffState {
     transcriptEventId: string | null
     transcriptUrl: string | null
     transcriptStatus: string | null
+    presentationStackVersion: number
+    whitelistProcessMessageId: string | null
+    whitelistExpectationsMessageId: string | null
     controlMessageId: string | null
     lastRenderedState: BridgeRenderState | null
     renderVersion: number
@@ -280,6 +298,7 @@ export interface BridgeHandoffState {
     nextPollAt: string | null
     lastPollError: string | null
     degradedReason: string | null
+    operatorWarning: string | null
     updatedAt: string
 }
 
@@ -293,6 +312,24 @@ export function isEligibleOptionId(eligibleOptionIds: string[], optionId: string
 
 export function normalizeEndpointBaseUrl(endpointBaseUrl: string): string {
     return endpointBaseUrl.trim().replace(/\/+$/, "")
+}
+
+export function hasBridgeAuthorizedRole(
+    actorRoleIds: readonly string[],
+    authorizedRoleIds: readonly string[]
+): boolean {
+    if (actorRoleIds.length < 1 || authorizedRoleIds.length < 1) return false
+    const authorizedRoleIdSet = new Set(authorizedRoleIds)
+    return actorRoleIds.some((roleId) => authorizedRoleIdSet.has(roleId))
+}
+
+export function isBridgeActorAuthorized(
+    isAdminParticipant: boolean,
+    actorRoleIds: readonly string[],
+    authorizedRoleIds: readonly string[]
+): boolean {
+    if (isAdminParticipant) return true
+    return hasBridgeAuthorizedRole(actorRoleIds, authorizedRoleIds)
 }
 
 const BRIDGE_AGID_PLAIN_RE = /^\d{9}$/
@@ -434,29 +471,29 @@ export function validateCompletedFormForHandoff(
     const alderonIdParse = parseAlderonGameIds(extractFormAnswer(completedForm, formContract.alderonIdsPosition))
 
     if (normalizedPasswords.length < 1) {
-        errors.push("Set EOTFS_OT_WHITELIST_RULES_PASSWORDS in the OT runtime environment before staging whitelist applications.")
+        errors.push("Whitelist review cannot start until EOTFS_OT_WHITELIST_RULES_PASSWORDS is set in the OT runtime environment.")
     } else if (!rulesPasswordAnswer || !normalizedPasswords.includes(rulesPasswordAnswer.trim().toLowerCase())) {
-        errors.push(`Q${formContract.rulesPasswordPosition} rules password did not match an accepted value.`)
+        errors.push("The rules password is incorrect.")
     }
 
     if (normalizeCreatorIdentityAliases(creatorIdentityAliases).length > 0 && !matchesCreatorIdentityAlias(discordUsernameAnswer, creatorIdentityAliases)) {
-        errors.push(`Q${formContract.discordUsernamePosition} must match the ticket creator's live Discord username, global name, or server nickname.`)
+        errors.push("The Discord name in the application must match the ticket owner's current Discord name.")
     }
 
     if (!alderonIdParse.hadAny) {
-        errors.push(`Q${formContract.alderonIdsPosition} field must contain at least one AGID.`)
+        errors.push("Enter at least one Alderon ID.")
     }
     if (alderonIdParse.invalid) {
-        errors.push(`Q${formContract.alderonIdsPosition} each AGID must be \`123456789\` or \`123-456-789\`.`)
+        errors.push("Use Alderon ID(s) in `123456789` or `123-456-789` format.")
     }
     if (alderonIdParse.duplicates) {
-        errors.push(`Q${formContract.alderonIdsPosition} duplicate AGIDs are not allowed.`)
+        errors.push("Remove duplicate Alderon ID(s).")
     }
 
     for (const position of formContract.requiredAcknowledgementPositions) {
         if (isAffirmativeAcknowledgementAnswer(extractFormAnswer(completedForm, position))) continue
         const question = completedForm.answers.find((entry) => entry.position == position)?.question ?? "Acknowledgement"
-        errors.push(`Q${position} must be answered Yes: ${question}`)
+        errors.push(`Answer "Yes" to this required acknowledgement: ${question}`)
     }
 
     return {
@@ -491,7 +528,8 @@ export function buildCaseCreatedPayload(
     completedForm: BridgeCompletedFormSnapshot,
     handoffDiscordUserId: string,
     targetGroupKey: string,
-    alderonIds: readonly string[]
+    alderonIds: readonly string[],
+    transcriptUrl: string | null = null
 ): BridgeCaseCreatedPayload {
     const creatorDiscordUserId = (completedForm.applicantDiscordUserId || ticket.creatorDiscordUserId || "").trim()
     if (creatorDiscordUserId.length < 1) {
@@ -506,6 +544,10 @@ export function buildCaseCreatedPayload(
     if (targetGroupKeyNormalized.length < 1) {
         throw new Error("Whitelist bridge payload requires a target group key.")
     }
+
+    const normalizedTranscriptUrl = typeof transcriptUrl == "string"
+        ? transcriptUrl.trim()
+        : ""
 
     const orderedAnswers = [...completedForm.answers]
         .sort((left, right) => left.position - right.position)
@@ -536,7 +578,7 @@ export function buildCaseCreatedPayload(
             mode: "group",
             group_key: targetGroupKeyNormalized
         },
-        transcript_url: null
+        transcript_url: normalizedTranscriptUrl.length > 0 ? normalizedTranscriptUrl : null
     }
 }
 
@@ -608,6 +650,9 @@ export function createHandoffState(
         transcriptEventId: null,
         transcriptUrl: null,
         transcriptStatus: null,
+        presentationStackVersion: 2,
+        whitelistProcessMessageId: null,
+        whitelistExpectationsMessageId: null,
         controlMessageId: null,
         lastRenderedState: null,
         renderVersion: 0,
@@ -618,6 +663,7 @@ export function createHandoffState(
         nextPollAt: null,
         lastPollError: null,
         degradedReason: null,
+        operatorWarning: null,
         updatedAt
     }
 }

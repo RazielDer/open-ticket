@@ -327,7 +327,7 @@ export function getDashboardViewerReadiness(config: DashboardConfig) {
   if (!resolveDashboardViewerBaseUrl(config)) {
     return {
       ready: false,
-      message: "Dashboard publicBaseUrl must be set to an absolute http or https URL before private transcript viewer routes can be used."
+      message: "Dashboard publicBaseUrl must be set to an absolute http or https URL before private transcript viewer routes can be used. Whitelist review submit stays blocked until the viewer host can issue transcript URLs."
     }
   }
 
@@ -335,20 +335,20 @@ export function getDashboardViewerReadiness(config: DashboardConfig) {
   if (!discord.clientId) {
     return {
       ready: false,
-      message: "Dashboard viewer Discord client id is required before private transcript viewer routes can be used."
+      message: "Dashboard viewer Discord client id is required before private transcript viewer routes can be used. Whitelist review submit stays blocked until Discord viewer auth is configured."
     }
   }
 
   if (!discord.clientSecret) {
     return {
       ready: false,
-      message: "Dashboard viewer Discord client secret is required before private transcript viewer routes can be used."
+      message: "Dashboard viewer Discord client secret is required before private transcript viewer routes can be used. Whitelist review submit stays blocked until Discord viewer auth is configured."
     }
   }
 
   return {
     ready: true,
-    message: "Dashboard private transcript viewer routes are ready."
+    message: "Dashboard private transcript viewer routes are ready for whitelist review submit and private transcript URLs."
   }
 }
 

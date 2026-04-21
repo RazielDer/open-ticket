@@ -10,6 +10,12 @@ import {
     resolveOriginalApplicantDiscordUserId,
     type OTFormsCompletedTicketFormContext
 } from "./service/forms-service";
+import {
+    buildEphemeralStatusMessage,
+    deliverStatusReply,
+    type OTFormsSessionResponderInstance,
+    type OTFormsSessionTransportKind
+} from "./service/session-message-runtime";
 import type { OTForms_Form as OTFormsFormConfig } from "./types/configDefaults";
 
 import "./config/configRegistration";
@@ -136,6 +142,29 @@ async function rejectUnauthorizedMutation(
         }
     }
     return true;
+}
+
+function resolveTransportKindForResponder(
+    instance: api.ODButtonResponderInstance | api.ODDropdownResponderInstance | api.ODModalResponderInstance
+): OTFormsSessionTransportKind {
+    if (instance instanceof api.ODModalResponderInstance) return "modal"
+    if (instance instanceof api.ODDropdownResponderInstance) return "dropdown"
+    return "button"
+}
+
+async function replyInactiveSessionRecovery(
+    instance: api.ODButtonResponderInstance | api.ODDropdownResponderInstance | api.ODModalResponderInstance,
+    form: OTForms_Form
+): Promise<void> {
+    if (instance.didReply || instance.interaction.deferred || instance.interaction.replied) return
+    await deliverStatusReply({
+        transportKind: resolveTransportKindForResponder(instance),
+        instance: instance as OTFormsSessionResponderInstance,
+        message: buildEphemeralStatusMessage(
+            "ot-ticket-forms:stale-recovery",
+            await form.buildInactiveRecoveryMessage()
+        )
+    })
 }
 
 opendiscord.events.get("onPluginClassLoad").listen((classes) => {
@@ -291,9 +320,47 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
         if (!form) return
         if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
-        const session = form.createSession(instance.interaction.user, instance.message);
+        const session = form.createSession(instance.interaction.user, instance.message, {
+            replaceExistingBinding: true
+        });
         await session.setInstance(instance);
         await session.start();
+    }));
+
+    buttons.add(new api.ODButtonResponder("ot-ticket-forms:submit-for-review-button", /^ot-ticket-forms:srb_/));
+    opendiscord.responders.buttons.get("ot-ticket-forms:submit-for-review-button").workers.add(new api.ODWorker("ot-ticket-forms:submit-for-review-button", 0, async (instance, params, source, cancel) => {
+        const formInstanceId = instance.interaction.customId.split("_")[1];
+        const form = forms.get(formInstanceId);
+        if (!form) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+
+        const ticketContext = form.getCompletedTicketFormContext();
+        if (!ticketContext) {
+            await instance.reply({
+                id: new api.ODId("ot-ticket-forms:not-ticket-form"),
+                ephemeral: true,
+                message: {
+                    content: "This submit action is only available inside a whitelist ticket."
+                }
+            });
+            return cancel()
+        }
+
+        await instance.defer("reply", true);
+        try {
+            const bridgeService = opendiscord.plugins.classes.get("ot-eotfs-bridge:service") as unknown as {
+                submitApplicantReview(ticketChannelId: string, applicantDiscordUserId: string): Promise<string>
+            };
+            const successMessage = await bridgeService.submitApplicantReview(ticketContext.ticketChannelId, instance.user.id);
+            await instance.interaction.editReply({ content: successMessage });
+        } catch (error) {
+            await instance.interaction.editReply({
+                content: error instanceof Error
+                    ? error.message
+                    : "Unable to submit the whitelist application for staff review."
+            });
+        }
+        return cancel()
     }));
 
     /* CONTINUE BUTTON RESPONDER
@@ -307,10 +374,13 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
         if (!form) return
 
         const sessionId = customIdParts[2];
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
         const session = form.getSession(sessionId);
-        if (!session) return
-        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+        if (!session) {
+            await replyInactiveSessionRecovery(instance, form)
+            return cancel()
+        }
 
         await session.setInstance(instance);
 
@@ -346,12 +416,15 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons, responders, act
         const formInstanceId = customIdParts[1];
         const form = forms.get(formInstanceId);
         if (!form) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
 
         const sessionId = customIdParts[2];
 
         const session = form.getSession(sessionId);
-        if (!session) return
-        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+        if (!session) {
+            await replyInactiveSessionRecovery(instance, form)
+            return cancel()
+        }
 
         await session.setInstance(instance);
 
@@ -402,9 +475,13 @@ opendiscord.events.get("onModalResponderLoad").listen((modals, responders, actio
         if (!form) return
 
         const sessionId = customIdParts[2];
-        const session = form.getSession(sessionId);
-        if (!session) return
         if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+
+        const session = form.getSession(sessionId);
+        if (!session) {
+            await replyInactiveSessionRecovery(instance, form)
+            return cancel()
+        }
 
         const answeredQuestions: {number: number,required:boolean}[] = customIdParts[3].split('-').map(pair => {
             const [num, required] = pair.split('/');
@@ -433,13 +510,38 @@ opendiscord.events.get("onDropdownResponderLoad").listen((dropdowns, responders,
         if (!form) return
 
         const sessionId = customIdParts[2];
-        const session = form.getSession(sessionId);
-        if (!session) return
         if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+
+        const session = form.getSession(sessionId);
+        if (!session) {
+            await replyInactiveSessionRecovery(instance, form)
+            return cancel()
+        }
 
         const response = instance.values;
         await session.setInstance(instance);
         
         await session.handleDropdownResponse(response);
+    }));
+
+    dropdowns.add(new api.ODDropdownResponder("ot-ticket-forms:edit-answer-dropdown", /^ot-ticket-forms:ed_/));
+    opendiscord.responders.dropdowns.get("ot-ticket-forms:edit-answer-dropdown").workers.add(new api.ODWorker("ot-ticket-forms:edit-answer-dropdown", 0, async (instance, params, source, cancel) => {
+        const formInstanceId = instance.interaction.customId.split("_")[1];
+        const form = forms.get(formInstanceId);
+        if (!form) return
+        if (await rejectUnauthorizedMutation(instance, form)) return cancel()
+
+        const targetQuestionPosition = Number(instance.values.getStringValues()[0]);
+        if (!Number.isFinite(targetQuestionPosition)) {
+            await replyInactiveSessionRecovery(instance, form)
+            return cancel()
+        }
+
+        const session = form.createSession(instance.interaction.user, instance.message, {
+            replaceExistingBinding: true,
+            targetQuestionPosition
+        });
+        await session.setInstance(instance);
+        await session.start();
     }));
 });

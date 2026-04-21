@@ -50,10 +50,6 @@ test("transcript editor template and route model keep transcript copy locale-bac
     path.join(projectRoot, "plugins", "ot-dashboard", "public", "views", "config-transcripts.ejs"),
     "utf8"
   )
-  const scriptSource = fs.readFileSync(
-    path.join(projectRoot, "plugins", "ot-dashboard", "public", "js", "config-transcripts.js"),
-    "utf8"
-  )
 
   for (const phrase of [
     "Enable transcripts",
@@ -67,7 +63,6 @@ test("transcript editor template and route model keep transcript copy locale-bac
     "Reset style to saved values"
   ]) {
     assert.equal(templateSource.includes(phrase), false, `expected transcript template to avoid hardcoded phrase: ${phrase}`)
-    assert.equal(scriptSource.includes(phrase), false, `expected transcript script to avoid hardcoded phrase: ${phrase}`)
   }
 
   for (const localeCall of [
@@ -76,8 +71,8 @@ test("transcript editor template and route model keep transcript copy locale-bac
     't("transcripts.editor.sections.preview")',
     't("transcripts.editor.sections.appearance")',
     '"transcripts.editor.fields.generalEnabled"',
-    't("transcripts.editor.fields.backgroundColor")',
-    't("transcripts.editor.preview.applyPresetAction")',
+    't("transcripts.editor.preview.body")',
+    't("transcripts.editor.appearanceLockedTitle")',
     't("transcripts.editor.preview.unavailableTitle")'
   ]) {
     assert.equal(templateSource.includes(localeCall), true, `expected transcript template to use locale call: ${localeCall}`)
@@ -96,6 +91,4 @@ test("transcript editor template and route model keep transcript copy locale-bac
   ]) {
     assert.equal(pageRouteSource.includes(routeSnippet), true, `expected transcript page route source to include: ${routeSnippet}`)
   }
-
-  assert.equal(scriptSource.includes('ui.readJson("transcript-editor-messages", {})'), true)
 })

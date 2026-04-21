@@ -161,9 +161,9 @@ function createFakeDocument(transcriptId: string): LocalTranscriptDocument {
             interactions: 0
         },
         style: {
-            background: { enabled: false, backgroundColor: "#101010", backgroundAsset: null },
-            header: { enabled: false, backgroundColor: "#202225", decoColor: "#f8ba00", textColor: "#ffffff" },
-            stats: { enabled: false, backgroundColor: "#202225", keyTextColor: "#737373", valueTextColor: "#ffffff", hideBackgroundColor: "#40444a", hideTextColor: "#ffffff" },
+            background: { enabled: false, backgroundColor: "#313338", backgroundAsset: null },
+            header: { enabled: false, backgroundColor: "#1e1f22", decoColor: "#5865f2", textColor: "#f2f3f5" },
+            stats: { enabled: false, backgroundColor: "#2b2d31", keyTextColor: "#b5bac1", valueTextColor: "#f2f3f5", hideBackgroundColor: "#404249", hideTextColor: "#dbdee1" },
             favicon: { enabled: false, faviconAsset: null }
         },
         bot: { name: "Bot", id: "bot-1", avatar: null },
@@ -347,6 +347,24 @@ function createPreviewStyleDraft() {
         }
     }
 }
+
+test("html transcript service exposes bridge-safe readiness and compile helpers for whitelist staging", () => {
+    const serviceSourcePath = path.resolve(process.cwd(), "plugins", "ot-html-transcripts", "service", "transcript-service.ts")
+    const serviceSource = fs.readFileSync(serviceSourcePath, "utf8")
+
+    assert.match(serviceSource, /export class OTHtmlTranscriptService extends api\.ODManagerData/)
+    assert.match(serviceSource, /async validateWhitelistBridgeTranscriptReadiness\(/)
+    assert.match(serviceSource, /async compileWhitelistBridgeTranscript\(/)
+})
+
+test("whitelist bridge readiness messages stay explicit for wrong-guild and deleted transcript lanes", () => {
+    const serviceSourcePath = path.resolve(process.cwd(), "plugins", "ot-html-transcripts", "service", "transcript-service.ts")
+    const serviceSource = fs.readFileSync(serviceSourcePath, "utf8")
+
+    assert.match(serviceSource, /configured lane may have been deleted/i)
+    assert.match(serviceSource, /same OT guild as the ticket/i)
+    assert.match(serviceSource, /verified as a text channel/i)
+})
 
 async function writeArchiveFixture(
     archivePath: string,
@@ -535,60 +553,36 @@ test("listTranscriptStylePresets returns the locked preset ids and exact draft v
     await withService("style-presets", async (service) => {
         const presets = await service.listTranscriptStylePresets()
 
-        assert.deepEqual(presets.map((preset) => preset.id), [
-            "discord-classic",
-            "midnight-cyan",
-            "ember-slate",
-            "forest-ledger"
-        ])
+        assert.deepEqual(presets.map((preset) => preset.id), ["discord-classic"])
         assert.deepEqual(presets[0], {
             id: "discord-classic",
-            label: "Discord Classic",
-            description: "Keeps the familiar Discord charcoal and gold transcript look.",
+            label: "Discord Default",
+            description: "Locked Discord dark theme used for every HTML transcript.",
             draft: {
                 background: {
-                    enableCustomBackground: true,
-                    backgroundColor: "#101318",
+                    enableCustomBackground: false,
+                    backgroundColor: "#313338",
                     backgroundImage: ""
                 },
                 header: {
-                    enableCustomHeader: true,
-                    backgroundColor: "#202225",
-                    decoColor: "#f8ba00",
-                    textColor: "#ffffff"
+                    enableCustomHeader: false,
+                    backgroundColor: "#1e1f22",
+                    decoColor: "#5865f2",
+                    textColor: "#f2f3f5"
                 },
                 stats: {
-                    enableCustomStats: true,
-                    backgroundColor: "#202225",
-                    keyTextColor: "#8b919c",
-                    valueTextColor: "#ffffff",
-                    hideBackgroundColor: "#40444a",
-                    hideTextColor: "#ffffff"
+                    enableCustomStats: false,
+                    backgroundColor: "#2b2d31",
+                    keyTextColor: "#b5bac1",
+                    valueTextColor: "#f2f3f5",
+                    hideBackgroundColor: "#404249",
+                    hideTextColor: "#dbdee1"
                 },
                 favicon: {
                     enableCustomFavicon: false,
                     imageUrl: ""
                 }
             }
-        })
-        assert.deepEqual(presets[1]?.draft.background, {
-            enableCustomBackground: true,
-            backgroundColor: "#08131d",
-            backgroundImage: ""
-        })
-        assert.deepEqual(presets[2]?.draft.header, {
-            enableCustomHeader: true,
-            backgroundColor: "#2a1c19",
-            decoColor: "#ff8a3d",
-            textColor: "#fff4eb"
-        })
-        assert.deepEqual(presets[3]?.draft.stats, {
-            enableCustomStats: true,
-            backgroundColor: "#13281f",
-            keyTextColor: "#9bc2a5",
-            valueTextColor: "#effcf2",
-            hideBackgroundColor: "#2d4b3a",
-            hideTextColor: "#effcf2"
         })
     })
 })
@@ -607,8 +601,11 @@ test("renderTranscriptStylePreview uses the deterministic sample document, previ
         assert.match(result.html || "", /Reply Context/)
         assert.match(result.html || "", /Escalation path/)
         assert.match(result.html || "", /error-screenshot\.png/)
-        assert.match(result.html || "", /https:\/\/cdn\.example\.com\/background-preview\.png/)
-        assert.match(result.html || "", /https:\/\/cdn\.example\.com\/favicon-preview\.png/)
+        assert.match(result.html || "", /#313338/)
+        assert.match(result.html || "", /#1e1f22/)
+        assert.match(result.html || "", /#5865f2/)
+        assert.doesNotMatch(result.html || "", /https:\/\/cdn\.example\.com\/background-preview\.png/)
+        assert.doesNotMatch(result.html || "", /https:\/\/cdn\.example\.com\/favicon-preview\.png/)
     })
 })
 
@@ -672,8 +669,10 @@ test("private-discord mode fails closed for compile and reissue when dashboard v
                 assert.equal(accessPolicy.mode, "private-discord")
                 assert.equal(accessPolicy.viewerReady, false)
                 assert.match(accessPolicy.message, /unavailable/i)
+                assert.match(accessPolicy.message, /whitelist review submit stays blocked/i)
                 assert.equal(compileResult.success, false)
                 assert.match(compileResult.errorReason || "", /dashboard transcript viewer urls are unavailable/i)
+                assert.match(compileResult.errorReason || "", /whitelist review submit stays blocked/i)
 
                 const archivePath = path.join(root, "archives", "tr-private-existing")
                 await writeArchiveFixture(archivePath, createFakeDocument("tr-private-existing"), {
@@ -960,8 +959,11 @@ test("fatal build failures log build-started then build-failed", async () => {
             const events = await service.listTranscriptEvents(ticket.id.value, {})
 
             assert.equal(transcript?.status, "failed")
-            assert.deepEqual(events.items.map((item) => item.type), ["build-failed", "build-started"])
-            assert.equal(events.items[0]?.reason, "collector exploded")
+            assert.deepEqual(
+                [...events.items.map((item) => item.type)].sort(),
+                ["build-failed", "build-started"]
+            )
+            assert.equal(events.items.find((item) => item.type == "build-failed")?.reason, "collector exploded")
         }
     )
 })

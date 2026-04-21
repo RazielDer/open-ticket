@@ -28,6 +28,11 @@ export const registerActions = async () => {
             //select transcript compiler
             if (transcriptConfig.data.general.mode == "text") instance.compiler = opendiscord.transcripts.get("opendiscord:text-compiler")
             else if (transcriptConfig.data.general.mode == "html") instance.compiler = opendiscord.transcripts.get("opendiscord:html-compiler")
+            if (!instance.compiler){
+                instance.pendingMessage = null
+                instance.errorReason = `Transcript compiler '${transcriptConfig.data.general.mode}' is not available.`
+                throw new api.ODSystemError("ODAction(ot:create-transcript) => Selected transcript compiler is unavailable.")
+            }
         }),
         new api.ODWorker("opendiscord:init-transcript",3,async (instance,params,source,cancel) => {
             const {channel,user,ticket} = params
@@ -56,6 +61,7 @@ export const registerActions = async () => {
                     }
                 }catch(err){
                     instance.success = false
+                    if (!instance.errorReason) instance.errorReason = (err instanceof Error) ? err.message : String(err)
                     cancel()
                     process.emit("uncaughtException",err)
                     throw new api.ODSystemError("ODAction(ot:create-transcript) => Failed transcript compiler init()! (see error above)")
@@ -86,6 +92,7 @@ export const registerActions = async () => {
                     }
                 }catch(err){
                     instance.success = false
+                    if (!instance.errorReason) instance.errorReason = (err instanceof Error) ? err.message : String(err)
                     cancel()
                     process.emit("uncaughtException",err)
                     throw new api.ODSystemError("ODAction(ot:create-transcript) => Failed transcript compiler compile()! (see error above)")
@@ -140,6 +147,7 @@ export const registerActions = async () => {
                         
                     }catch(err){
                         instance.success = false
+                        if (!instance.errorReason) instance.errorReason = (err instanceof Error) ? err.message : String(err)
                         cancel()
                         process.emit("uncaughtException",err)
                         throw new api.ODSystemError("ODAction(ot:create-transcript) => Failed transcript compiler ready()! (see error above)")
@@ -162,7 +170,7 @@ export const registerActions = async () => {
                 {key:"channelid",value:channel.id,hidden:true},
                 {key:"option",value:ticket.option.id.value},
                 {key:"method",value:source,hidden:true},
-                {key:"compiler",value:instance.compiler.id.value},
+                {key:"compiler",value:instance.compiler?.id?.value ?? "unavailable"},
             ])
         })
     ])

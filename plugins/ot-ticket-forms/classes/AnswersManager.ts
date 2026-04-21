@@ -19,10 +19,6 @@ import {
     splitManagedRecordFields
 } from "../service/ticket-managed-record-runtime";
 
-interface OTFormsBridgeSyncService {
-    syncReviewableDraftUpdate(ticketChannelId: string): Promise<void>
-}
-
 function cloneAnswers(answers: readonly OTFormsCapturedAnswer[]): OTFormsCapturedAnswer[] {
     return answers.map((entry) => ({
         question: { ...entry.question },
@@ -181,13 +177,7 @@ export class OTForms_AnswersManager {
         this._currentPage = pageNumber;
 
         if (this.answerTarget == "ticket_managed_record") {
-            this._message = await channel.send(
-                buildTicketManagedRecordMessagePayload(
-                    this.pages
-                        .map((entry) => entry.embed)
-                        .filter((embed): embed is discord.EmbedBuilder => embed !== null)
-                )
-            );
+            this._message = null;
             this.registerInstance();
             await this.save();
             return;
@@ -217,7 +207,8 @@ export class OTForms_AnswersManager {
         this._currentPage = pageNumber;
 
         if (this.answerTarget == "ticket_managed_record") {
-            await this.editManagedRecordMessage();
+            this.registerInstance();
+            await this.save();
             return;
         }
 
@@ -322,37 +313,20 @@ export class OTForms_AnswersManager {
                 formColor: String(this._formColor),
                 updatedAt: new Date().toISOString(),
                 completedAt,
-                managedRecordMessageId: this._message?.id ?? null,
+                startFormMessageId: previousDraft?.startFormMessageId ?? null,
+                managedRecordMessageId: previousDraft?.managedRecordMessageId ?? null,
                 answers: cloneAnswers(this._answers)
             };
 
             await service.storeTicketDraft(
                 rebindManagedRecordSnapshot(previousDraft ?? fallbackSnapshot, {
-                    managedRecordMessageId: this._message?.id ?? previousDraft?.managedRecordMessageId ?? null,
+                    managedRecordMessageId: previousDraft?.managedRecordMessageId ?? null,
                     draftState: this._type,
                     updatedAt: fallbackSnapshot.updatedAt,
                     completedAt,
                     answers: cloneAnswers(this._answers)
                 })
             );
-
-            if (this._type != "completed" || !completedAt) return;
-            await service.storeCompletedTicketForm({
-                ...this.ticketContext,
-                formId: this.formId,
-                completedAt,
-                answers: this._answers.map((entry) => ({
-                    position: entry.question.position,
-                    question: entry.question.question,
-                    answer: entry.answer
-                }))
-            });
-            try {
-                const bridgeService = opendiscord.plugins.classes.get("ot-eotfs-bridge:service") as unknown as OTFormsBridgeSyncService;
-                await bridgeService.syncReviewableDraftUpdate(this.ticketContext.ticketChannelId);
-            } catch {
-                // The bridge plugin is optional; completed draft persistence remains authoritative.
-            }
             return;
         }
 
@@ -442,17 +416,7 @@ export class OTForms_AnswersManager {
             }
             await manager.render();
 
-            if (snapshot.managedRecordMessageId) {
-                try {
-                    const channel = await opendiscord.client.client.channels.fetch(snapshot.ticketChannelId);
-                    if (channel && channel.isTextBased()) {
-                        const message = await channel.messages.fetch(snapshot.managedRecordMessageId);
-                        manager._message = message as discord.Message<boolean>;
-                    }
-                } catch {
-                    manager._message = null;
-                }
-            }
+            manager._message = null;
             manager.registerInstance();
         }
     }

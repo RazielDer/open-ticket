@@ -6,6 +6,7 @@ import { ODDebugger } from "../modules/console"
 import { ODClientManager_Default } from "../defaults/client"
 import { ODTicketOption } from "./option"
 import * as discord from "discord.js"
+import type { ODTicketPlatformMetadata } from "./ticket-platform"
 
 /**## ODTicketManager `class`
  * This is an Open Ticket ticket manager.
@@ -191,6 +192,22 @@ export interface ODTicketIds {
     "opendiscord:topic":ODTicketData<string>,
     "opendiscord:message-sent":ODTicketData<boolean>,
     "opendiscord:admin-message-sent":ODTicketData<boolean>,
+
+    "opendiscord:transport-mode":ODTicketData<ODTicketPlatformMetadata["transportMode"]>,
+    "opendiscord:transport-parent-channel":ODTicketData<ODTicketPlatformMetadata["transportParentChannelId"]>,
+    "opendiscord:transport-parent-message":ODTicketData<ODTicketPlatformMetadata["transportParentMessageId"]>,
+    "opendiscord:assigned-team":ODTicketData<ODTicketPlatformMetadata["assignedTeamId"]>,
+    "opendiscord:assigned-staff":ODTicketData<ODTicketPlatformMetadata["assignedStaffUserId"]>,
+    "opendiscord:assignment-strategy":ODTicketData<ODTicketPlatformMetadata["assignmentStrategy"]>,
+    "opendiscord:first-staff-response-on":ODTicketData<ODTicketPlatformMetadata["firstStaffResponseAt"]>,
+    "opendiscord:resolved-on":ODTicketData<ODTicketPlatformMetadata["resolvedAt"]>,
+    "opendiscord:awaiting-user-state":ODTicketData<ODTicketPlatformMetadata["awaitingUserState"]>,
+    "opendiscord:awaiting-user-since":ODTicketData<ODTicketPlatformMetadata["awaitingUserSince"]>,
+    "opendiscord:close-request-state":ODTicketData<ODTicketPlatformMetadata["closeRequestState"]>,
+    "opendiscord:close-request-by":ODTicketData<ODTicketPlatformMetadata["closeRequestBy"]>,
+    "opendiscord:close-request-on":ODTicketData<ODTicketPlatformMetadata["closeRequestAt"]>,
+    "opendiscord:integration-profile":ODTicketData<ODTicketPlatformMetadata["integrationProfileId"]>,
+    "opendiscord:ai-assist-profile":ODTicketData<ODTicketPlatformMetadata["aiAssistProfileId"]>,
 }
 
 /**## ODTicket `class`

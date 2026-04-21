@@ -4,7 +4,8 @@ import {
     OTForms_ButtonQuestion,
     OTForms_DropdownQuestion,
     OTForms_ModalQuestion,
-    OTFormsCapturedAnswer
+    OTFormsCapturedAnswer,
+    OTFormsDraftState
 } from "../types/configDefaults"
 import { OTForms_Form } from "./Form"
 import { OTForms_AnswersManager } from "./AnswersManager"
@@ -16,6 +17,7 @@ import {
     applyDraftResponses,
     OTFormsInteractionGate,
     resolveNextSessionAction,
+    resolveDraftStateFromAnswers,
     resolveDraftResumeQuestionIndex
 } from "../service/draft-runtime"
 import {
@@ -28,12 +30,15 @@ import {
     deliverLiveQuestionPrompt,
     deliverPassiveAnsweredConfirmation,
     deliverStatusReply,
-    OT_FORMS_NEUTRAL_RECOVERY_MESSAGE,
     OT_FORMS_SAVE_FAILURE_MESSAGE,
     type OTFormsSessionMessageDeliveryMode,
     type OTFormsSessionResponderInstance,
     type OTFormsSessionTransportKind
 } from "../service/session-message-runtime"
+
+interface OTFormsSessionOptions {
+    targetQuestionPosition?: number | null
+}
 
 type OTFormsResponderInstance =
     | api.ODButtonResponderInstance
@@ -56,15 +61,22 @@ export class OTForms_FormSession {
     private answersManager: OTForms_AnswersManager | undefined;
     private readonly interactionGate = new OTFormsInteractionGate();
     private hydratedFromDraft = false;
+    private readonly targetQuestionPosition: number | null;
 
-    constructor(id: string, user: discord.User, form: OTForms_Form) {
+    constructor(id: string, user: discord.User, form: OTForms_Form, options: OTFormsSessionOptions = {}) {
         this.id = id;
         this.user = user;
         this.form = form;
+        this.targetQuestionPosition = options.targetQuestionPosition ?? null;
     }
 
     public async start(): Promise<void> {
         await this.hydrateFromDraftState();
+        if (!this.applyTargetedEditPosition()) {
+            await this.acknowledgeNeutralRecovery(this.instance);
+            this.form.finalizeSession(this.id, this.form.name, this.user);
+            return;
+        }
         await this.sendNextQuestion();
     }
 
@@ -97,6 +109,7 @@ export class OTForms_FormSession {
             answer: entry.answer
         }));
         const advancedQuestionNumber = this.currentQuestionNumber + answers.length;
+        const isTargetedEdit = this.isTargetedEdit();
         try {
             const nextState = await applyDraftResponses({
                 currentQuestionIndex: this.currentQuestionNumber,
@@ -109,13 +122,15 @@ export class OTForms_FormSession {
                 },
                 continueSession: async () => {
                     this.currentQuestionNumber = advancedQuestionNumber;
-                    return this.continue("continue");
+                    return isTargetedEdit
+                        ? this.completeTargetedEdit()
+                        : this.continue("continue");
                 }
             });
             this.currentQuestionNumber = nextState.currentQuestionIndex;
             this.answers = nextState.answers;
 
-            if (!nextState.uiDeliverySucceeded && nextState.currentQuestionIndex < this.form.questions.length) {
+            if (!isTargetedEdit && !nextState.uiDeliverySucceeded && nextState.currentQuestionIndex < this.form.questions.length) {
                 await this.sendContinueMessage(false);
             }
         } catch {
@@ -199,19 +214,26 @@ export class OTForms_FormSession {
             return false;
         }
 
-        if (!(this.instance instanceof api.ODButtonResponderInstance)) {
+        if (this.instance instanceof api.ODModalResponderInstance) {
             opendiscord.log("Error: Modal questions have not been sent. Current instance is not valid for modals.", "plugin");
             return false;
         }
 
-        while (count < 5 && this.currentQuestionNumber + count < this.form.questions.length) {
-            const question = this.form.questions[this.currentQuestionNumber + count];
-            if (!question || (question.type !== "short" && question.type !== "paragraph")) break;
-            modalQuestions.push(question as OTForms_ModalQuestion);
-            count++;
+        if (this.isTargetedEdit()) {
+            const question = this.form.questions[this.currentQuestionNumber];
+            if (question && (question.type == "short" || question.type == "paragraph")) {
+                modalQuestions.push(question as OTForms_ModalQuestion);
+            }
+        } else {
+            while (count < 5 && this.currentQuestionNumber + count < this.form.questions.length) {
+                const question = this.form.questions[this.currentQuestionNumber + count];
+                if (!question || (question.type !== "short" && question.type !== "paragraph")) break;
+                modalQuestions.push(question as OTForms_ModalQuestion);
+                count++;
+            }
         }
 
-        return this.instance.modal(
+        return (this.instance as api.ODButtonResponderInstance | api.ODDropdownResponderInstance).modal(
             await opendiscord.builders.modals.getSafe("ot-ticket-forms:questions-modal").build(
                 "other",
                 {
@@ -322,7 +344,7 @@ export class OTForms_FormSession {
     }
 
     private async updateAnswersMessage(): Promise<void> {
-        const type = this.currentQuestionNumber >= this.form.questions.length ? "completed" : "partial";
+        const type = this.resolveDraftState();
 
         if (!this.answersManager) {
             const ticketContext = this.form.getCompletedTicketFormContext();
@@ -364,7 +386,19 @@ export class OTForms_FormSession {
         if (this.instance) {
             deliverySucceeded = await this.sendPassiveSectionConfirmation();
         }
-        opendiscord.log("Form answered.", "plugin", [
+        return this.finishSession(deliverySucceeded, "Form answered.");
+    }
+
+    private async completeTargetedEdit(): Promise<boolean> {
+        let deliverySucceeded = true;
+        if (this.instance) {
+            deliverySucceeded = await this.sendTargetedEditSavedConfirmation();
+        }
+        return this.finishSession(deliverySucceeded, "Form answer updated.");
+    }
+
+    private finishSession(deliverySucceeded: boolean, logMessage: string): boolean {
+        opendiscord.log(logMessage, "plugin", [
             { key: "Form", value: this.form.name },
             { key: "User", value: this.user.tag }
         ]);
@@ -391,6 +425,7 @@ export class OTForms_FormSession {
                 this.answersManager.draftState,
                 this.answers
             );
+            this.currentSection = this.form.getSectionNumberForQuestionIndex(this.currentQuestionNumber);
             return;
         }
 
@@ -411,6 +446,7 @@ export class OTForms_FormSession {
             draft.draftState,
             this.answers
         );
+        this.currentSection = this.form.getSectionNumberForQuestionIndex(this.currentQuestionNumber);
     }
 
     private async withInteractionGuard(callback: () => Promise<void>): Promise<void> {
@@ -565,7 +601,7 @@ export class OTForms_FormSession {
             instance: instance as OTFormsSessionResponderInstance,
             message: buildEphemeralStatusMessage(
                 "ot-ticket-forms:stale-recovery",
-                OT_FORMS_NEUTRAL_RECOVERY_MESSAGE
+                await this.form.buildInactiveRecoveryMessage()
             )
         });
     }
@@ -581,5 +617,38 @@ export class OTForms_FormSession {
                 OT_FORMS_SAVE_FAILURE_MESSAGE
             )
         });
+    }
+
+    private isTargetedEdit(): boolean {
+        return typeof this.targetQuestionPosition == "number";
+    }
+
+    private applyTargetedEditPosition(): boolean {
+        if (!this.isTargetedEdit()) return true;
+        const questionIndex = this.form.getQuestionIndexByPosition(this.targetQuestionPosition as number);
+        if (questionIndex < 0) return false;
+        const question = this.form.questions[questionIndex];
+        if (!question || !findSavedAnswer(this.answers, question)) return false;
+        this.currentQuestionNumber = questionIndex;
+        this.currentSection = this.form.getSectionNumberForQuestionIndex(questionIndex);
+        return true;
+    }
+
+    private resolveDraftState(): OTFormsDraftState {
+        return resolveDraftStateFromAnswers(this.form.questions, this.answers);
+    }
+
+    private async sendTargetedEditSavedConfirmation(): Promise<boolean> {
+        if (!this.instance) return false;
+
+        const delivery = await deliverPassiveAnsweredConfirmation({
+            transportKind: this.resolveTransportKind(),
+            instance: this.instance as OTFormsSessionResponderInstance,
+            message: buildEphemeralStatusMessage(
+                "ot-ticket-forms:targeted-edit-saved",
+                "Answer updated. Use the ticket card to continue or edit another saved answer."
+            )
+        });
+        return delivery.success;
     }
 }

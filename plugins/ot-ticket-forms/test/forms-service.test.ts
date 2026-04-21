@@ -92,6 +92,7 @@ test("ticket draft store persists managed-record snapshots by ticket, form, and 
         formColor: "#2f855a",
         updatedAt: "2026-03-29T00:00:00.000Z",
         completedAt: null,
+        startFormMessageId: "111111111111111111",
         managedRecordMessageId: "222222222222222222",
         answers: [
             {
@@ -123,6 +124,7 @@ test("ticket draft store persists managed-record snapshots by ticket, form, and 
         "111111111111111111"
     )
     assert.ok(draft)
+    assert.equal(draft?.startFormMessageId, "111111111111111111")
     assert.equal(draft?.managedRecordMessageId, "222222222222222222")
     assert.equal(draft?.draftState, "partial")
     assert.deepEqual(
@@ -150,6 +152,10 @@ test("forms service source refreshes the applicant ticket card from persisted dr
     assert.equal(source.includes("async refreshTicketStartFormMessage("), true)
     assert.equal(source.includes("resolveStartFormRenderState("), true)
     assert.equal(source.includes("await ensureStartFormMessage("), true)
+    assert.equal(source.includes("startFormMessageId"), true)
+    assert.equal(source.includes("buildInitialTicketDraftSnapshot("), true)
+    assert.equal(source.includes("placementRepairAfterMessageTimestamp"), true)
+    assert.equal(source.includes("refreshStartFormMessage: false"), true)
     assert.equal(source.includes("await this.refreshTicketStartFormMessage(normalized.ticketChannelId, normalized.formId)"), true)
 })
 

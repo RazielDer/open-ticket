@@ -76,6 +76,7 @@ import type { CreateTranscriptInput, ReplaceAssetInput, ReplaceParticipantInput 
 import { TranscriptRepository } from "../storage/repository"
 import { recoverTranscriptStorage } from "../storage/recovery"
 import { TranscriptSqliteDatabase } from "../storage/sqlite"
+import { cloneDiscordDefaultTranscriptHtmlStyleDraft } from "../build/style-mapper"
 
 const FAR_FUTURE_AVAILABILITY = new Date("2100-01-01T00:00:00.000Z")
 const DEFAULT_LINK_EXPIRY_CONFIG = {
@@ -100,7 +101,7 @@ const DEFAULT_INTEGRITY_REPAIR_ORDER: TranscriptIntegrityRepairAction[] = [
 ]
 const INTEGRITY_DEMOTION_REASON = "Transcript integrity repair demoted this transcript to failed."
 const LINK_EXPIRED_REASON = "Link expired by policy."
-const PRIVATE_VIEWER_URL_NOT_READY_MESSAGE = "Dashboard transcript viewer URLs are unavailable. Load ot-dashboard and configure a valid publicBaseUrl before issuing private transcript links."
+const PRIVATE_VIEWER_URL_NOT_READY_MESSAGE = "Dashboard transcript viewer URLs are unavailable. Load ot-dashboard and configure a valid publicBaseUrl before issuing private transcript links. Whitelist review submit stays blocked until the viewer host is ready."
 const VIEWER_ACCESS_NOT_FOUND_MESSAGE = "Transcript not found."
 const VIEWER_ACCESS_GONE_MESSAGE = "Transcript link is no longer available."
 const VIEWER_NOT_READY_MESSAGE = "Transcript archive is not ready."
@@ -111,123 +112,9 @@ const MAX_VIEWER_ACCESS_FRESHNESS_MS = 60_000
 const BUILT_IN_TRANSCRIPT_STYLE_PRESETS: TranscriptStylePreset[] = [
     {
         id: "discord-classic",
-        label: "Discord Classic",
-        description: "Keeps the familiar Discord charcoal and gold transcript look.",
-        draft: {
-            background: {
-                enableCustomBackground: true,
-                backgroundColor: "#101318",
-                backgroundImage: ""
-            },
-            header: {
-                enableCustomHeader: true,
-                backgroundColor: "#202225",
-                decoColor: "#f8ba00",
-                textColor: "#ffffff"
-            },
-            stats: {
-                enableCustomStats: true,
-                backgroundColor: "#202225",
-                keyTextColor: "#8b919c",
-                valueTextColor: "#ffffff",
-                hideBackgroundColor: "#40444a",
-                hideTextColor: "#ffffff"
-            },
-            favicon: {
-                enableCustomFavicon: false,
-                imageUrl: ""
-            }
-        }
-    },
-    {
-        id: "midnight-cyan",
-        label: "Midnight Cyan",
-        description: "Cool blue contrast with a brighter operational accent.",
-        draft: {
-            background: {
-                enableCustomBackground: true,
-                backgroundColor: "#08131d",
-                backgroundImage: ""
-            },
-            header: {
-                enableCustomHeader: true,
-                backgroundColor: "#0f2230",
-                decoColor: "#3dd9eb",
-                textColor: "#eafcff"
-            },
-            stats: {
-                enableCustomStats: true,
-                backgroundColor: "#0c1b28",
-                keyTextColor: "#7cb9c5",
-                valueTextColor: "#eafcff",
-                hideBackgroundColor: "#153447",
-                hideTextColor: "#dcfbff"
-            },
-            favicon: {
-                enableCustomFavicon: false,
-                imageUrl: ""
-            }
-        }
-    },
-    {
-        id: "ember-slate",
-        label: "Ember Slate",
-        description: "Warmer dark neutrals with orange emphasis for alert-heavy archives.",
-        draft: {
-            background: {
-                enableCustomBackground: true,
-                backgroundColor: "#1a120f",
-                backgroundImage: ""
-            },
-            header: {
-                enableCustomHeader: true,
-                backgroundColor: "#2a1c19",
-                decoColor: "#ff8a3d",
-                textColor: "#fff4eb"
-            },
-            stats: {
-                enableCustomStats: true,
-                backgroundColor: "#2b201d",
-                keyTextColor: "#d4a88c",
-                valueTextColor: "#fff4eb",
-                hideBackgroundColor: "#57372d",
-                hideTextColor: "#fff2e6"
-            },
-            favicon: {
-                enableCustomFavicon: false,
-                imageUrl: ""
-            }
-        }
-    },
-    {
-        id: "forest-ledger",
-        label: "Forest Ledger",
-        description: "Muted greens tuned for softer long-form reading.",
-        draft: {
-            background: {
-                enableCustomBackground: true,
-                backgroundColor: "#0d1712",
-                backgroundImage: ""
-            },
-            header: {
-                enableCustomHeader: true,
-                backgroundColor: "#163125",
-                decoColor: "#7ccf7a",
-                textColor: "#effcf2"
-            },
-            stats: {
-                enableCustomStats: true,
-                backgroundColor: "#13281f",
-                keyTextColor: "#9bc2a5",
-                valueTextColor: "#effcf2",
-                hideBackgroundColor: "#2d4b3a",
-                hideTextColor: "#effcf2"
-            },
-            favicon: {
-                enableCustomFavicon: false,
-                imageUrl: ""
-            }
-        }
+        label: "Discord Default",
+        description: "Locked Discord dark theme used for every HTML transcript.",
+        draft: cloneDiscordDefaultTranscriptHtmlStyleDraft()
     }
 ]
 
@@ -1364,11 +1251,18 @@ export class TranscriptServiceCore {
             } catch (error) {
                 const failureReason = error instanceof Error ? error.message : String(error)
                 await this.handleBuildFailure(transcriptId, tempArchivePath, renamedToFinal ? finalArchivePath : null, failureReason)
-                console.error("[ot-html-transcripts] Failed to build local HTML transcript.", {
-                    ticket: ticket.id.value,
-                    channel: channel.id,
-                    reason: failureReason
-                })
+                const diagnosticPath = path.join(path.dirname(this.config!.storage.archiveRoot), "build-failures.log")
+                await fs.promises.mkdir(path.dirname(diagnosticPath), { recursive: true }).catch(() => {})
+                await fs.promises.appendFile(
+                    diagnosticPath,
+                    JSON.stringify({
+                        at: new Date().toISOString(),
+                        ticket: ticket.id.value,
+                        channel: channel.id,
+                        reason: failureReason
+                    }) + "\n",
+                    "utf8"
+                ).catch(() => {})
 
                 return {
                     ticket,
@@ -2660,7 +2554,7 @@ export class TranscriptServiceCore {
 
         return {
             ready: true,
-            message: "Dashboard transcript viewer URLs are ready."
+            message: "Dashboard transcript viewer URLs are ready for private transcript links and whitelist review submit."
         }
     }
 

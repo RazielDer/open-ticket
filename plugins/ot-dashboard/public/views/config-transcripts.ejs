@@ -133,25 +133,13 @@
             <p class="item-copy"><%= t("transcripts.editor.preview.body") %></p>
 
             <% if (transcriptPreviewAvailable) { %>
-              <div class="list-grid">
-                <% transcriptStylePresets.forEach((preset) => { const presetDisplay = transcriptPresetDisplay?.[preset.id] || {}; %>
-                  <article class="subsection-card">
-                    <p class="config-file"><%= preset.id %></p>
-                    <h4><%= presetDisplay.label || preset.label %></h4>
-                    <p class="item-copy"><%= presetDisplay.description || preset.description %></p>
-                    <div class="card-actions">
-                      <button
-                        class="btn secondary"
-                        type="button"
-                        data-apply-transcript-preset="<%= preset.id %>"
-                      ><%= t("transcripts.editor.preview.applyPresetAction") %></button>
-                    </div>
-                  </article>
-                <% }) %>
+              <div class="subsection-card" style="margin-top:16px">
+                <p class="config-file"><%= t("transcripts.editor.appearanceLockedEyebrow") %></p>
+                <h4><%= t("transcripts.editor.appearanceLockedTitle") %></h4>
+                <p class="item-copy"><%= t("transcripts.editor.appearanceLockedBody") %></p>
               </div>
 
               <div class="card-actions" style="margin-top:16px">
-                <button class="btn secondary" type="button" id="resetTranscriptStyle"><%= t("transcripts.editor.preview.resetAction") %></button>
                 <button
                   class="btn secondary"
                   type="submit"
@@ -179,79 +167,11 @@
 
           <section class="section-card">
             <div class="section-heading"><h3><%= t("transcripts.editor.sections.appearance") %></h3></div>
-            <div class="subsection-stack">
-              <div class="form-grid two-up">
-                <label class="checkbox-field">
-                  <input type="checkbox" name="htmlTranscriptStyle.background.enableCustomBackground" <%= config.htmlTranscriptStyle?.background?.enableCustomBackground ? 'checked' : '' %>>
-                  <span><%= t("transcripts.editor.fields.backgroundEnable") %></span>
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.backgroundColor") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.background.backgroundColor" value="<%= config.htmlTranscriptStyle?.background?.backgroundColor || '#000000' %>">
-                </label>
-                <label class="span-2">
-                  <span class="field-label"><%= t("transcripts.editor.fields.backgroundImage") %></span>
-                  <input class="text-input" type="url" name="htmlTranscriptStyle.background.backgroundImage" value="<%= config.htmlTranscriptStyle?.background?.backgroundImage || '' %>">
-                </label>
-              </div>
-
-              <div class="form-grid three-up">
-                <label class="checkbox-field span-3">
-                  <input type="checkbox" name="htmlTranscriptStyle.header.enableCustomHeader" <%= config.htmlTranscriptStyle?.header?.enableCustomHeader ? 'checked' : '' %>>
-                  <span><%= t("transcripts.editor.fields.headerEnable") %></span>
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.headerBackground") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.header.backgroundColor" value="<%= config.htmlTranscriptStyle?.header?.backgroundColor || '#202225' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.headerAccent") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.header.decoColor" value="<%= config.htmlTranscriptStyle?.header?.decoColor || '#f8ba00' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.headerText") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.header.textColor" value="<%= config.htmlTranscriptStyle?.header?.textColor || '#ffffff' %>">
-                </label>
-              </div>
-
-              <div class="form-grid three-up">
-                <label class="checkbox-field span-3">
-                  <input type="checkbox" name="htmlTranscriptStyle.stats.enableCustomStats" <%= config.htmlTranscriptStyle?.stats?.enableCustomStats ? 'checked' : '' %>>
-                  <span><%= t("transcripts.editor.fields.statsEnable") %></span>
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.statsBackground") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.stats.backgroundColor" value="<%= config.htmlTranscriptStyle?.stats?.backgroundColor || '#202225' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.statsKeyText") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.stats.keyTextColor" value="<%= config.htmlTranscriptStyle?.stats?.keyTextColor || '#737373' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.statsValueText") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.stats.valueTextColor" value="<%= config.htmlTranscriptStyle?.stats?.valueTextColor || '#ffffff' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.statsHideBackground") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.stats.hideBackgroundColor" value="<%= config.htmlTranscriptStyle?.stats?.hideBackgroundColor || '#40444a' %>">
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.statsHideText") %></span>
-                  <input class="text-input color-input" type="color" name="htmlTranscriptStyle.stats.hideTextColor" value="<%= config.htmlTranscriptStyle?.stats?.hideTextColor || '#ffffff' %>">
-                </label>
-              </div>
-
-              <div class="form-grid two-up">
-                <label class="checkbox-field">
-                  <input type="checkbox" name="htmlTranscriptStyle.favicon.enableCustomFavicon" <%= config.htmlTranscriptStyle?.favicon?.enableCustomFavicon ? 'checked' : '' %>>
-                  <span><%= t("transcripts.editor.fields.faviconEnable") %></span>
-                </label>
-                <label>
-                  <span class="field-label"><%= t("transcripts.editor.fields.faviconImage") %></span>
-                  <input class="text-input" type="url" name="htmlTranscriptStyle.favicon.imageUrl" value="<%= config.htmlTranscriptStyle?.favicon?.imageUrl || '' %>">
-                </label>
-              </div>
-            </div>
+            <article class="subsection-card">
+              <p class="config-file"><%= t("transcripts.editor.appearanceLockedEyebrow") %></p>
+              <h4><%= t("transcripts.editor.appearanceLockedTitle") %></h4>
+              <p class="item-copy"><%= t("transcripts.editor.appearanceLockedBody") %></p>
+            </article>
           </section>
 
           <details class="section-card editor-disclosure">
@@ -292,10 +212,6 @@
     <%- include('partials/footer') %>
   </div>
 
-  <script id="transcript-saved-style" type="application/json"><%- JSON.stringify(savedTranscriptHtmlStyle) %></script>
-  <script id="transcript-style-presets" type="application/json"><%- JSON.stringify(transcriptStylePresets) %></script>
-  <script id="transcript-editor-messages" type="application/json"><%- JSON.stringify(transcriptEditorMessages) %></script>
   <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
-  <script src="<%= assetPath('js/config-transcripts.js') %>"></script>
 </body>
 </html>

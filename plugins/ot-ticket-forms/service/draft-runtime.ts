@@ -41,6 +41,21 @@ export function resolveDraftResumeQuestionIndex(
     return 0
 }
 
+export function resolveDraftStateFromAnswers(
+    questions: readonly OTForms_Question[],
+    answers: readonly OTFormsCapturedAnswer[]
+): OTFormsDraftState {
+    if (answers.length < 1) return "initial"
+
+    const answeredPositions = new Set(
+        answers
+            .filter((entry) => typeof entry.answer == "string" && entry.answer.trim().length > 0)
+            .map((entry) => entry.question.position)
+    )
+    const hasAnsweredAllQuestions = questions.every((question) => answeredPositions.has(question.position))
+    return hasAnsweredAllQuestions ? "completed" : "partial"
+}
+
 export function resolveNextSessionAction(
     questions: readonly OTForms_Question[],
     currentQuestionIndex: number

@@ -14,7 +14,7 @@ task:
     - evidence/phase-03-05-completion.md
     - evidence/per-option-routing-plugin-only-basis.md
     - evidence/phase-14-stricter-access-and-portal-basis.md
-  updated_at: 2026-03-29
+  updated_at: 2026-04-20
 
 constraints:
   write_scope:
@@ -39,6 +39,7 @@ constraints:
     - Expose all plugin-to-plugin transcript access through the ot-html-transcripts:service class, never SQLite direct reads.
     - Do not modify any main Open Ticket repo files outside the two plugin directories.
     - Keep per-option transcript routing plugin-owned under additive options.json fields rather than core config typings or src/** loaders.
+historical_scope_note: "This completed transcript enhancement kernel remains authoritative for its shipped plugin roadmap only. Its plugin-only write_scope and forbidden_writes were task-specific, the overall consolidated project remains active and incomplete under the workspace-root parity kernel, and this historical kernel does not constrain later whole-project work."
 
 decisions:
   - v1 local transcript service work in slices 01 through 05 is complete and becomes historical context for v2.
@@ -84,6 +85,7 @@ decisions:
   - The admin security workspace is Admin-only, lives inside the existing admin shell and Advanced flow, and may edit only non-secret RBAC and host-routing fields.
   - P14 UI additions must preserve the existing matte dark dashboard language with no glow, no redundant copy, and no roomy layout drift from the current login, viewer-login, admin-shell, and editor surfaces.
   - The user has explicitly approved sequential execution across slices 23 through 28 once each prior slice is implemented, verified, and the kernel state is updated.
+  - A later whole-stack follow-on aligned to `SLICE-008A` is now reserved after P14: it will reopen transcript planning for a result-first local document `2.0` contract that keeps `1.0` read support while adding richer ticket-form result rendering and additive `ticket.metadata`.
 
 repo_grounded_clarifications:
   - The shipped service already exposes transcript list/detail and lifecycle actions, so future dashboard work must extend the service rather than bypass it.
@@ -128,6 +130,7 @@ repo_grounded_clarifications:
   - "`resolveDashboardTrustProxy` currently hardcodes loopback bind to trust one proxy hop and otherwise trusts none, so P14 must add an explicit configuration override for split-host reverse-proxy deployments."
   - Slice 27 is implemented and verified. Dashboard auth now persists auth/security audit records in auth.sqlite, admin and viewer auth flows write durable login/security events, and authorized requests revalidate live guild membership before falling back to fresh cache.
   - Slice 28 is implemented and verified. Final auth/access copy and operator docs are aligned with the shipped split-host Discord auth model, the stale password-era and pre-viewerAccess test assertions were corrected inside plugin scope, and the full four-command P14 verification sweep now passes.
+  - The current local transcript contract still emits `version: \"1.0\"` documents and only serializes buttons, dropdowns, and reactions as component rows, so the future whole-stack `SLICE-008A` follow-on must reopen this plugin kernel for document-`2.0` richer-result rendering rather than treating transcripts as already component-capable.
 
 execution_defaults:
   planning_cadence: roadmap-plus-next-slice
@@ -312,8 +315,14 @@ prepared_editor_slice: null
 prepared_cleanup_slice: null
 prepared_query_slice: null
 prepared_query_dashboard_slice: null
+completion_state:
+  last_completed_slice: 28-final-auth-access-polish-and-verification
+  no_prepared_slice_remains: true
+  resume_authority: workspace_root_parity_kernel
 
 final_verification:
+  status: passed
+  evidence: evidence/phase-14-stricter-access-and-portal-basis.md
   required_commands:
     - npm run build
     - npm --prefix plugins/ot-dashboard run build:editor
@@ -334,11 +343,8 @@ final_verification:
     - Successful private viewer transcript opens record the locked access-path classification while failed or unauthorized requests remain event-free.
 
 acceptance:
-  - The controller kernel documents the full enhancement roadmap without creating a parallel planning system.
-  - The active slice is implementation-ready and can be handed to an implementer without further planning.
-  - The prepared next slice is also decision-complete, but it remains inactive until the active slice is completed and verified.
-  - The prepared following slice is decision-complete but remains blocked until the prepared next slice is completed and verified.
-  - The prepared downstream, trailing, and access slices are also decision-complete and remain blocked in sequence until their predecessors verify.
-  - When the user explicitly approves sequential execution across locked slices, the implementer may continue directly into the prepared next slice only after updating kernel state and passing the active slice verification.
-  - Slices 23 through 28 are implementation-ready as a sequential handoff for the stricter access wave without further product decisions.
+  - The controller kernel documents the completed enhancement roadmap without creating a parallel planning system.
+  - Phase P14 is complete, no active slice remains, and no prepared next slice remains in this kernel.
+  - The final locked verification sweep passed and is recorded in `evidence/phase-14-stricter-access-and-portal-basis.md`.
   - Historical v1 evidence remains available for reference and rollback reasoning.
+  - New consolidated whole-project work should resume from the workspace-root parity kernel unless a later transcript-specific follow-on intentionally reopens this kernel.

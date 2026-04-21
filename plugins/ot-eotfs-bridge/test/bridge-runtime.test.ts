@@ -13,6 +13,8 @@ import {
     validateCompletedFormForHandoff
 } from "../bridge-core"
 import {
+    buildBridgeControlEmbedPresentation,
+    createInitialBridgeState,
     finalizeCaseCreatedEvent,
     prepareCaseCreatedEvent,
     prepareTranscriptAttachedEvent,
@@ -70,6 +72,9 @@ const existingState: BridgeHandoffState = {
     transcriptEventId: null,
     transcriptUrl: null,
     transcriptStatus: null,
+    presentationStackVersion: 1,
+    whitelistProcessMessageId: "333333333333333333",
+    whitelistExpectationsMessageId: "444444444444444444",
     controlMessageId: "222222222222222222",
     lastRenderedState: "pending_review",
     renderVersion: 1,
@@ -114,6 +119,7 @@ const existingState: BridgeHandoffState = {
             retry_warning: null
         },
         apply_closeout_state: "ticket_open",
+        player_visible_apply_summary: null,
         reviewed_hard_deny_targets: []
     },
     pollAttemptCount: 0,
@@ -121,12 +127,41 @@ const existingState: BridgeHandoffState = {
     nextPollAt: null,
     lastPollError: null,
     degradedReason: null,
+    operatorWarning: null,
     updatedAt: "2026-03-29T00:00:00.000Z"
 }
 
 test("eligible option gating stays locked to configured option ids", () => {
     assert.equal(isEligibleOptionId(["whitelist-application-ticket-81642e12"], "whitelist-application-ticket-81642e12"), true)
     assert.equal(isEligibleOptionId(["whitelist-application-ticket-81642e12"], "other-option"), false)
+})
+
+test("initial bridge state and finalized case state carry the whitelist stack metadata defaults", () => {
+    const initialState = createInitialBridgeState(
+        "123456789012345678",
+        "community_mirror",
+        "111111111111111111",
+        "111111111111111111",
+        "2026-03-29T00:00:00.000Z"
+    )
+    const finalizedState = finalizeCaseCreatedEvent(
+        "123456789012345678",
+        "community_mirror",
+        "evt-created-3",
+        "2026-03-29T00:00:10.000Z",
+        { caseId: "bridge-case-3", ticketRef: "ot:123456789012345678", duplicate: false },
+        "111111111111111111",
+        "111111111111111111"
+    )
+
+    assert.equal(initialState.presentationStackVersion, 2)
+    assert.equal(initialState.whitelistProcessMessageId, null)
+    assert.equal(initialState.whitelistExpectationsMessageId, null)
+    assert.equal(initialState.operatorWarning, null)
+    assert.equal(finalizedState.presentationStackVersion, 2)
+    assert.equal(finalizedState.whitelistProcessMessageId, null)
+    assert.equal(finalizedState.whitelistExpectationsMessageId, null)
+    assert.equal(finalizedState.operatorWarning, null)
 })
 
 test("case_created payload shaping and HMAC signing stay deterministic", () => {
@@ -139,16 +174,17 @@ test("case_created payload shaping and HMAC signing stay deterministic", () => {
         optionId: "whitelist-application-ticket-81642e12",
         optionName: "Whitelist Application",
         creatorDiscordUserId: "111111111111111111"
-    }, completedFormSnapshot, "222222222222222222", "community_mirror", validation.alderonIds)
+    }, completedFormSnapshot, "222222222222222222", "community_mirror", validation.alderonIds, " https://example.com/transcripts/ot-123456789012345678.html ")
 
     assert.deepEqual(payload.alderon_ids, ["123-456-789", "987-654-321"])
     assert.equal(payload.alderon_ids_csv, "123-456-789, 987-654-321")
     assert.equal(payload.applicant_ready, true)
     assert.equal(payload.target_selector.group_key, "community_mirror")
+    assert.equal(payload.transcript_url, "https://example.com/transcripts/ot-123456789012345678.html")
 
     const rawBody = JSON.stringify(payload)
     const headers = createSignedBridgeHeaders("shared-secret", "2026-03-29T00:00:00.000Z", "evt-1", rawBody)
-    assert.equal(headers["X-Bridge-Signature"], "sha256=615d79a31a73059f4a043b4d4caee5571cd5d84997b14dc523892c01119bc6ca")
+    assert.equal(headers["X-Bridge-Signature"], "sha256=a5f3b2ae1d421781c605b85474760b59770b9e6355b66e56c02d5ad0267ea7e1")
 })
 
 test("completed form applicant snapshot stays authoritative when the live ticket owner changed", () => {
@@ -209,9 +245,26 @@ test("case_created preparation blocks staff handoff when the typed Discord usern
     assert.equal(prepared.status, "invalid-form")
     if (prepared.status == "invalid-form") {
         assert.equal(
-            prepared.message.includes("Q1 must match the ticket creator's live Discord username, global name, or server nickname."),
+            prepared.message.includes("The Discord name in the application must match the ticket owner's current Discord name."),
             true
         )
+    }
+})
+
+test("case_created preparation carries a fresh transcript URL when submit compiled one before staging", () => {
+    const prepared = prepareCaseCreatedEvent({
+        ticketChannelId: "123456789012345678",
+        ticketChannelName: "whitelist-raziel",
+        optionId: "whitelist-application-ticket-81642e12",
+        optionName: "Whitelist Application",
+        creatorDiscordUserId: "111111111111111111"
+    }, completedFormSnapshot, "222222222222222222", "community_mirror", formContract, ["Sunrise"], null, {
+        transcriptUrl: "https://example.com/transcripts/ot-123456789012345678.html"
+    })
+
+    assert.equal(prepared.status, "ready")
+    if (prepared.status == "ready") {
+        assert.equal(prepared.payload.transcript_url, "https://example.com/transcripts/ot-123456789012345678.html")
     }
 })
 
@@ -220,6 +273,74 @@ test("bridge control reorder only triggers when the staff card is older than the
     assert.equal(shouldRecreateBridgeControlForPlacement(200, 100), false)
     assert.equal(shouldRecreateBridgeControlForPlacement(100, 100), false)
     assert.equal(shouldRecreateBridgeControlForPlacement(null, 200), false)
+})
+
+test("bridge control embed presentation keeps transcript gating explicit and hides pre-submit copy behind the embed", () => {
+    const pendingReviewPresentation = buildBridgeControlEmbedPresentation(existingState)
+    const transcriptReadyPresentation = buildBridgeControlEmbedPresentation({
+        ...existingState,
+        transcriptUrl: "https://example.com/transcripts/ot-123456789012345678.html",
+        lastStatus: {
+            ...existingState.lastStatus!,
+            transcript_ready: true,
+            ticket_log_link: "https://example.com/transcripts/ot-123456789012345678.html",
+            action_availability: {
+                ...existingState.lastStatus!.action_availability,
+                accept: true,
+                accept_disabled_reason: null
+            }
+        }
+    })
+    const acceptedFailedPresentation = buildBridgeControlEmbedPresentation({
+        ...existingState,
+        lastRenderedState: "accepted_failed",
+        lastStatus: {
+            ...existingState.lastStatus!,
+            status: "accepted_failed",
+            transcript_ready: true,
+            ticket_log_link: "https://example.com/transcripts/ot-123456789012345678.html",
+            action_availability: {
+                ...existingState.lastStatus!.action_availability,
+                retry: false,
+                hard_deny: false,
+                retry_apply: true
+            },
+            apply_closeout_state: "apply_failed",
+            player_visible_apply_summary: "Your whitelist could not be completed automatically. Staff have been notified and will finish the repair."
+        }
+    })
+    const unstagedPresentation = buildBridgeControlEmbedPresentation(createInitialBridgeState(
+        "423456789012345678",
+        "community_mirror",
+        "111111111111111111",
+        "111111111111111111",
+        "2026-03-29T00:00:00.000Z"
+    ))
+
+    assert.equal(pendingReviewPresentation.title, "Whitelist Staff Review")
+    assert.equal(pendingReviewPresentation.description.includes("pre-close transcript cutover"), true)
+    assert.equal(
+        pendingReviewPresentation.fields.some((field) => field.name == "Lifecycle" && field.value.includes("Transcript: blocked for legacy staged case")),
+        true
+    )
+    assert.equal(
+        transcriptReadyPresentation.description.includes("without deleting the ticket"),
+        true
+    )
+    assert.equal(
+        transcriptReadyPresentation.fields.some((field) => field.name == "Lifecycle" && field.value.includes("Transcript: ready")),
+        true
+    )
+    assert.equal(
+        transcriptReadyPresentation.fields.some((field) => field.name == "Lifecycle" && field.value.includes("Transcript URL: https://example.com/transcripts/ot-123456789012345678.html")),
+        true
+    )
+    assert.equal(
+        acceptedFailedPresentation.description.includes("Your whitelist could not be completed automatically. Staff have been notified and will finish the repair."),
+        true
+    )
+    assert.equal(unstagedPresentation.description.includes("Submit for Review"), true)
+    assert.equal(unstagedPresentation.description.includes("Send to Staff Review"), false)
 })
 
 test("duplicate send remains blocked when a staged case already exists", () => {

@@ -1,6 +1,32 @@
 import type { LocalAssetRef, LocalTranscriptDocument } from "../contracts/document"
 import type { TranscriptHtmlStyleDraft } from "../contracts/types"
 
+export const DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE_DRAFT: TranscriptHtmlStyleDraft = {
+    background: {
+        enableCustomBackground: false,
+        backgroundColor: "#313338",
+        backgroundImage: ""
+    },
+    header: {
+        enableCustomHeader: false,
+        backgroundColor: "#1e1f22",
+        decoColor: "#5865f2",
+        textColor: "#f2f3f5"
+    },
+    stats: {
+        enableCustomStats: false,
+        backgroundColor: "#2b2d31",
+        keyTextColor: "#b5bac1",
+        valueTextColor: "#f2f3f5",
+        hideBackgroundColor: "#404249",
+        hideTextColor: "#dbdee1"
+    },
+    favicon: {
+        enableCustomFavicon: false,
+        imageUrl: ""
+    }
+}
+
 function createStyleAssetRef(sourceUrl: string, purpose: string): LocalAssetRef {
     return {
         sourceUrl,
@@ -15,52 +41,52 @@ function createStyleAssetRef(sourceUrl: string, purpose: string): LocalAssetRef 
     }
 }
 
+export function cloneDiscordDefaultTranscriptHtmlStyleDraft(): TranscriptHtmlStyleDraft {
+    return {
+        background: {
+            ...DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE_DRAFT.background
+        },
+        header: {
+            ...DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE_DRAFT.header
+        },
+        stats: {
+            ...DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE_DRAFT.stats
+        },
+        favicon: {
+            ...DISCORD_DEFAULT_TRANSCRIPT_HTML_STYLE_DRAFT.favicon
+        }
+    }
+}
+
 export function mapTranscriptHtmlStyleDraft(styleDraft: TranscriptHtmlStyleDraft): LocalTranscriptDocument["style"] {
-    const background = styleDraft?.background ?? {
-        enableCustomBackground: false,
-        backgroundColor: "",
-        backgroundImage: ""
-    }
-    const header = styleDraft?.header ?? {
-        enableCustomHeader: false,
-        backgroundColor: "",
-        decoColor: "",
-        textColor: ""
-    }
-    const stats = styleDraft?.stats ?? {
-        enableCustomStats: false,
-        backgroundColor: "",
-        keyTextColor: "",
-        valueTextColor: "",
-        hideBackgroundColor: "",
-        hideTextColor: ""
-    }
-    const favicon = styleDraft?.favicon ?? {
-        enableCustomFavicon: false,
-        imageUrl: ""
-    }
+    void styleDraft
+    const lockedStyle = cloneDiscordDefaultTranscriptHtmlStyleDraft()
+    const background = lockedStyle.background
+    const header = lockedStyle.header
+    const stats = lockedStyle.stats
+    const favicon = lockedStyle.favicon
 
     return {
         background: {
             enabled: Boolean(background.enableCustomBackground),
-            backgroundColor: background.backgroundColor || "#f8ba00",
+            backgroundColor: background.backgroundColor,
             backgroundAsset: background.enableCustomBackground && background.backgroundImage
                 ? createStyleAssetRef(background.backgroundImage, "style.background")
                 : null
         },
         header: {
             enabled: Boolean(header.enableCustomHeader),
-            backgroundColor: header.backgroundColor || "#202225",
-            decoColor: header.decoColor || "#f8ba00",
-            textColor: header.textColor || "#ffffff"
+            backgroundColor: header.backgroundColor,
+            decoColor: header.decoColor,
+            textColor: header.textColor
         },
         stats: {
             enabled: Boolean(stats.enableCustomStats),
-            backgroundColor: stats.backgroundColor || "#202225",
-            keyTextColor: stats.keyTextColor || "#737373",
-            valueTextColor: stats.valueTextColor || "#ffffff",
-            hideBackgroundColor: stats.hideBackgroundColor || "#40444a",
-            hideTextColor: stats.hideTextColor || "#ffffff"
+            backgroundColor: stats.backgroundColor,
+            keyTextColor: stats.keyTextColor,
+            valueTextColor: stats.valueTextColor,
+            hideBackgroundColor: stats.hideBackgroundColor,
+            hideTextColor: stats.hideTextColor
         },
         favicon: {
             enabled: Boolean(favicon.enableCustomFavicon),

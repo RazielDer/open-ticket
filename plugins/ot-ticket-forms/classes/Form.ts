@@ -3,10 +3,20 @@ import { opendiscord } from "#opendiscord"
 import { OTFormsAnswerTarget, OTForms_Question } from "../types/configDefaults"
 import { OTForms_FormSession } from "./FormSession"
 import type { OTFormsCompletedTicketFormContext } from "../service/forms-service"
+import {
+    OT_FORMS_PLUGIN_SERVICE_ID,
+    type OTFormsService
+} from "../service/forms-service"
 import { OTFormsActiveSessionRegistry } from "../service/draft-runtime"
+import {
+    type OTFormsApplicantLifecycleState,
+    buildInactiveStepRecoveryMessage,
+    resolveStartFormCardState
+} from "../service/start-form-runtime"
 
 interface OTFormsBridgeEditGate {
     canApplicantEdit(ticketChannelId: string): boolean
+    resolveApplicantLifecycleState?(ticketChannelId: string): OTFormsApplicantLifecycleState
 }
 
 /* FORM CLASS
@@ -27,6 +37,7 @@ export class OTForms_Form {
     private readonly ticketContext: OTFormsCompletedTicketFormContext | null;
     private activeSessions: Map<string, OTForms_FormSession>;
     private readonly activeSessionRegistry: OTFormsActiveSessionRegistry;
+    private readonly sectionNumbersByQuestionIndex: number[];
     private sessionCounter: number = 0;
 
     constructor(
@@ -51,12 +62,13 @@ export class OTForms_Form {
         this.ticketContext = ticketContext;
         this.activeSessions = new Map<string, OTForms_FormSession>();
         this.activeSessionRegistry = new OTFormsActiveSessionRegistry();
+        this.sectionNumbersByQuestionIndex = [];
 
         // Calculate total sections
         this.totalSections = 0;
         let lastQuestionType: "short" | "paragraph" | "dropdown" | "button" | undefined;
         let typeTextCount = 1;
-        questions.forEach((question) => {
+        questions.forEach((question, index) => {
             if (question.type !== "short" && question.type !== "paragraph") {
                 // If it's not type text ("short" or "paragraph"), it counts as a section
                 this.totalSections++;
@@ -70,25 +82,36 @@ export class OTForms_Form {
                 }
             }
             lastQuestionType = question.type;
+            this.sectionNumbersByQuestionIndex[index] = this.totalSections;
         });
     }
 
     /* CREATE SESSION
      * Creates a new session for a user to answer the form.
      */
-    public createSession(user: discord.User, message: discord.Message): OTForms_FormSession {
+    public createSession(
+        user: discord.User,
+        message: discord.Message,
+        options: {
+            replaceExistingBinding?: boolean
+            targetQuestionPosition?: number | null
+        } = {}
+    ): OTForms_FormSession {
         if(!this.totalSections) throw new Error("Total sections not calculated");
         const existingSessionId = this.activeSessionRegistry.get(user.id);
         if (existingSessionId) {
             const existingSession = this.activeSessions.get(existingSessionId);
-            if (existingSession) {
+            if (existingSession && !options.replaceExistingBinding) {
                 return existingSession;
             }
+            this.activeSessions.delete(existingSessionId);
             this.activeSessionRegistry.clear(user.id);
         }
         const sessionId = this.generateSessionId();
 
-        const session = new OTForms_FormSession(sessionId, user, this);
+        const session = new OTForms_FormSession(sessionId, user, this, {
+            targetQuestionPosition: options.targetQuestionPosition ?? null
+        });
         this.activeSessions.set(sessionId, session);
         this.activeSessionRegistry.set(user.id, sessionId);
         return session;
@@ -99,7 +122,9 @@ export class OTForms_Form {
      */
     public finalizeSession(sessionId: string, formName: string, user: discord.User): void {
         this.activeSessions.delete(sessionId);
-        this.activeSessionRegistry.clear(user.id);
+        if (this.activeSessionRegistry.get(user.id) == sessionId) {
+            this.activeSessionRegistry.clear(user.id);
+        }
         opendiscord.log(`Form session removed.`, "plugin", [
             {key:"Form", value:formName},
             {key:"User", value:user.tag}
@@ -142,11 +167,11 @@ export class OTForms_Form {
     public getMutationBlockReason(userId: string): string | null {
         if (this.answerTarget != "ticket_managed_record" || !this.ticketContext) return null;
         if (this.ticketContext.applicantDiscordUserId != userId) {
-            return "Only the ticket applicant can update the whitelist application.";
+            return "Only the applicant who opened this ticket can change the whitelist application.";
         }
         const bridgeEditGate = this.getBridgeEditGate();
         if (bridgeEditGate && !bridgeEditGate.canApplicantEdit(this.ticketContext.ticketChannelId)) {
-            return "The whitelist application is locked because the staged review is no longer updateable.";
+            return "The whitelist application is locked because staff review is no longer open for updates.";
         }
         return null;
     }
@@ -159,5 +184,35 @@ export class OTForms_Form {
         return this.answerTarget == "ticket_managed_record"
             ? this.channel
             : this.answersChannel ?? this.channel;
+    }
+
+    public getQuestionIndexByPosition(position: number): number {
+        return this.questions.findIndex((question) => question.position == position);
+    }
+
+    public getSectionNumberForQuestionIndex(questionIndex: number): number {
+        return this.sectionNumbersByQuestionIndex[questionIndex] ?? 1;
+    }
+
+    public async buildInactiveRecoveryMessage(): Promise<string> {
+        const ticketContext = this.getCompletedTicketFormContext();
+        if (!ticketContext || this.answerTarget != "ticket_managed_record") {
+            return buildInactiveStepRecoveryMessage("fill_out", false, "unsubmitted");
+        }
+
+        const service = opendiscord.plugins.classes.get(OT_FORMS_PLUGIN_SERVICE_ID) as OTFormsService;
+        const draft = await service.getTicketDraft(
+            ticketContext.ticketChannelId,
+            this.id,
+            ticketContext.applicantDiscordUserId
+        );
+        const lifecycleState = this.getBridgeEditGate()?.resolveApplicantLifecycleState?.(ticketContext.ticketChannelId)
+            ?? (this.canUserMutate(ticketContext.applicantDiscordUserId) ? "unsubmitted" : "locked");
+        const cardState = resolveStartFormCardState(
+            draft?.draftState ?? null,
+            lifecycleState
+        );
+        const hasSavedAnswers = (draft?.answers.length ?? 0) > 0;
+        return buildInactiveStepRecoveryMessage(cardState, hasSavedAnswers, lifecycleState);
     }
 }

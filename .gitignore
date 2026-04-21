@@ -16,6 +16,8 @@ database/openticket.sqlite
 dist/
 
 otdebug.txt
+runtime/**/*.sqlite-shm
+runtime/**/*.sqlite-wal
 
 .DS_Store
 */.DS_Store

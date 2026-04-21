@@ -13,9 +13,9 @@ Local plugin only. Do not treat this as an upstream Open Ticket plugin.
 Released responsibilities:
 
 1. pre-create gating against Discord-side whitelist ticket eligibility
-2. ticket-side handoff from Open Ticket into the Discord-bot whitelist intake worker
+2. applicant-owned ticket-side handoff from Open Ticket into the Discord-bot whitelist intake worker
 3. ticket-side adjudication controls driven by the Discord-bot status and action endpoints
-4. later transcript attach delivery
+4. pre-close transcript compile plus fallback-only transcript repair delivery
 5. bounded apply-closeout polling until the OT ticket can close after terminal whitelist apply success
 
 The bridge is intentionally narrow:
@@ -37,6 +37,8 @@ Current [`config.json`](config.json) fields:
 - `eligibleOptionIds`
 - `formId`
 - `targetGroupKey`
+- `authorizedRoleIds`
+- `canonicalStaffGuildId`
 - `formContract`
 
 Current local sample:
@@ -49,6 +51,8 @@ Current local sample:
   "eligibleOptionIds": ["whitelist-application-ticket-81642e12"],
   "formId": "whitelist-review-form",
   "targetGroupKey": "community_mirror",
+  "authorizedRoleIds": [],
+  "canonicalStaffGuildId": "1433418426029834305",
   "formContract": {
     "discordUsernamePosition": 1,
     "alderonIdsPosition": 2,
@@ -66,12 +70,25 @@ What each field means:
 - `eligibleOptionIds`: only these OT ticket option ids get the whitelist bridge gate and control card
 - `formId`: completed form id the bridge requires before staging
 - `targetGroupKey`: whitelist target group key included in the staged payload
-- `formContract`: bridge-owned mapping for the ticket-creator Discord-username consistency check, the machine-readable AGIDs, the rules password, and the required acknowledgement answers inside the full application
+- `authorizedRoleIds`: bridge-only OT-guild role ids that can use whitelist bridge controls in addition to OT admin participants
+- `canonicalStaffGuildId`: Discord staff guild id used by OT `Accept` and `Retry Whitelist Apply` when building the canonical caller role context sent to the Discord worker
+- `formContract`: bridge-owned mapping for the ticket-creator Discord-name consistency check, the machine-readable AGIDs, the rules password, and the required acknowledgement answers inside the full application
 
 `integrationId` and `sharedSecret` must match:
 
 - the bridge plugin config here
 - the Discord-side env values `TICKET_BRIDGE_WHITELIST_INTEGRATION_ID` and `TICKET_BRIDGE_WHITELIST_SHARED_SECRET`
+
+`authorizedRoleIds` is runtime-owned by the OT local env:
+
+- `EOTFS_OT_WHITELIST_BRIDGE_AUTHORIZED_ROLE_IDS=role-id-one,role-id-two`
+- values are trimmed, blank entries are dropped, duplicates are removed, and only `17` to `20` digit OT-guild role ids survive normalization
+- empty or unset `EOTFS_OT_WHITELIST_BRIDGE_AUTHORIZED_ROLE_IDS` preserves the legacy OT-admin-participant-only bridge behavior
+- malformed or OT-guild-unresolved role ids warn and fail closed without blocking OT startup
+- this bridge-only role path does not consult `STAFF_BYPASS_ROLE_ID` or cross-guild role membership
+- transcript-gated `Accept` and terminal `Retry Whitelist Apply` still must pass the canonical Discord-side whitelist intake permission check when the request reaches the bridge worker
+
+`canonicalStaffGuildId` is runtime-owned by `EOTFS_OT_WHITELIST_CANONICAL_STAFF_GUILD_ID`, with `STAFF_GUILD_ID` accepted as a compatibility fallback. If neither env value is present, the bridge preserves the config value and finally falls back to the OT server id. Operators should set the canonical staff guild explicitly whenever OT tickets and staff authorization do not live in the same Discord guild.
 
 ## Rules Password And Form Contract
 
@@ -79,21 +96,21 @@ The OT-side rules-password gate is separate from `config.json` and must come fro
 
 - `EOTFS_OT_WHITELIST_RULES_PASSWORDS=password-one,password-two`
 - values are trimmed, matched case-insensitively, and may include more than one active password during rotation
-- if the env is missing or empty, `Send to Staff Review` fails closed
+- if the env is missing or empty, `Submit for Review` fails closed
 
 `whitelist-review-form` is the full twenty-question whitelist application, not the earlier six-question review form.
 
 Locked machine-owned positions:
 
-- `Q1` is the typed `Discord username` consistency-check field
+- `Q1` is the typed `Discord name` consistency-check field
 - `Q2` is the machine-readable `Alderon ID(s)` field
 - `Q19` is the rules-password gate
 - `Q5`, `Q6`, `Q7`, `Q8`, `Q9`, `Q17`, and `Q18` are required acknowledgement positions
 
 Released hardening rules:
 
-- `Q1` must match the live ticket creator username, global name, or server nickname when OT can resolve those aliases
-- `Q2` must contain one or more AGIDs written as `123456789` or `123-456-789`
+- the typed `Discord name` field must match the live ticket creator username, global name, or server nickname when OT can resolve those aliases
+- the `Alderon ID(s)` field must contain one or more AGIDs written as `123456789` or `123-456-789`
 - accepted AGIDs are canonicalized to grouped `123-456-789` before the bridge payload is sent
 - the bridge rejects duplicate AGIDs after normalization
 - this plugin still does not prove live external Alderon-account existence
@@ -103,20 +120,33 @@ The form answers live inside the applicant ticket as one managed record through 
 Released applicant-card contract:
 
 - the applicant resumes from the ticket card, not from dismissed ephemeral prompts
+- when saved answers exist and the bridge still allows updates, the ticket card also shows `Edit a saved answer` for one-question corrections
 - `Continue Application` only appears when the next form step needs a fresh click or recovery after a saved UI-delivery failure
-- bridge status changes that make the review non-editable must refresh the applicant card to `Application Locked`
-- when the bridge still allows edits after submission, the applicant card relabels to `Update Application`
+- `Edit a saved answer` updates only the selected answer, refreshes the managed record, refreshes the ticket card, and stops without replaying later sections
+- `Submit for Review` is the only applicant action that stages or refreshes the OT-to-Discord review packet
+- active `pending_review` must refresh the applicant card to `Submitted for Staff Review` and lock further edits until staff use `Retry`
+- bridge status changes that end applicant editability after review must refresh the applicant card to `Application Locked`
+- when staff use `Retry`, the applicant card reopens to `Update Application` and requires `Submit for Review` again for the same staged case
+- stale prompts now reply with state-aware recovery copy that points the applicant back to the ticket card
+
+Released whitelist stack contract:
+
+- before submit, the bridge-owned whitelist stack reads: opening whitelist embed, `whitelist-process`, `whitelist-expectations`, and the applicant card as the bottom editable block
+- after submit, the bridge keeps the static guidance in place, appends the submitted answers mirror above the applicant card, and then keeps `Whitelist Staff Review` as the newest bottom message directly below the applicant card
+- normal submit, retry, transcript, polling, and adjudication refreshes update the managed whitelist stack in place without normal delete-or-recreate churn
+- delete-or-recreate is reserved for one-time legacy normalization of already-open misordered tickets and true missing-message recovery
 
 ## Released Workflow
 
 1. The player opens an eligible whitelist ticket in Open Ticket.
-2. The player starts from `Fill Out Application`, resumes with `Continue Application` when modal or recovery clicks are required, and later sees `Update Application` while bridge review remains editable.
-3. An OT staff/admin participant uses `Send to Staff Review`, which now blocks malformed AGIDs and Q1 creator-identity mismatches before staging.
-4. The bridge posts the signed `case_created` event to the Discord-side intake worker.
-5. The Discord bot stages a read-only review case for `/whitelist intake`.
-6. `ot-html-transcripts` can later supply a transcript URL, which the bridge posts through `transcript_attached`.
-7. Staff adjudication continues through the bridge control card plus the Discord-side status/action endpoints.
-8. OT closes only after duplicate closeout or terminal whitelist apply success.
+2. The player starts from `Fill Out Application`, resumes unanswered sections with `Continue Application`, and can use `Update Application` or `Edit a saved answer` from the ticket card to change saved responses without replaying the rest.
+3. The applicant uses `Submit for Review`, which blocks malformed AGIDs, a mismatched Discord name, and other plain-language validation failures before staging.
+4. The bridge compiles a fresh transcript and posts the signed transcript-backed `case_created` event to the Discord-side intake worker.
+5. The Discord bot stages a read-only review case for `/whitelist intake`, and normal review starts from transcript-ready state.
+6. `transcript_attached` remains available only for manual repair and legacy staged cases.
+7. Staff adjudication continues through the embed-based `Whitelist Staff Review` card plus the Discord-side `/whitelist intake` surface; OT and Discord are co-equal review surfaces that call the same canonical accept and retry-apply path.
+8. `Accept` runs canonical `whitelist set`, creates the apply request, and immediately executes one apply pass against every enabled `community_mirror` server with both whitelist-apply and RCON support.
+9. OT closes only after duplicate closeout or terminal whitelist apply success.
 
 ## Create-Ticket Gate
 
@@ -134,13 +164,25 @@ That worker:
 Before staging:
 
 - the player completes the whitelist application in the ticket
-- staff use `Send to Staff Review` for the OT-to-Discord handoff
+- the OT staff review card stays hidden until the applicant uses `Submit for Review`
 
-Normal staged case:
+Pending-review case:
 
 - `Accept`
 - `Retry`
-- `Hard Deny`
+- `Permanent Denial`
+- `Refresh Status`
+
+Retry-denied case:
+
+- `Permanent Denial`
+- `Refresh Status`
+
+Limit-locked case:
+
+- `Accept`
+- `Permanent Denial`
+- `Refresh Status`
 
 Duplicate-active-whitelist case:
 
@@ -149,31 +191,52 @@ Duplicate-active-whitelist case:
 
 Apply-failed case:
 
-- `Retry Apply`
+- `Retry Whitelist Apply`
 - `Refresh Status`
 
 Pending apply closeout:
 
 - `Refresh Status`
 
+Accepted, permanent-denial, and duplicate-closed terminal states:
+
+- `Refresh Status`
+
 When the bridge moves the staged case out of a reviewable state, `ot-ticket-forms` must refresh the applicant card to `Application Locked` so the bridge remains authoritative for editability.
+
+Applicant-facing OT status copy is now locked to the Discord-side canonical `player_visible_apply_summary` for `accepted_pending_apply` and `accepted_failed`. Technical per-server failure detail stays staff-only in Discord.
+
+Whitelist bridge authorization is live on every interaction:
+
+- OT admin participants remain authorized even when `authorizedRoleIds` is empty
+- configured OT-guild bridge roles authorize whitelist bridge controls only; they do not widen claim, rename, close, or other OT admin actions
+- bridge buttons and bridge modal submits both re-check the actor's live OT-guild role membership
+- canonical Discord-side whitelist intake authorization still decides whether `Accept` or `Retry Whitelist Apply` can execute after the OT-side bridge check passes
+
+Whitelist validation and bridge copy now use plain language:
+
+- the bridge tells staff to fix the application before sending it to review instead of surfacing raw question-number errors
+- rules-password, Discord-name, Alderon-ID, and acknowledgement failures are reported with friendly field names
+- the staff control card is the embed-based `Whitelist Staff Review` surface with readable case, applicant, lifecycle, policy, and permanent-denial fields plus the released button labels for the current state
 
 ## Transcript Handling
 
-After staging, transcript readiness drives a later `transcript_attached` event.
+The normal whitelist path now stages through transcript-backed `case_created`.
 
 The bridge:
 
 - resolves transcript URLs through `ot-html-transcripts:service.resolveAdminTarget(ticketChannelId)`
-- posts the signed transcript event to the Discord bot
+- compiles and resolves a fresh transcript before the normal `case_created` handoff
+- keeps `transcript_attached` available only for manual repair and legacy staged cases
 - rerenders the control card after status changes
-- keeps transcript attach additive rather than replacing the original staged case
+- keeps fallback transcript repair additive rather than replacing the original staged case
 
 ## Closeout Rules
 
-- `Accept` does not close the OT ticket immediately
+- `Accept` may complete immediately or leave retries pending, but it never closes the OT ticket until the canonical result is `accepted_applied`
 - OT closes the ticket only after terminal whitelist apply success
 - `accepted_failed` keeps the ticket open
+- `Retry Whitelist Apply` runs one immediate apply pass on the existing accepted case and remains terminal-only
 - duplicate close can close the ticket immediately after the canonical duplicate action succeeds
 
 ## Endpoints

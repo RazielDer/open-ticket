@@ -2,11 +2,14 @@ import {opendiscord, api, utilities} from "../../index"
 import fs from "fs"
 
 export const loadAllPlugins = async () => {
+    api.installTicketPlatformRuntimeApi()
+
     //start launching plugins
     opendiscord.log("Loading plugins...","system")
     let initPluginError: boolean = false
 
     if (!fs.existsSync("./plugins")){
+        api.sealTicketPlatformRuntimeApi()
         opendiscord.log("Couldn't find ./plugins directory, canceling all plugin execution!","error")
         return
     }
@@ -257,4 +260,6 @@ export const loadAllPlugins = async () => {
             ])
         }
     }
+
+    api.sealTicketPlatformRuntimeApi()
 }

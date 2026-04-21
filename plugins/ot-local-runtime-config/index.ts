@@ -1,9 +1,13 @@
 import {api, opendiscord, utilities} from "#opendiscord"
+import {parseBridgeAuthorizedRoleIds} from "./service/bridge-role-config"
 
 if (utilities.project != "openticket") throw new api.ODPluginError("This plugin only works in Open Ticket!")
 
 const DEFAULT_SERVER_ID = "1433418426029834305"
 const WHITELIST_OPTION_ID = "whitelist-application-ticket-81642e12"
+const DEFAULT_WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ID = "1489383064810553480"
+const WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ENV = "EOTFS_OT_WHITELIST_TRANSCRIPT_CHANNEL_ID"
+const WHITELIST_CANONICAL_STAFF_GUILD_ENV = "EOTFS_OT_WHITELIST_CANONICAL_STAFF_GUILD_ID"
 const IMAGE_EXTENSIONS = [".png",".jpg",".jpeg",".webp",".gif"]
 
 const DEFAULT_PERMISSIONS = {
@@ -254,6 +258,31 @@ const sanitizeOptionsConfig = () => {
     if (!optionsConfig) return
 
     const whitelistOption = createWhitelistOption()
+    const envTranscriptChannelId = trimEnv(WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ENV)
+    const whitelistTranscriptChannelId = isSnowflake(envTranscriptChannelId)
+        ? envTranscriptChannelId
+        : DEFAULT_WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ID
+    ;(whitelistOption as api.ODJsonConfig_DefaultOptionTicketType & {
+        transcripts?: {
+            useGlobalDefault: boolean
+            channels: string[]
+        }
+    }).transcripts = {
+        useGlobalDefault: false,
+        channels: [whitelistTranscriptChannelId]
+    }
+
+    if (envTranscriptChannelId.length > 0 && !isSnowflake(envTranscriptChannelId)) {
+        opendiscord.log(
+            "Whitelist transcript archive lane override ignored because the configured channel id is malformed.",
+            "plugin",
+            [
+                {key:"env", value:WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ENV},
+                {key:"channel", value:envTranscriptChannelId}
+            ]
+        )
+    }
+
     const rawOptions: api.ODJsonConfig_DefaultOptionsData = Array.isArray(optionsConfig.data) ? optionsConfig.data : []
     const filteredOptions: api.ODJsonConfig_DefaultOptionsData = rawOptions.filter((option:any) => {
         if (!option || typeof option != "object") return false
@@ -344,7 +373,56 @@ const sanitizeTranscriptsConfig = () => {
     if (typeof transcripts.textTranscriptStyle.customFileName != "string") transcripts.textTranscriptStyle.customFileName = ""
 
     if (!transcripts.general || typeof transcripts.general != "object") transcripts.general = {enabled:false,enableChannel:false,enableCreatorDM:false,enableParticipantDM:false,enableActiveAdminDM:false,enableEveryAdminDM:false,channel:"",mode:"html"}
+    transcripts.general.enabled = true
+    if (!isSnowflake(transcripts.general.channel)) transcripts.general.channel = ""
     if (!isTranscriptMode(transcripts.general.mode)) transcripts.general.mode = "html"
+    if (transcripts.general.mode != "html") transcripts.general.mode = "html"
+}
+
+const sanitizeBridgeConfig = () => {
+    const bridgeConfig = opendiscord.configs.get("ot-eotfs-bridge:config")
+    if (!bridgeConfig || typeof bridgeConfig.data != "object" || !bridgeConfig.data) return
+
+    const bridge = bridgeConfig.data as {
+        authorizedRoleIds?: string[]
+        canonicalStaffGuildId?: string | null
+    }
+    const parsedAuthorizedRoles = parseBridgeAuthorizedRoleIds(trimEnv("EOTFS_OT_WHITELIST_BRIDGE_AUTHORIZED_ROLE_IDS"))
+    bridge.authorizedRoleIds = parsedAuthorizedRoles.roleIds
+
+    const envCanonicalStaffGuildId = trimEnv(WHITELIST_CANONICAL_STAFF_GUILD_ENV) || trimEnv("STAFF_GUILD_ID")
+    const configuredCanonicalStaffGuildId = typeof bridge.canonicalStaffGuildId == "string"
+        ? bridge.canonicalStaffGuildId.trim()
+        : ""
+    if (isSnowflake(envCanonicalStaffGuildId)) {
+        bridge.canonicalStaffGuildId = envCanonicalStaffGuildId
+    } else if (isSnowflake(configuredCanonicalStaffGuildId)) {
+        bridge.canonicalStaffGuildId = configuredCanonicalStaffGuildId
+    } else {
+        const generalConfig = opendiscord.configs.get("opendiscord:general")
+        const fallbackGuildId = generalConfig && typeof generalConfig.data == "object" && generalConfig.data
+            ? (generalConfig.data as { serverId?: unknown }).serverId
+            : null
+        bridge.canonicalStaffGuildId = typeof fallbackGuildId == "string" && isSnowflake(fallbackGuildId)
+            ? fallbackGuildId
+            : null
+    }
+
+    if (envCanonicalStaffGuildId.length > 0 && !isSnowflake(envCanonicalStaffGuildId)) {
+        opendiscord.log(
+            "Whitelist bridge warning: ignoring malformed canonical staff guild id from runtime environment.",
+            "plugin",
+            [{key:"guild", value:envCanonicalStaffGuildId}]
+        )
+    }
+
+    if (parsedAuthorizedRoles.invalidTokens.length > 0) {
+        opendiscord.log(
+            "Whitelist bridge warning: ignoring malformed role ids from EOTFS_OT_WHITELIST_BRIDGE_AUTHORIZED_ROLE_IDS.",
+            "plugin",
+            parsedAuthorizedRoles.invalidTokens.map((token) => ({key:"role", value:token}))
+        )
+    }
 }
 
 opendiscord.events.get("afterConfigsInitiated").listen(() => {
@@ -352,5 +430,6 @@ opendiscord.events.get("afterConfigsInitiated").listen(() => {
     sanitizeOptionsConfig()
     sanitizePanelsConfig()
     sanitizeTranscriptsConfig()
+    sanitizeBridgeConfig()
     opendiscord.log("Applied local runtime config overrides.","plugin")
 })

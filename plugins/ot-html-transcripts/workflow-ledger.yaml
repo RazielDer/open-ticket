@@ -1,6 +1,7 @@
 version: 2
 generated_from: workflow.yaml
-updated_at: 2026-03-29
+updated_at: 2026-04-20
+historical_scope_note: "This completed transcript enhancement ledger is historical task evidence only. The overall consolidated project remains active and incomplete under the workspace-root parity kernel, and this ledger's plugin-only limits do not constrain later whole-project work."
 overall_status: completed
 active_slice: null
 prepared_next_slice: null

@@ -26,3 +26,5 @@ node --test dist/plugins/ot-ticket-forms/test/draft-session.test.js dist/plugins
 ## Closeout Note
 
 The controller-kernel is closed. Resume should start from `workflow.yaml` only if a new task or follow-up change is opened.
+
+This closeout remains historical evidence for the completed whitelist UX redesign. The overall consolidated project remains active and incomplete under the workspace-root parity kernel, and future whole-project work should follow that root kernel instead of inheriting this kernel's old plugin-scoped write limits.

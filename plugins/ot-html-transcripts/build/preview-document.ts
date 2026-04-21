@@ -11,6 +11,7 @@ import type {
 } from "../contracts/document"
 import type { TranscriptHtmlStyleDraft } from "../contracts/types"
 import { mapTranscriptHtmlStyleDraft } from "./style-mapper"
+import { createDefaultTicketPlatformMetadata } from "../../../src/core/api/openticket/ticket-platform"
 
 const PREVIEW_TIMESTAMPS = {
     generatedAt: "2026-03-27T15:45:00.000Z",
@@ -103,7 +104,7 @@ function createEmbed(): LocalTranscriptEmbed {
     return {
         title: "Maintenance summary",
         description: "Collected the ticket notes and queued a follow-up check for the next handoff.",
-        color: "#3dd9eb",
+        color: "#5865f2",
         url: false,
         authorText: "Operations timeline",
         authorAsset: null,
@@ -152,9 +153,15 @@ function createFileAttachment(): LocalTranscriptAttachment {
 
 export function buildTranscriptPreviewDocument(styleDraft: TranscriptHtmlStyleDraft): LocalTranscriptDocument {
     const creator = createActor("preview-user-1", "Jordan Carter", "#ffffff")
-    const support = createActor("preview-user-2", "Avery Nguyen", "#9ed8ff")
-    const lead = createActor("preview-user-3", "Morgan Lee", "#f8ba00")
+    const support = createActor("preview-user-2", "Avery Nguyen", "#b5bac1")
+    const lead = createActor("preview-user-3", "Morgan Lee", "#5865f2")
     const deletedBy = createActor("preview-user-4", "Casey Rivera", "#ffffff")
+    const ticketMetadata = {
+        ...createDefaultTicketPlatformMetadata(),
+        assignedStaffUserId: support.id,
+        firstStaffResponseAt: PREVIEW_TIMESTAMPS.messageOne,
+        resolvedAt: PREVIEW_TIMESTAMPS.closedOn
+    }
 
     const reply: LocalTranscriptReply = {
         type: "reply",
@@ -262,7 +269,8 @@ export function buildTranscriptPreviewDocument(styleDraft: TranscriptHtmlStyleDr
             closedBy: lead,
             claimedBy: support,
             pinnedBy: support,
-            deletedBy
+            deletedBy,
+            metadata: ticketMetadata
         },
         participants: [
             {

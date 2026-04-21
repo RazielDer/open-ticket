@@ -473,7 +473,10 @@ test("transcript HTML style normalization ignores preview-only helpers and keeps
       "htmlTranscriptStyle.header.backgroundColor": "#123456"
     }, savedTranscripts.htmlTranscriptStyle)
 
-    assert.equal(normalized.header.backgroundColor, "#123456")
+    assert.equal(normalized.background.backgroundColor, "#313338")
+    assert.equal(normalized.header.backgroundColor, "#1e1f22")
+    assert.equal(normalized.header.decoColor, "#5865f2")
+    assert.equal(normalized.favicon.imageUrl, "")
     assert.equal("transcriptPreviewAction" in normalized, false)
     assert.equal("transcriptPresetId" in normalized, false)
     assert.equal("transcriptEditorSection" in normalized, false)
@@ -521,7 +524,10 @@ test("transcript HTML style normalization ignores preview-only helpers and keeps
     })
 
     const persisted = service.readManagedJson<any>("transcripts")
-    assert.equal(persisted.htmlTranscriptStyle.header.backgroundColor, "#123456")
+    assert.equal(persisted.htmlTranscriptStyle.background.backgroundColor, "#313338")
+    assert.equal(persisted.htmlTranscriptStyle.header.backgroundColor, "#1e1f22")
+    assert.equal(persisted.htmlTranscriptStyle.header.decoColor, "#5865f2")
+    assert.equal(persisted.htmlTranscriptStyle.favicon.imageUrl, "")
     assert.equal("transcriptPreviewAction" in persisted, false)
     assert.equal("transcriptPresetId" in persisted, false)
     assert.equal("transcriptEditorSection" in persisted, false)

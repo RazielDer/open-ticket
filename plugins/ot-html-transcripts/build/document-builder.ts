@@ -84,7 +84,8 @@ export async function buildTranscriptDocument(
             closedBy: closer ? createUserActor(closer, false, false, false, "#ffffff", "ticket.closedBy") : null,
             claimedBy: claimer ? createUserActor(claimer, false, false, false, "#ffffff", "ticket.claimedBy") : null,
             pinnedBy: pinner ? createUserActor(pinner, false, false, false, "#ffffff", "ticket.pinnedBy") : null,
-            deletedBy: createUserActor(user, user.bot, false, user.system, "#ffffff", "ticket.deletedBy")
+            deletedBy: createUserActor(user, user.bot, false, user.system, "#ffffff", "ticket.deletedBy"),
+            metadata: api.readTicketPlatformMetadataFromTicket(ticket)
         },
         participants: participants.map((participant) => ({
             userId: participant.user.id,

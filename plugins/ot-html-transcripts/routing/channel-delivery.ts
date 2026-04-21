@@ -41,6 +41,17 @@ export interface TranscriptChannelDeliveryResult {
     skippedTargetIds: string[]
 }
 
+export interface TranscriptResolvedTarget {
+    targetId: string
+    channel: unknown
+}
+
+export interface TranscriptChannelTargetResolutionResult {
+    resolvedTargets: TranscriptResolvedTarget[]
+    skippedTargetIds: string[]
+    warnings: TranscriptChannelDeliveryWarning[]
+}
+
 function getRuntime() {
     return require("#opendiscord") as typeof import("#opendiscord")
 }
@@ -57,6 +68,11 @@ function stripChannelMessage(readyResult: TranscriptReadyMessagesLike): Transcri
         activeAdminDmMessage: readyResult.activeAdminDmMessage,
         everyAdminDmMessage: readyResult.everyAdminDmMessage
     }
+}
+
+function getGuildId(value: unknown): string | null {
+    const guildId = (value as { id?: unknown } | null)?.id
+    return typeof guildId == "string" && guildId.trim().length > 0 ? guildId.trim() : null
 }
 
 function isGuildTextChannel(channel: unknown): channel is { send(message: unknown): Promise<unknown> } & { isTextBased(): boolean; isDMBased?: () => boolean } {
@@ -87,16 +103,128 @@ function defaultLogWarning(warning: TranscriptChannelDeliveryWarning) {
 }
 
 async function defaultFetchChannel(guild: unknown, targetId: string): Promise<unknown> {
-    const fetch = (guild as { channels?: { fetch?: (id: string) => Promise<unknown> } } | null)?.channels?.fetch
-    if (typeof fetch != "function") {
+    const candidateGuild = guild as {
+        channels?: { fetch?: (id: string) => Promise<unknown> }
+        client?: { channels?: { fetch?: (id: string) => Promise<unknown> } }
+    }
+    const channelManager = candidateGuild?.channels
+    if (channelManager && typeof channelManager.fetch == "function") {
+        try {
+            return await channelManager.fetch(targetId)
+        } catch {
+            // Fall through to the client fetch path when the guild channel manager is stale or otherwise rejects.
+        }
+    }
+
+    const clientChannelManager = candidateGuild?.client?.channels
+    if (!clientChannelManager || typeof clientChannelManager.fetch != "function") {
         return null
     }
 
-    return await fetch(targetId)
+    return await clientChannelManager.fetch(targetId)
 }
 
 async function defaultSendMessage(channel: unknown, message: MessageBuildResultLike): Promise<void> {
     await (channel as { send(message: unknown): Promise<unknown> }).send(message.message)
+}
+
+export async function resolveTranscriptTargetChannels(
+    {
+        guild,
+        targetIds,
+        optionId
+    }: {
+        guild: unknown
+        targetIds: unknown
+        optionId: string | null
+    },
+    dependencies: TranscriptChannelDeliveryDependencies = {}
+): Promise<TranscriptChannelTargetResolutionResult> {
+    const resolvedTargets: TranscriptResolvedTarget[] = []
+    const skippedTargetIds: string[] = []
+    const warnings: TranscriptChannelDeliveryWarning[] = []
+
+    const fetchChannel = dependencies.fetchChannel ?? defaultFetchChannel
+    const logWarning = dependencies.logWarning ?? defaultLogWarning
+    const sourceGuildId = getGuildId(guild)
+
+    for (const targetId of normalizeTranscriptChannelIds(targetIds)) {
+        if (!isDiscordChannelId(targetId)) {
+            const warning = {
+                code: "invalid-id",
+                optionId,
+                destinationId: targetId,
+                detail: "Skipped an invalid transcript channel target id."
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(targetId)
+            warnings.push(warning)
+            logWarning(warning)
+            continue
+        }
+
+        let channel: unknown = null
+        try {
+            channel = await fetchChannel(guild, targetId)
+        } catch (error) {
+            const detailSuffix = error instanceof Error && error.message.trim().length > 0
+                ? ` (${error.message.trim()})`
+                : ""
+            const warning = {
+                code: "fetch-failed",
+                optionId,
+                destinationId: targetId,
+                detail: `Failed to fetch a transcript channel target.${detailSuffix}`
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(targetId)
+            warnings.push(warning)
+            logWarning(warning)
+            continue
+        }
+
+        if (!channel) {
+            const warning = {
+                code: "missing-channel",
+                optionId,
+                destinationId: targetId,
+                detail: "Skipped a missing or deleted transcript channel target."
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(targetId)
+            warnings.push(warning)
+            logWarning(warning)
+            continue
+        }
+
+        if (!isGuildTextChannel(channel)) {
+            const warning = {
+                code: "non-text-channel",
+                optionId,
+                destinationId: targetId,
+                detail: "Skipped a non-text transcript channel target."
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(targetId)
+            warnings.push(warning)
+            logWarning(warning)
+            continue
+        }
+
+        const targetGuildId = getGuildId((channel as { guild?: unknown }).guild ?? null)
+        if (sourceGuildId && targetGuildId && targetGuildId != sourceGuildId) {
+            const warning = {
+                code: "wrong-guild",
+                optionId,
+                destinationId: targetId,
+                detail: "Skipped a transcript channel target that belongs to a different guild."
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(targetId)
+            warnings.push(warning)
+            logWarning(warning)
+            continue
+        }
+
+        resolvedTargets.push({ targetId, channel })
+    }
+
+    return { resolvedTargets, skippedTargetIds, warnings }
 }
 
 export async function deliverMessageToTranscriptTargets(
@@ -120,69 +248,24 @@ export async function deliverMessageToTranscriptTargets(
         return { deliveredTargetIds, skippedTargetIds }
     }
 
-    const fetchChannel = dependencies.fetchChannel ?? defaultFetchChannel
     const sendMessage = dependencies.sendMessage ?? defaultSendMessage
     const logWarning = dependencies.logWarning ?? defaultLogWarning
+    const resolution = await resolveTranscriptTargetChannels({ guild, targetIds, optionId }, dependencies)
+    skippedTargetIds.push(...resolution.skippedTargetIds)
 
-    for (const targetId of normalizeTranscriptChannelIds(targetIds)) {
-        if (!isDiscordChannelId(targetId)) {
-            skippedTargetIds.push(targetId)
-            logWarning({
-                code: "invalid-id",
-                optionId,
-                destinationId: targetId,
-                detail: "Skipped an invalid transcript channel target id."
-            })
-            continue
-        }
-
-        let channel: unknown = null
+    for (const target of resolution.resolvedTargets) {
         try {
-            channel = await fetchChannel(guild, targetId)
+            await sendMessage(target.channel, channelMessage)
+            deliveredTargetIds.push(target.targetId)
         } catch {
-            skippedTargetIds.push(targetId)
-            logWarning({
-                code: "fetch-failed",
-                optionId,
-                destinationId: targetId,
-                detail: "Failed to fetch a transcript channel target."
-            })
-            continue
-        }
-
-        if (!channel) {
-            skippedTargetIds.push(targetId)
-            logWarning({
-                code: "missing-channel",
-                optionId,
-                destinationId: targetId,
-                detail: "Skipped a missing or deleted transcript channel target."
-            })
-            continue
-        }
-
-        if (!isGuildTextChannel(channel)) {
-            skippedTargetIds.push(targetId)
-            logWarning({
-                code: "non-text-channel",
-                optionId,
-                destinationId: targetId,
-                detail: "Skipped a non-text transcript channel target."
-            })
-            continue
-        }
-
-        try {
-            await sendMessage(channel, channelMessage)
-            deliveredTargetIds.push(targetId)
-        } catch {
-            skippedTargetIds.push(targetId)
-            logWarning({
+            const warning = {
                 code: "send-failed",
                 optionId,
-                destinationId: targetId,
+                destinationId: target.targetId,
                 detail: "Failed to deliver the transcript ready message to a target channel."
-            })
+            } satisfies TranscriptChannelDeliveryWarning
+            skippedTargetIds.push(target.targetId)
+            logWarning(warning)
         }
     }
 

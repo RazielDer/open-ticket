@@ -27,6 +27,8 @@ Phase `P14` is complete. The shipped admin login, viewer login, `My Transcripts`
 
 - `workflow.yaml`, `workflow-ledger.yaml`, `runtime/controller-state.yaml`, and this file now mark `P14` complete.
 - No prepared next slice remains in the controller kernel.
+- A later whole-stack follow-on aligned to `SLICE-008A` is now reserved after `P14` for document-`2.0` richer-result transcript support with legacy `1.0` read compatibility.
+- This completed plugin kernel is historical evidence only; the overall consolidated project remains active and incomplete under the workspace-root parity kernel, and future whole-project work should follow that root kernel instead of inheriting this kernel's old plugin-only write limits.
 
 ## Resume note
 

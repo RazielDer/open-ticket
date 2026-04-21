@@ -1,10 +1,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import path from "node:path"
 
 import {
     applyDraftResponses,
     OTFormsActiveSessionRegistry,
     OTFormsInteractionGate,
+    resolveDraftStateFromAnswers,
     resolveNextSessionAction,
     resolveDraftResumeQuestionIndex
 } from "../service/draft-runtime.js"
@@ -199,4 +202,45 @@ test("draft resume picks the first unanswered whitelist question and completed d
         ]),
         0
     )
+})
+
+test("draft state resolution keeps fully answered applications completed during targeted edits", () => {
+    const questions = [
+        {
+            position: 1,
+            question: "Discord username?",
+            type: "short" as const
+        },
+        {
+            position: 2,
+            question: "Alderon ID(s)?",
+            type: "short" as const
+        },
+        {
+            position: 3,
+            question: "Rules password?",
+            type: "short" as const
+        }
+    ]
+
+    assert.equal(resolveDraftStateFromAnswers(questions, []), "initial")
+    assert.equal(resolveDraftStateFromAnswers(questions, [
+        { question: questions[0], answer: "RazielDer" }
+    ]), "partial")
+    assert.equal(resolveDraftStateFromAnswers(questions, [
+        { question: questions[0], answer: "RazielDer" },
+        { question: questions[1], answer: "123-456-789" },
+        { question: questions[2], answer: "Sunrise" }
+    ]), "completed")
+})
+
+test("ticket-card session replacement is wired into the form runtime without clearing newer bindings", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-ticket-forms", "classes", "Form.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+
+    assert.equal(source.includes("replaceExistingBinding?: boolean"), true)
+    assert.equal(source.includes("targetQuestionPosition?: number | null"), true)
+    assert.equal(source.includes("if (existingSession && !options.replaceExistingBinding)"), true)
+    assert.equal(source.includes("if (this.activeSessionRegistry.get(user.id) == sessionId)"), true)
+    assert.equal(source.includes("this.sectionNumbersByQuestionIndex[index] = this.totalSections;"), true)
 })

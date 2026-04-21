@@ -4,9 +4,20 @@
 
 Extend and stabilize the shipped local transcript and dashboard plugins in controlled phases without touching Open Ticket core outside `plugins/ot-html-transcripts/**` and `plugins/ot-dashboard/**`.
 
+This kernel is now a historical record for that completed plugin roadmap. Its plugin-only write boundaries applied only to that transcript program and do not constrain later consolidated whole-project work, which should follow the workspace-root whole-stack kernel instead.
+
+The overall consolidated project is still active and incomplete under the workspace-root parity kernel. Only this historical plugin roadmap is complete.
+
+## Current status
+
+- Status: `completed`
+- Last completed slice: `28-final-auth-access-polish-and-verification`
+- Prepared next slice: `none`
+- New implementation should resume from the workspace-root whole-stack kernel; return to this document only for transcript-specific historical evidence or a deliberate later reopen.
+
 ## Current baseline
 
-The enhancement roadmap is implemented and verified through slice `22`. The current plugin set already provides:
+The enhancement roadmap is implemented and verified through slice `28` / phase `P14`. The current plugin set provides:
 
 - full-history local HTML transcript generation
 - SQLite-backed transcript indexing and lifecycle operations
@@ -17,9 +28,13 @@ The enhancement roadmap is implemented and verified through slice `22`. The curr
 - deployment warnings and additive `viewer-accessed` transcript audit events
 - plugin-owned ticket-option transcript routing controls and compiler-wrapper delivery
 
-## Reopened phase
+## Future follow-on note
 
-Phase `P14` reopens the workflow for one stricter access-control wave:
+The plugin roadmap remains completed through `P14`, but a later whole-stack follow-on aligned to `SLICE-008A` is now reserved. That follow-on will reopen transcript planning for a result-first local document `2.0` contract with legacy `1.0` read support, richer ticket-form result rendering, and additive `ticket.metadata`; it does not change the completed `P14` state in this kernel pass.
+
+## Final completed phase
+
+The final wave, phase `P14`, added one stricter access-control program:
 
 - Cloudflare-ready dual-host routing for admin and viewer surfaces
 - Discord-based admin auth with live guild-role revalidation
@@ -27,7 +42,7 @@ Phase `P14` reopens the workflow for one stricter access-control wave:
 - durable SQLite-backed auth/session/OAuth/rate-limit state in `ot-dashboard`
 - Admin-only RBAC/security management inside the existing dashboard shell
 
-This phase stays entirely inside the two plugin folders and explicitly does not add browser-side ticket creation or general end-user ticket actions.
+That wave stayed entirely inside the two plugin folders and explicitly did not add browser-side ticket creation or general end-user ticket actions.
 
 ## Locked product decisions
 
@@ -52,7 +67,7 @@ This phase stays entirely inside the two plugin folders and explicitly does not 
 - The security workspace may edit non-secret RBAC and host-routing fields only. OAuth client secret, session secret, and breakglass password hash remain env/config managed and read-only in the UI.
 - UI additions must stay inside the existing matte dark dashboard language: no glow, no roomy marketing layouts, no redundant copy, and no drift from the current `login.ejs`, `transcript-viewer-login.ejs`, `admin-shell.ejs`, and editor cards.
 
-## Fixed boundaries
+## Historical task boundaries
 
 - Only write inside `plugins/ot-html-transcripts/**` and `plugins/ot-dashboard/**`.
 - Do not edit `src/**`, `config/**`, `database/**`, or any other main-repo path outside the two plugin directories.
@@ -63,7 +78,7 @@ This phase stays entirely inside the two plugin folders and explicitly does not 
 - Do not let `ot-dashboard` or any other consumer read transcript SQLite state directly.
 - Escalate if any slice requires distributed storage, multi-node coordination, or a base-repo edit outside the two plugin folders.
 
-## Working cadence
+## Historical execution cadence
 
 1. Keep `workflow.yaml` and this document as the master roadmap.
 2. Keep one active slice implementation-ready at a time.
@@ -123,26 +138,20 @@ This phase stays entirely inside the two plugin folders and explicitly does not 
 - `27-audit-logging-and-security-hardening`
 - `28-final-auth-access-polish-and-verification`
 
-## Active slice
+## Completion state
 
-`23-dashboard-auth-store-and-dual-host-foundation`
+- Active slice: `none`
+- Prepared next slice: `none`
+- Prepared following slice: `none`
+- Final locked verification for the completed roadmap is recorded in `evidence/phase-14-stricter-access-and-portal-basis.md`.
+- The later whole-stack follow-on aligned to `SLICE-008A` now belongs under the workspace-root kernel rather than as a live prepared slice in this plugin kernel.
 
-## Prepared next slice
+## Resume guidance
 
-`24-admin-discord-auth-live-rbac-and-route-guards`
-
-## Prepared following slice
-
-`25-viewer-live-access-and-my-transcripts-service`
-
-## Resume order
-
-1. `workflow.yaml`
-2. `slices/23-dashboard-auth-store-and-dual-host-foundation.md`
-3. `active/active-slice.md`
-4. `workflow.md`
-5. `evidence/phase-14-stricter-access-and-portal-basis.md`
-6. `runtime/controller-state.yaml`
+1. Resume new implementation from the workspace-root `workflow.yaml`.
+2. Use the workspace-root `active/active-slice.md` to determine the live whole-stack slice.
+3. Return to this plugin kernel only when transcript-specific historical evidence or prior verification details are needed.
+4. Use `evidence/phase-14-stricter-access-and-portal-basis.md` as the final proof of the completed plugin roadmap.
 
 ## Program verification posture
 
