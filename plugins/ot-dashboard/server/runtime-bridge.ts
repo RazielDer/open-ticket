@@ -100,6 +100,26 @@ function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
+const ticketAvailabilityReasons = {
+  busyWorkflow: "tickets.detail.availability.busyWorkflow",
+  lockedByProvider: "tickets.detail.availability.lockedByProvider",
+  ticketAlreadyClaimedOrNotOpen: "tickets.detail.availability.ticketAlreadyClaimedOrNotOpen",
+  ticketNotCurrentlyClaimed: "tickets.detail.availability.ticketNotCurrentlyClaimed",
+  ticketNotOpen: "tickets.detail.availability.ticketNotOpen",
+  ticketAlreadyClosed: "tickets.detail.availability.ticketAlreadyClosed",
+  ticketNotClosed: "tickets.detail.availability.ticketNotClosed",
+  runtimeContextMissing: "tickets.detail.availability.runtimeContextMissing",
+  permissionDenied: "tickets.detail.availability.permissionDenied",
+  noOwningSupportTeam: "tickets.detail.availability.noOwningSupportTeam",
+  noEligibleSupportMembers: "tickets.detail.availability.noEligibleSupportMembers",
+  noSameTransportEscalationTargets: "tickets.detail.availability.noSameTransportEscalationTargets",
+  noSameOwnerMoveTargets: "tickets.detail.availability.noSameOwnerMoveTargets",
+  noEligibleNewCreators: "tickets.detail.availability.noEligibleNewCreators",
+  noEligibleAddUsers: "tickets.detail.availability.noEligibleAddUsers",
+  noParticipantsToRemove: "tickets.detail.availability.noParticipantsToRemove",
+  noPriorityChoices: "tickets.detail.availability.noPriorityChoices"
+} as const
+
 function isDashboardTicketActionId(value: string): value is DashboardTicketActionId {
   return (DASHBOARD_TICKET_ACTION_IDS as readonly string[]).includes(value)
 }
@@ -418,20 +438,20 @@ function enabledAvailability(): DashboardTicketActionAvailability {
 }
 
 function invalidTicketStateReason(ticket: DashboardTicketRecord, action: DashboardTicketActionId) {
-  if (action === "claim" && (!ticket.open || ticket.claimed)) return "Ticket is already claimed or not open."
-  if (action === "unclaim" && (!ticket.open || !ticket.claimed)) return "Ticket is not currently claimed."
-  if (action === "assign" && (!ticket.open || ticket.closed)) return "Ticket is not open."
-  if (action === "escalate" && (!ticket.open || ticket.closed)) return "Ticket is not open."
-  if (["move", "transfer", "add-participant", "remove-participant", "set-priority", "set-topic"].includes(action) && (!ticket.open || ticket.closed)) return "Ticket is not open."
-  if (action === "close" && (!ticket.open || ticket.closed)) return "Ticket is already closed."
-  if (action === "reopen" && !ticket.closed) return "Ticket is not closed."
+  if (action === "claim" && (!ticket.open || ticket.claimed)) return ticketAvailabilityReasons.ticketAlreadyClaimedOrNotOpen
+  if (action === "unclaim" && (!ticket.open || !ticket.claimed)) return ticketAvailabilityReasons.ticketNotCurrentlyClaimed
+  if (action === "assign" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if (action === "escalate" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if (["move", "transfer", "add-participant", "remove-participant", "set-priority", "set-topic"].includes(action) && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if (action === "close" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketAlreadyClosed
+  if (action === "reopen" && !ticket.closed) return ticketAvailabilityReasons.ticketNotClosed
   return null
 }
 
 function runtimeTicketWorkflowLockReason(runtimeTicket: any, action: DashboardTicketActionId) {
   if (action === "refresh") return null
   return runtimeDataValue(runtimeTicket, "opendiscord:busy") === true
-    ? "Ticket is busy in an existing Open Ticket workflow."
+    ? ticketAvailabilityReasons.busyWorkflow
     : null
 }
 
@@ -447,26 +467,26 @@ function routeConstraintReason(input: {
   currentCreatorId: string | null
 }) {
   if (input.action === "assign") {
-    if (!input.owningTeamId) return "This ticket route has no owning support team."
-    if (input.assignableStaff.length < 1) return "This ticket route has no eligible support-team members."
+    if (!input.owningTeamId) return ticketAvailabilityReasons.noOwningSupportTeam
+    if (input.assignableStaff.length < 1) return ticketAvailabilityReasons.noEligibleSupportMembers
   }
   if (input.action === "escalate" && input.escalationTargets.length < 1) {
-    return "This ticket route has no same-transport escalation targets."
+    return ticketAvailabilityReasons.noSameTransportEscalationTargets
   }
   if (input.action === "move" && input.moveTargets.length < 1) {
-    return "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
+    return ticketAvailabilityReasons.noSameOwnerMoveTargets
   }
   if (input.action === "transfer" && input.transferCandidates.length < 1) {
-    return "No eligible new creator users are available."
+    return ticketAvailabilityReasons.noEligibleNewCreators
   }
   if (input.action === "add-participant" && !input.participantChoices.some((choice) => !choice.present)) {
-    return "No eligible users are available to add."
+    return ticketAvailabilityReasons.noEligibleAddUsers
   }
   if (input.action === "remove-participant" && !input.participantChoices.some((choice) => choice.present && choice.userId !== input.currentCreatorId)) {
-    return "No user participants are available to remove."
+    return ticketAvailabilityReasons.noParticipantsToRemove
   }
   if (input.action === "set-priority" && input.priorityChoices.length < 1) {
-    return "No priority choices are available."
+    return ticketAvailabilityReasons.noPriorityChoices
   }
   return null
 }
@@ -492,7 +512,7 @@ async function buildRuntimeActionAvailability(input: {
   for (const action of DASHBOARD_TICKET_ACTION_IDS) {
     const runtimeRequired = action !== "refresh"
     if (runtimeRequired && (!input.context?.runtime || !input.context.guild || !input.context.channel || !input.context.user)) {
-      availability[action] = disabledAvailability("The Open Ticket runtime could not resolve the ticket, channel, guild, or actor.")
+      availability[action] = disabledAvailability(ticketAvailabilityReasons.runtimeContextMissing)
       continue
     }
 
@@ -505,13 +525,13 @@ async function buildRuntimeActionAvailability(input: {
     if (runtimeRequired && input.context) {
       const permission = await checkRuntimeTicketActionPermission(input.context, action)
       if (!permission.allowed) {
-        availability[action] = disabledAvailability(permission.reason || "Open Ticket denied this action.")
+        availability[action] = disabledAvailability(permission.reason || ticketAvailabilityReasons.permissionDenied)
         continue
       }
     }
 
     if (locked.has(action)) {
-      availability[action] = disabledAvailability("Locked by provider.")
+      availability[action] = disabledAvailability(ticketAvailabilityReasons.lockedByProvider)
       continue
     }
 
@@ -592,7 +612,7 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     ? unknownUserLabel(originalApplicantUserId)
     : unknownUserLabel(originalApplicantUserId)
   const creatorTransferWarning = originalApplicantUserId && ticket.creatorId && originalApplicantUserId !== ticket.creatorId
-    ? `Original applicant authority remains with ${originalApplicantLabel}; the current creator is ${unknownUserLabel(ticket.creatorId)}.`
+    ? "tickets.detail.warnings.creatorTransfer"
     : null
   const actionAvailability = await buildRuntimeActionAvailability({
     runtimeBridge,

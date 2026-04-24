@@ -503,7 +503,16 @@ export function buildTicketWorkbenchListModel(input: {
 }
 
 function availability(enabled: boolean, reason: string | null = null): DashboardTicketActionAvailability {
-  return { enabled, reason: enabled ? null : reason || "This action is unavailable for the current ticket state." }
+  return { enabled, reason: enabled ? null : reason || "tickets.detail.availability.genericUnavailable" }
+}
+
+export function translateTicketWorkbenchMessage(
+  t: TicketWorkbenchTranslator,
+  message: string | null | undefined,
+  params?: Record<string, string | number>
+) {
+  if (!message) return ""
+  return message.startsWith("tickets.detail.") ? t(message, params) : message
 }
 
 export function buildFallbackTicketDetail(input: {
@@ -532,19 +541,19 @@ export function buildFallbackTicketDetail(input: {
   const locked = new Set(providerLock?.lockedActions || [])
   const assignRouteTeamId = input.ticket.assignedTeamId || currentRouteTeamId
   const actions: Record<DashboardTicketActionId, DashboardTicketActionAvailability> = {
-    claim: availability(Boolean(input.ticket.open && !input.ticket.claimed && !locked.has("claim")), locked.has("claim") ? "Locked by provider." : "Ticket is already claimed or not open."),
-    unclaim: availability(Boolean(input.ticket.open && input.ticket.claimed && !locked.has("unclaim")), locked.has("unclaim") ? "Locked by provider." : "Ticket is not currently claimed."),
-    assign: availability(Boolean(assignRouteTeamId && !locked.has("assign")), locked.has("assign") ? "Locked by provider." : "This ticket route has no owning support team."),
-    escalate: availability(Boolean(escalationTargets.length > 0 && !locked.has("escalate")), locked.has("escalate") ? "Locked by provider." : "This ticket route has no escalation targets."),
-    move: availability(false, locked.has("move") ? "Locked by provider." : "Runtime ticket options are unavailable."),
-    transfer: availability(false, locked.has("transfer") ? "Locked by provider." : "Runtime guild members are unavailable."),
-    "add-participant": availability(false, locked.has("add-participant") ? "Locked by provider." : "Runtime guild members are unavailable."),
-    "remove-participant": availability(false, locked.has("remove-participant") ? "Locked by provider." : "Runtime ticket participants are unavailable."),
-    "set-priority": availability(false, locked.has("set-priority") ? "Locked by provider." : "Runtime priorities are unavailable."),
-    "set-topic": availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("set-topic")), locked.has("set-topic") ? "Locked by provider." : "Ticket is not open."),
-    close: availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("close")), locked.has("close") ? "Locked by provider." : "Ticket is already closed."),
-    reopen: availability(Boolean(input.ticket.closed && !locked.has("reopen")), locked.has("reopen") ? "Locked by provider." : "Ticket is not closed."),
-    refresh: availability(!locked.has("refresh"), locked.has("refresh") ? "Locked by provider." : null)
+    claim: availability(Boolean(input.ticket.open && !input.ticket.claimed && !locked.has("claim")), locked.has("claim") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketAlreadyClaimedOrNotOpen"),
+    unclaim: availability(Boolean(input.ticket.open && input.ticket.claimed && !locked.has("unclaim")), locked.has("unclaim") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotCurrentlyClaimed"),
+    assign: availability(Boolean(assignRouteTeamId && !locked.has("assign")), locked.has("assign") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.noOwningSupportTeam"),
+    escalate: availability(Boolean(escalationTargets.length > 0 && !locked.has("escalate")), locked.has("escalate") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.noEscalationTargets"),
+    move: availability(false, locked.has("move") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimeOptionsUnavailable"),
+    transfer: availability(false, locked.has("transfer") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimeGuildMembersUnavailable"),
+    "add-participant": availability(false, locked.has("add-participant") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimeGuildMembersUnavailable"),
+    "remove-participant": availability(false, locked.has("remove-participant") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimeParticipantsUnavailable"),
+    "set-priority": availability(false, locked.has("set-priority") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimePrioritiesUnavailable"),
+    "set-topic": availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("set-topic")), locked.has("set-topic") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotOpen"),
+    close: availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("close")), locked.has("close") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketAlreadyClosed"),
+    reopen: availability(Boolean(input.ticket.closed && !locked.has("reopen")), locked.has("reopen") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotClosed"),
+    refresh: availability(!locked.has("refresh"), locked.has("refresh") ? "tickets.detail.availability.lockedByProvider" : null)
   }
 
   return {
@@ -672,6 +681,24 @@ export function buildTicketWorkbenchDetailModel(input: {
   const detailHref = joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(input.detail?.ticket.id || input.ticketId)}`)
   const returnToQuery = `returnTo=${encodeURIComponent(backHref)}`
   const detail = input.detail
+    ? {
+        ...input.detail,
+        creatorTransferWarning: translateTicketWorkbenchMessage(t, input.detail.creatorTransferWarning, {
+          originalApplicant: input.detail.originalApplicantLabel || unknownUserLabel(input.detail.originalApplicantUserId),
+          currentCreator: input.detail.creatorLabel || unknownUserLabel(input.detail.ticket.creatorId)
+        }) || null,
+        actionAvailability: Object.fromEntries(DASHBOARD_TICKET_ACTION_IDS.map((action) => {
+          const actionAvailability = input.detail?.actionAvailability[action] || availability(false)
+          return [
+            action,
+            {
+              ...actionAvailability,
+              reason: actionAvailability.enabled ? null : translateTicketWorkbenchMessage(t, actionAvailability.reason) || null
+            }
+          ]
+        })) as DashboardTicketDetailRecord["actionAvailability"]
+      }
+    : null
   const facts = detail
     ? [
         { label: t("tickets.detail.facts.ticketId"), value: detail.ticket.id },
@@ -701,9 +728,9 @@ export function buildTicketWorkbenchDetailModel(input: {
         const copy = actionCopy(t, action)
         const baseAvailability = detail.actionAvailability[action] || availability(false)
         const disabledByWrites = action !== "refresh" && !input.writesSupported
-        const providerLockedReason = providerLocked.has(action) ? "Locked by provider." : null
+        const providerLockedReason = providerLocked.has(action) ? t("tickets.detail.availability.lockedByProvider") : null
         const effectiveAvailability = disabledByWrites
-          ? availability(false, "Dashboard runtime ticket writes are unavailable.")
+          ? availability(false, t("tickets.detail.availability.writesUnavailable"))
           : providerLockedReason
             ? availability(false, providerLockedReason)
             : baseAvailability

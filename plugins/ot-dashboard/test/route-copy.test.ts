@@ -102,6 +102,10 @@ test("ticket detail template and model keep extended operation copy locale-backe
     path.join(projectRoot, "plugins", "ot-dashboard", "server", "ticket-workbench.ts"),
     "utf8"
   )
+  const runtimeBridgeSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "server", "runtime-bridge.ts"),
+    "utf8"
+  )
 
   for (const phrase of [
     "<strong>Priority:</strong>",
@@ -109,9 +113,11 @@ test("ticket detail template and model keep extended operation copy locale-backe
     "Operator workflows",
     "Current creator:",
     "Original applicant:",
-    "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
+    "Pin, unpin, and freeform rename remain Discord-only actions in this packet.",
+    "Original applicant authority remains with",
+    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
   ]) {
-    assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
+    assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase) || runtimeBridgeSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
   }
 
   for (const localeCall of [
@@ -120,8 +126,10 @@ test("ticket detail template and model keep extended operation copy locale-backe
     't("tickets.detail.facts.topic")',
     't("tickets.detail.facts.currentCreator")',
     't("tickets.detail.facts.originalApplicant")',
-    't("tickets.detail.deferredActions.pinUnpinRename")'
+    't("tickets.detail.deferredActions.pinUnpinRename")',
+    '"tickets.detail.warnings.creatorTransfer"',
+    '"tickets.detail.availability.noSameOwnerMoveTargets"'
   ]) {
-    assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
+    assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall) || runtimeBridgeSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
   }
 })

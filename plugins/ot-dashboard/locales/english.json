@@ -1198,6 +1198,35 @@
           "body": "Reload dashboard detail state without mutating ticket persistence."
         }
       },
+      "warnings": {
+        "creatorTransfer": "Original applicant authority remains with {originalApplicant}; the current creator is {currentCreator}."
+      },
+      "availability": {
+        "lockedByProvider": "Locked by provider.",
+        "writesUnavailable": "Dashboard runtime ticket writes are unavailable.",
+        "genericUnavailable": "This action is unavailable for the current ticket state.",
+        "ticketAlreadyClaimedOrNotOpen": "Ticket is already claimed or not open.",
+        "ticketNotCurrentlyClaimed": "Ticket is not currently claimed.",
+        "ticketNotOpen": "Ticket is not open.",
+        "ticketAlreadyClosed": "Ticket is already closed.",
+        "ticketNotClosed": "Ticket is not closed.",
+        "runtimeContextMissing": "The Open Ticket runtime could not resolve the ticket, channel, guild, or actor.",
+        "permissionDenied": "Open Ticket denied this action.",
+        "busyWorkflow": "Ticket is busy in an existing Open Ticket workflow.",
+        "noOwningSupportTeam": "This ticket route has no owning support team.",
+        "noEligibleSupportMembers": "This ticket route has no eligible support-team members.",
+        "noEscalationTargets": "This ticket route has no escalation targets.",
+        "noSameTransportEscalationTargets": "This ticket route has no same-transport escalation targets.",
+        "noSameOwnerMoveTargets": "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes.",
+        "runtimeOptionsUnavailable": "Runtime ticket options are unavailable.",
+        "runtimeGuildMembersUnavailable": "Runtime guild members are unavailable.",
+        "runtimeParticipantsUnavailable": "Runtime ticket participants are unavailable.",
+        "runtimePrioritiesUnavailable": "Runtime priorities are unavailable.",
+        "noEligibleNewCreators": "No eligible new creator users are available.",
+        "noEligibleAddUsers": "No eligible users are available to add.",
+        "noParticipantsToRemove": "No user participants are available to remove.",
+        "noPriorityChoices": "No priority choices are available."
+      },
       "deferredActions": {
         "pinUnpinRename": "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
       }

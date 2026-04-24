@@ -68,7 +68,8 @@ import {
   buildTicketWorkbenchListModel,
   parseDashboardTicketActionId,
   parseTicketWorkbenchListRequest,
-  sanitizeTicketWorkbenchReturnTo
+  sanitizeTicketWorkbenchReturnTo,
+  translateTicketWorkbenchMessage
 } from "../ticket-workbench"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
@@ -1117,7 +1118,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         result = {
           ok: false,
           status: "warning" as const,
-          message: preflightAvailability.reason || "This ticket action is unavailable.",
+          message: translateTicketWorkbenchMessage(i18n.t, preflightAvailability.reason) || i18n.t("tickets.detail.availability.genericUnavailable"),
           ticketId: requestedTicketId
         }
       }

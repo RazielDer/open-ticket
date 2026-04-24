@@ -316,7 +316,7 @@ function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActi
     topic: "Initial topic",
     originalApplicantUserId: "creator-original",
     originalApplicantLabel: "Unknown user (creator-original)",
-    creatorTransferWarning: "Original applicant authority remains with Unknown user (creator-original); the current creator is Unknown user (creator-1).",
+    creatorTransferWarning: "tickets.detail.warnings.creatorTransfer",
     participantLabels: ["creator-1", "staff-1"],
     actionAvailability,
     assignableStaff: [{ userId: "staff-1", label: "Staff One" }],
@@ -422,7 +422,7 @@ async function startServer(options: {
         topic: "Initial topic",
         originalApplicantUserId: "creator-original",
         originalApplicantLabel: "Unknown user (creator-original)",
-        creatorTransferWarning: "Original applicant authority remains with Unknown user (creator-original); the current creator is Unknown user (creator-1).",
+        creatorTransferWarning: "tickets.detail.warnings.creatorTransfer",
         participantLabels: ["creator-1", "staff-1"],
         actionAvailability: {
           claim: { enabled: true, reason: null },
@@ -793,7 +793,7 @@ test("runtime ticket move stays disabled when only config fallback options are a
   assert.equal(detail?.actionAvailability.move.enabled, false)
   assert.equal(
     detail?.actionAvailability.move.reason,
-    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
+    "tickets.detail.availability.noSameOwnerMoveTargets"
   )
 })
 
