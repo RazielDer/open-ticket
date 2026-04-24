@@ -1095,7 +1095,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       actorUserId,
       reason: typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined,
       assigneeUserId: typeof req.body?.assigneeUserId === "string" ? req.body.assigneeUserId : undefined,
-      targetOptionId: typeof req.body?.targetOptionId === "string" ? req.body.targetOptionId : undefined
+      targetOptionId: typeof req.body?.targetOptionId === "string" ? req.body.targetOptionId : undefined,
+      newCreatorUserId: typeof req.body?.newCreatorUserId === "string" ? req.body.newCreatorUserId : undefined,
+      participantUserId: typeof req.body?.participantUserId === "string" ? req.body.participantUserId : undefined,
+      priorityId: typeof req.body?.priorityId === "string" ? req.body.priorityId : undefined,
+      topic: typeof req.body?.topic === "string" ? req.body.topic : undefined
     }
     let result
     if (action !== "refresh" && supportsTicketWorkbenchReads(runtimeBridge) && typeof runtimeBridge.getTicketDetail === "function") {

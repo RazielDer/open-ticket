@@ -49,6 +49,8 @@
           <div><strong><%= t("tickets.detail.facts.panel") %>:</strong> <%= ticketDetail.detail.panelLabel || t("common.unavailable") %></div>
           <div><strong><%= t("tickets.detail.facts.team") %>:</strong> <%= ticketDetail.detail.teamLabel || t("common.unavailable") %></div>
           <div><strong><%= t("tickets.detail.facts.assignee") %>:</strong> <%= ticketDetail.detail.assigneeLabel || t("common.unavailable") %></div>
+          <div><strong>Priority:</strong> <%= ticketDetail.detail.priorityLabel || t("common.unavailable") %></div>
+          <div><strong>Topic:</strong> <%= ticketDetail.detail.topic || t("common.unavailable") %></div>
         </div>
       </section>
 
@@ -81,6 +83,60 @@
           </div>
         <% } %>
       </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3>Operator workflows</h3>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong>Current creator:</strong> <%= ticketDetail.detail.creatorLabel || t("common.unavailable") %></div>
+          <div><strong>Original applicant:</strong> <%= ticketDetail.detail.originalApplicantLabel || t("common.unavailable") %></div>
+        </div>
+        <% if (ticketDetail.detail.creatorTransferWarning) { %>
+          <div class="inline-alert warning"><%= ticketDetail.detail.creatorTransferWarning %></div>
+        <% } %>
+        <div class="stack-form">
+          <% ticketDetail.advancedActionForms.forEach((form) => { %>
+            <form method="post" action="<%= form.actionHref %>" class="stack-form">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <input type="hidden" name="returnTo" value="<%= ticketDetail.backHref %>">
+              <h4><%= form.title %></h4>
+              <p class="field-help"><%= form.body %></p>
+              <% if (form.choiceName) { %>
+                <label>
+                  <span class="field-label"><%= form.choiceLabel || t("tickets.detail.actions.targetLabel") %></span>
+                  <select class="select-input" name="<%= form.choiceName %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                    <% form.choices.forEach((choice) => { %>
+                      <option value="<%= choice.value %>"><%= choice.label %></option>
+                    <% }) %>
+                  </select>
+                </label>
+              <% } %>
+              <% if (form.textName) { %>
+                <label>
+                  <span class="field-label"><%= form.textLabel %></span>
+                  <input class="text-input" type="text" name="<%= form.textName %>" value="<%= form.textValue %>" placeholder="<%= form.textPlaceholder || '' %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <% if (form.needsReason) { %>
+                <label>
+                  <span class="field-label"><%= t("tickets.detail.actions.reasonLabel") %></span>
+                  <input class="text-input" type="text" name="reason" placeholder="<%= t('tickets.detail.actions.reasonPlaceholder') %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <button class="btn <%= form.buttonVariant %>" type="submit" <%= form.availability.enabled ? '' : 'disabled' %>><%= form.title %></button>
+              <% if (!form.availability.enabled && form.availability.reason) { %>
+                <p class="field-help"><%= form.availability.reason %></p>
+              <% } %>
+            </form>
+          <% }) %>
+        </div>
+        <ul class="entry-stack">
+          <% ticketDetail.deferredActions.forEach((label) => { %>
+            <li><%= label %></li>
+          <% }) %>
+        </ul>
+      </section>
     </div>
 
     <aside class="transcript-rail">
@@ -108,12 +164,18 @@
               <p class="field-help"><%= form.body %></p>
               <% if (form.choiceName) { %>
                 <label>
-                  <span class="field-label"><%= form.action === 'assign' ? t("tickets.detail.actions.assigneeLabel") : t("tickets.detail.actions.targetLabel") %></span>
+                  <span class="field-label"><%= form.choiceLabel || (form.action === 'assign' ? t("tickets.detail.actions.assigneeLabel") : t("tickets.detail.actions.targetLabel")) %></span>
                   <select class="select-input" name="<%= form.choiceName %>" <%= form.availability.enabled ? '' : 'disabled' %>>
                     <% form.choices.forEach((choice) => { %>
                       <option value="<%= choice.value %>"><%= choice.label %></option>
                     <% }) %>
                   </select>
+                </label>
+              <% } %>
+              <% if (form.textName) { %>
+                <label>
+                  <span class="field-label"><%= form.textLabel %></span>
+                  <input class="text-input" type="text" name="<%= form.textName %>" value="<%= form.textValue %>" placeholder="<%= form.textPlaceholder || '' %>" <%= form.availability.enabled ? '' : 'disabled' %>>
                 </label>
               <% } %>
               <% if (form.needsReason) { %>

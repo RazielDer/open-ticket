@@ -90,6 +90,23 @@ export interface TicketWorkbenchListModel {
   }>
 }
 
+export interface TicketWorkbenchActionForm {
+  action: DashboardTicketActionId
+  title: string
+  body: string
+  actionHref: string
+  availability: DashboardTicketActionAvailability
+  needsReason: boolean
+  choices: Array<{ value: string; label: string }>
+  choiceName: "assigneeUserId" | "targetOptionId" | "newCreatorUserId" | "participantUserId" | "priorityId" | null
+  choiceLabel: string | null
+  textName: "topic" | null
+  textValue: string
+  textLabel: string | null
+  textPlaceholder: string | null
+  buttonVariant: "primary" | "secondary" | "danger"
+}
+
 export interface TicketWorkbenchDetailModel {
   available: boolean
   warningMessage: string
@@ -99,17 +116,9 @@ export interface TicketWorkbenchDetailModel {
   detail: DashboardTicketDetailRecord | null
   facts: Array<{ label: string; value: string }>
   summaryCards: Array<{ label: string; value: string; detail: string; tone?: DashboardTone }>
-  actionForms: Array<{
-    action: DashboardTicketActionId
-    title: string
-    body: string
-    actionHref: string
-    availability: DashboardTicketActionAvailability
-    needsReason: boolean
-    choices: Array<{ value: string; label: string }>
-    choiceName: "assigneeUserId" | "targetOptionId" | null
-    buttonVariant: "primary" | "secondary" | "danger"
-  }>
+  actionForms: TicketWorkbenchActionForm[]
+  advancedActionForms: TicketWorkbenchActionForm[]
+  deferredActions: string[]
 }
 
 function normalizeString(value: unknown) {
@@ -524,6 +533,12 @@ export function buildFallbackTicketDetail(input: {
     unclaim: availability(Boolean(input.ticket.open && input.ticket.claimed && !locked.has("unclaim")), locked.has("unclaim") ? "Locked by provider." : "Ticket is not currently claimed."),
     assign: availability(Boolean(assignRouteTeamId && !locked.has("assign")), locked.has("assign") ? "Locked by provider." : "This ticket route has no owning support team."),
     escalate: availability(Boolean(escalationTargets.length > 0 && !locked.has("escalate")), locked.has("escalate") ? "Locked by provider." : "This ticket route has no escalation targets."),
+    move: availability(false, locked.has("move") ? "Locked by provider." : "Runtime ticket options are unavailable."),
+    transfer: availability(false, locked.has("transfer") ? "Locked by provider." : "Runtime guild members are unavailable."),
+    "add-participant": availability(false, locked.has("add-participant") ? "Locked by provider." : "Runtime guild members are unavailable."),
+    "remove-participant": availability(false, locked.has("remove-participant") ? "Locked by provider." : "Runtime ticket participants are unavailable."),
+    "set-priority": availability(false, locked.has("set-priority") ? "Locked by provider." : "Runtime priorities are unavailable."),
+    "set-topic": availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("set-topic")), locked.has("set-topic") ? "Locked by provider." : "Ticket is not open."),
     close: availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("close")), locked.has("close") ? "Locked by provider." : "Ticket is already closed."),
     reopen: availability(Boolean(input.ticket.closed && !locked.has("reopen")), locked.has("reopen") ? "Locked by provider." : "Ticket is not closed."),
     refresh: availability(!locked.has("refresh"), locked.has("refresh") ? "Locked by provider." : null)
@@ -540,10 +555,20 @@ export function buildFallbackTicketDetail(input: {
     creatorLabel: unknownUserLabel(input.ticket.creatorId),
     teamLabel: resolveTeamLabel(lookups.teamById, input.ticket.assignedTeamId || currentRouteTeamId || null),
     assigneeLabel: unknownUserLabel(input.ticket.assignedStaffUserId),
+    priorityId: null,
+    priorityLabel: null,
+    topic: null,
+    originalApplicantUserId: input.ticket.creatorId,
+    originalApplicantLabel: unknownUserLabel(input.ticket.creatorId),
+    creatorTransferWarning: null,
     participantLabels: [`${input.ticket.participantCount} participant(s)`],
     actionAvailability: actions,
     assignableStaff: [],
     escalationTargets,
+    moveTargets: [],
+    transferCandidates: [],
+    participantChoices: [],
+    priorityChoices: [],
     providerLock
   }
 }
@@ -558,6 +583,18 @@ function actionCopy(action: DashboardTicketActionId) {
       return { title: "Assign staff", body: "Assign eligible staff from the owning support team.", variant: "primary" as const, needsReason: true }
     case "escalate":
       return { title: "Escalate route", body: "Move this ticket to a configured same-transport escalation target.", variant: "secondary" as const, needsReason: true }
+    case "move":
+      return { title: "Move ticket", body: "Reroute within the same transport and owning support team.", variant: "secondary" as const, needsReason: true }
+    case "transfer":
+      return { title: "Transfer creator", body: "Set a different current ticket creator through the Open Ticket transfer action.", variant: "primary" as const, needsReason: true }
+    case "add-participant":
+      return { title: "Add participant", body: "Add a user participant to this ticket.", variant: "secondary" as const, needsReason: true }
+    case "remove-participant":
+      return { title: "Remove participant", body: "Remove a user participant without removing the current creator.", variant: "danger" as const, needsReason: true }
+    case "set-priority":
+      return { title: "Set priority", body: "Update the stored ticket priority and refresh ticket presentation.", variant: "secondary" as const, needsReason: true }
+    case "set-topic":
+      return { title: "Set topic", body: "Update the stored ticket topic using the transport-aware Open Ticket action.", variant: "secondary" as const, needsReason: false }
     case "close":
       return { title: "Close ticket", body: "Close the ticket through the Open Ticket runtime action path.", variant: "danger" as const, needsReason: true }
     case "reopen":
@@ -565,6 +602,55 @@ function actionCopy(action: DashboardTicketActionId) {
     default:
       return { title: "Refresh ticket", body: "Reload dashboard detail state without mutating ticket persistence.", variant: "secondary" as const, needsReason: false }
   }
+}
+
+const ADVANCED_TICKET_ACTIONS = new Set<DashboardTicketActionId>([
+  "move",
+  "transfer",
+  "add-participant",
+  "remove-participant",
+  "set-priority",
+  "set-topic"
+])
+
+function actionChoices(detail: DashboardTicketDetailRecord, action: DashboardTicketActionId) {
+  switch (action) {
+    case "assign":
+      return detail.assignableStaff.map((choice) => ({ value: choice.userId, label: choice.label }))
+    case "escalate":
+      return detail.escalationTargets.map((choice) => ({ value: choice.optionId, label: choice.optionLabel }))
+    case "move":
+      return detail.moveTargets.map((choice) => ({ value: choice.optionId, label: `${choice.optionLabel} (${choice.teamLabel || "No team"})` }))
+    case "transfer":
+      return detail.transferCandidates.map((choice) => ({ value: choice.userId, label: choice.label }))
+    case "add-participant":
+      return detail.participantChoices.filter((choice) => !choice.present).map((choice) => ({ value: choice.userId, label: choice.label }))
+    case "remove-participant":
+      return detail.participantChoices.filter((choice) => choice.present && choice.userId !== detail.ticket.creatorId).map((choice) => ({ value: choice.userId, label: choice.label }))
+    case "set-priority":
+      return detail.priorityChoices.map((choice) => ({ value: choice.priorityId, label: choice.label }))
+    default:
+      return []
+  }
+}
+
+function actionChoiceName(action: DashboardTicketActionId): TicketWorkbenchActionForm["choiceName"] {
+  if (action === "assign") return "assigneeUserId"
+  if (action === "escalate" || action === "move") return "targetOptionId"
+  if (action === "transfer") return "newCreatorUserId"
+  if (action === "add-participant" || action === "remove-participant") return "participantUserId"
+  if (action === "set-priority") return "priorityId"
+  return null
+}
+
+function actionChoiceLabel(action: DashboardTicketActionId) {
+  if (action === "assign") return "Assignee"
+  if (action === "escalate") return "Escalation target"
+  if (action === "move") return "Move target"
+  if (action === "transfer") return "New creator"
+  if (action === "add-participant" || action === "remove-participant") return "Participant"
+  if (action === "set-priority") return "Priority"
+  return null
 }
 
 export function buildTicketWorkbenchDetailModel(input: {
@@ -586,9 +672,12 @@ export function buildTicketWorkbenchDetailModel(input: {
         { label: "Option", value: detail.optionLabel || "Missing option" },
         { label: "Panel", value: detail.panelLabel || "Missing panel" },
         { label: "Creator", value: detail.creatorLabel || unknownUserLabel(detail.ticket.creatorId) },
+        { label: "Original applicant", value: detail.originalApplicantLabel || unknownUserLabel(detail.originalApplicantUserId) },
         { label: "Team", value: detail.teamLabel || resolveTeamLabel(new Map(), detail.ticket.assignedTeamId) },
         { label: "Assignee", value: detail.assigneeLabel || unknownUserLabel(detail.ticket.assignedStaffUserId) },
         { label: "Transport", value: transportLabel(detail.ticket.transportMode) },
+        { label: "Priority", value: detail.priorityLabel || "Unavailable" },
+        { label: "Topic", value: detail.topic || "No topic recorded." },
         { label: "Participants", value: String(detail.ticket.participantCount) }
       ]
     : []
@@ -601,6 +690,35 @@ export function buildTicketWorkbenchDetailModel(input: {
       ]
     : []
   const providerLocked = new Set(detail?.providerLock?.lockedActions || [])
+  const actionForms = detail
+    ? DASHBOARD_TICKET_ACTION_IDS.map((action) => {
+        const copy = actionCopy(action)
+        const baseAvailability = detail.actionAvailability[action] || availability(false)
+        const disabledByWrites = action !== "refresh" && !input.writesSupported
+        const providerLockedReason = providerLocked.has(action) ? "Locked by provider." : null
+        const effectiveAvailability = disabledByWrites
+          ? availability(false, "Dashboard runtime ticket writes are unavailable.")
+          : providerLockedReason
+            ? availability(false, providerLockedReason)
+            : baseAvailability
+        return {
+          action,
+          title: copy.title,
+          body: copy.body,
+          actionHref: `${detailHref}/actions/${action}?${returnToQuery}`,
+          availability: effectiveAvailability,
+          needsReason: copy.needsReason,
+          choices: actionChoices(detail, action),
+          choiceName: actionChoiceName(action),
+          choiceLabel: actionChoiceLabel(action),
+          textName: action === "set-topic" ? "topic" as const : null,
+          textValue: action === "set-topic" ? detail.topic || "" : "",
+          textLabel: action === "set-topic" ? "Topic" : null,
+          textPlaceholder: action === "set-topic" ? "Ticket topic" : null,
+          buttonVariant: copy.variant
+        }
+      })
+    : []
 
   return {
     available: input.readsSupported,
@@ -611,33 +729,10 @@ export function buildTicketWorkbenchDetailModel(input: {
     detail,
     facts,
     summaryCards,
-    actionForms: detail
-      ? DASHBOARD_TICKET_ACTION_IDS.map((action) => {
-          const copy = actionCopy(action)
-          const baseAvailability = detail.actionAvailability[action] || availability(false)
-          const disabledByWrites = action !== "refresh" && !input.writesSupported
-          const providerLockedReason = providerLocked.has(action) ? "Locked by provider." : null
-          const effectiveAvailability = disabledByWrites
-            ? availability(false, "Dashboard runtime ticket writes are unavailable.")
-            : providerLockedReason
-              ? availability(false, providerLockedReason)
-              : baseAvailability
-          return {
-            action,
-            title: copy.title,
-            body: copy.body,
-            actionHref: `${detailHref}/actions/${action}?${returnToQuery}`,
-            availability: effectiveAvailability,
-            needsReason: copy.needsReason,
-            choices: action === "assign"
-              ? detail.assignableStaff.map((choice) => ({ value: choice.userId, label: choice.label }))
-              : action === "escalate"
-                ? detail.escalationTargets.map((choice) => ({ value: choice.optionId, label: choice.optionLabel }))
-                : [],
-            choiceName: action === "assign" ? "assigneeUserId" : action === "escalate" ? "targetOptionId" : null,
-            buttonVariant: copy.variant
-          }
-        })
-      : []
+    actionForms: actionForms.filter((form) => !ADVANCED_TICKET_ACTIONS.has(form.action)),
+    advancedActionForms: actionForms.filter((form) => ADVANCED_TICKET_ACTIONS.has(form.action)),
+    deferredActions: [
+      "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
+    ]
   }
 }

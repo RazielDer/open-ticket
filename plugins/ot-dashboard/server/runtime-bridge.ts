@@ -19,7 +19,11 @@ import {
   type DashboardTicketAssignableStaffChoice,
   type DashboardTicketDetailRecord,
   type DashboardTicketEscalationTargetChoice,
+  type DashboardTicketMoveTargetChoice,
+  type DashboardTicketParticipantChoice,
   type DashboardTicketProviderLock,
+  type DashboardTicketPriorityChoice,
+  type DashboardTicketTransferCandidateChoice,
   type DashboardTicketTransportMode
 } from "./ticket-workbench-types"
 
@@ -260,6 +264,143 @@ function buildEscalationTargetChoices(runtime: any, option: any, ticketTransport
   return targets
 }
 
+function buildMoveTargetChoices(runtime: any, currentOptionId: string | null, currentTeamId: string | null, ticketTransport: DashboardTicketTransportMode): DashboardTicketMoveTargetChoice[] {
+  const targets: DashboardTicketMoveTargetChoice[] = []
+  const options = runtime?.options?.getAll?.() || runtimeConfigArray(runtime, "options")
+  for (const option of options) {
+    const optionId = runtimeEntityId(option) || normalizeString(option?.id)
+    if (!optionId || optionId === currentOptionId) continue
+    if (normalizeString(option?.type) && normalizeString(option?.type) !== "ticket") continue
+    const targetTransport = runtimeOptionTransportMode(option)
+    if (targetTransport !== ticketTransport) continue
+    const targetTeamId = runtimeOptionSupportTeamId(option) || null
+    if ((currentTeamId || null) !== (targetTeamId || null)) continue
+    const panel = runtimePanelForOption(runtime, optionId)
+    const panelId = normalizeString(panel?.id) || null
+    const team = runtimeSupportTeamById(runtime, targetTeamId)
+    targets.push({
+      optionId,
+      optionLabel: runtimeEntityLabel(option, optionId),
+      panelId,
+      panelLabel: panelId ? runtimeEntityLabel(panel, panelId) : "Missing panel",
+      transportMode: targetTransport,
+      teamId: targetTeamId,
+      teamLabel: targetTeamId ? team ? runtimeEntityLabel(team, targetTeamId) : `Missing team (${targetTeamId})` : "No team"
+    })
+  }
+  return targets.sort((left, right) => left.optionLabel.localeCompare(right.optionLabel) || left.optionId.localeCompare(right.optionId))
+}
+
+function runtimeTicketParticipants(runtimeTicket: any): Array<{ type: string; id: string }> {
+  const value = runtimeDataValue(runtimeTicket, "opendiscord:participants")
+  return Array.isArray(value)
+    ? value.map((participant) => ({ type: normalizeString(participant?.type), id: normalizeString(participant?.id) })).filter((participant) => participant.type && participant.id)
+    : []
+}
+
+function resolveOriginalApplicantUserId(runtimeTicket: any, currentCreatorId: string | null) {
+  const previousCreators = normalizeStringArray(runtimeDataValue(runtimeTicket, "opendiscord:previous-creators"))
+  return previousCreators[0] || currentCreatorId || null
+}
+
+async function buildTransferCandidateChoices(runtime: any, guild: any, currentCreatorId: string | null): Promise<DashboardTicketTransferCandidateChoice[]> {
+  if (!guild) return []
+  const choices: DashboardTicketTransferCandidateChoice[] = []
+  const seen = new Set<string>()
+  for (const member of await collectRuntimeGuildMembers(guild)) {
+    const userId = runtimeMemberUserId(member)
+    if (!userId || userId === currentCreatorId || seen.has(userId) || Boolean(member?.user?.bot || member?.bot)) continue
+    seen.add(userId)
+    choices.push({ userId, label: runtimeMemberLabel(member, userId) })
+  }
+  return choices.sort((left, right) => left.label.localeCompare(right.label) || left.userId.localeCompare(right.userId))
+}
+
+async function buildParticipantChoices(runtime: any, guild: any, runtimeTicket: any, currentCreatorId: string | null): Promise<DashboardTicketParticipantChoice[]> {
+  const present = new Set<string>()
+  if (currentCreatorId) present.add(currentCreatorId)
+  for (const participant of runtimeTicketParticipants(runtimeTicket)) {
+    if (participant.type === "user") present.add(participant.id)
+  }
+
+  const choices = new Map<string, DashboardTicketParticipantChoice>()
+  const addChoice = (userId: string, label: string, isPresent: boolean) => {
+    if (!userId) return
+    const existing = choices.get(userId)
+    choices.set(userId, {
+      userId,
+      label: existing?.label && !existing.label.startsWith("Unknown user") ? existing.label : label,
+      present: Boolean(existing?.present || isPresent)
+    })
+  }
+
+  for (const userId of present) {
+    addChoice(userId, unknownUserLabel(userId), true)
+  }
+
+  if (guild) {
+    for (const member of await collectRuntimeGuildMembers(guild)) {
+      const userId = runtimeMemberUserId(member)
+      if (!userId || Boolean(member?.user?.bot || member?.bot)) continue
+      addChoice(userId, runtimeMemberLabel(member, userId), present.has(userId))
+    }
+  }
+
+  return [...choices.values()].sort((left, right) => {
+    if (left.present !== right.present) return left.present ? -1 : 1
+    return left.label.localeCompare(right.label) || left.userId.localeCompare(right.userId)
+  })
+}
+
+function runtimePriorityId(priority: any) {
+  return normalizeString(priority?.rawName || priority?.id?.value || priority?.id || String(priority?.priority ?? ""))
+}
+
+function runtimePriorityLabel(priority: any, fallback: string) {
+  if (typeof priority?.renderDisplayName === "function") return normalizeString(priority.renderDisplayName()) || fallback
+  return normalizeString(priority?.displayName || priority?.rawName || priority?.name) || fallback
+}
+
+function buildPriorityChoices(runtime: any, currentPriorityLevel: number | null): DashboardTicketPriorityChoice[] {
+  const priorities = runtime?.priorities?.getAll?.() || []
+  const choices: DashboardTicketPriorityChoice[] = []
+  const seen = new Set<string>()
+  for (const priority of priorities) {
+    const priorityId = runtimePriorityId(priority)
+    if (!priorityId || seen.has(priorityId)) continue
+    seen.add(priorityId)
+    choices.push({ priorityId, label: runtimePriorityLabel(priority, priorityId) })
+  }
+  if (currentPriorityLevel !== null) {
+    const currentPriority = runtime?.priorities?.getFromPriorityLevel?.(currentPriorityLevel)
+    const currentPriorityId = runtimePriorityId(currentPriority) || String(currentPriorityLevel)
+    if (currentPriorityId && !seen.has(currentPriorityId)) {
+      choices.unshift({ priorityId: currentPriorityId, label: currentPriority ? runtimePriorityLabel(currentPriority, currentPriorityId) : `Priority ${currentPriorityLevel}` })
+    }
+  }
+  return choices.sort((left, right) => left.label.localeCompare(right.label) || left.priorityId.localeCompare(right.priorityId))
+}
+
+function resolvePriorityChoice(runtime: any, priorityId: string) {
+  return (runtime?.priorities?.getAll?.() || []).find((priority: any) => (
+    runtimePriorityId(priority) === priorityId
+    || normalizeString(priority?.rawName) === priorityId
+    || normalizeString(priority?.id?.value) === priorityId
+    || String(priority?.priority ?? "") === priorityId
+  )) || null
+}
+
+async function resolveRuntimeUser(context: Awaited<ReturnType<typeof resolveRuntimeActionContext>>, userId: string) {
+  const discordUser = typeof context.runtime?.client?.client?.users?.fetch === "function"
+    ? await context.runtime.client.client.users.fetch(userId).catch(() => null)
+    : null
+  if (discordUser) return discordUser
+  const fetchedUser = typeof context.runtime?.client?.fetchUser === "function"
+    ? await context.runtime.client.fetchUser(userId).catch(() => null)
+    : null
+  return fetchedUser || { id: userId, username: userId, displayName: userId }
+}
+
 function disabledAvailability(reason: string): DashboardTicketActionAvailability {
   return { enabled: false, reason }
 }
@@ -273,6 +414,7 @@ function invalidTicketStateReason(ticket: DashboardTicketRecord, action: Dashboa
   if (action === "unclaim" && (!ticket.open || !ticket.claimed)) return "Ticket is not currently claimed."
   if (action === "assign" && (!ticket.open || ticket.closed)) return "Ticket is not open."
   if (action === "escalate" && (!ticket.open || ticket.closed)) return "Ticket is not open."
+  if (["move", "transfer", "add-participant", "remove-participant", "set-priority", "set-topic"].includes(action) && (!ticket.open || ticket.closed)) return "Ticket is not open."
   if (action === "close" && (!ticket.open || ticket.closed)) return "Ticket is already closed."
   if (action === "reopen" && !ticket.closed) return "Ticket is not closed."
   return null
@@ -290,6 +432,11 @@ function routeConstraintReason(input: {
   owningTeamId: string | null
   assignableStaff: DashboardTicketAssignableStaffChoice[]
   escalationTargets: DashboardTicketEscalationTargetChoice[]
+  moveTargets: DashboardTicketMoveTargetChoice[]
+  transferCandidates: DashboardTicketTransferCandidateChoice[]
+  participantChoices: DashboardTicketParticipantChoice[]
+  priorityChoices: DashboardTicketPriorityChoice[]
+  currentCreatorId: string | null
 }) {
   if (input.action === "assign") {
     if (!input.owningTeamId) return "This ticket route has no owning support team."
@@ -297,6 +444,21 @@ function routeConstraintReason(input: {
   }
   if (input.action === "escalate" && input.escalationTargets.length < 1) {
     return "This ticket route has no same-transport escalation targets."
+  }
+  if (input.action === "move" && input.moveTargets.length < 1) {
+    return "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
+  }
+  if (input.action === "transfer" && input.transferCandidates.length < 1) {
+    return "No eligible new creator users are available."
+  }
+  if (input.action === "add-participant" && !input.participantChoices.some((choice) => !choice.present)) {
+    return "No eligible users are available to add."
+  }
+  if (input.action === "remove-participant" && !input.participantChoices.some((choice) => choice.present && choice.userId !== input.currentCreatorId)) {
+    return "No user participants are available to remove."
+  }
+  if (input.action === "set-priority" && input.priorityChoices.length < 1) {
+    return "No priority choices are available."
   }
   return null
 }
@@ -310,6 +472,11 @@ async function buildRuntimeActionAvailability(input: {
   owningTeamId: string | null
   assignableStaff: DashboardTicketAssignableStaffChoice[]
   escalationTargets: DashboardTicketEscalationTargetChoice[]
+  moveTargets: DashboardTicketMoveTargetChoice[]
+  transferCandidates: DashboardTicketTransferCandidateChoice[]
+  participantChoices: DashboardTicketParticipantChoice[]
+  priorityChoices: DashboardTicketPriorityChoice[]
+  currentCreatorId: string | null
 }) {
   const locked = new Set(input.providerLock?.lockedActions || [])
   const availability: Record<DashboardTicketActionId, DashboardTicketActionAvailability> = {} as Record<DashboardTicketActionId, DashboardTicketActionAvailability>
@@ -350,7 +517,12 @@ async function buildRuntimeActionAvailability(input: {
       action,
       owningTeamId: input.owningTeamId,
       assignableStaff: input.assignableStaff,
-      escalationTargets: input.escalationTargets
+      escalationTargets: input.escalationTargets,
+      moveTargets: input.moveTargets,
+      transferCandidates: input.transferCandidates,
+      participantChoices: input.participantChoices,
+      priorityChoices: input.priorityChoices,
+      currentCreatorId: input.currentCreatorId
     })
     if (routeReason) {
       availability[action] = disabledAvailability(routeReason)
@@ -399,6 +571,21 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const providerLock = await resolveProviderLock(runtimeBridge, ticket.id)
   const assignableStaff = await buildAssignableStaffChoices(runtimeBridge, runtime, guild, owningTeamId)
   const escalationTargets = buildEscalationTargetChoices(runtime, option, ticketTransport)
+  const moveTargets = buildMoveTargetChoices(runtime, ticket.optionId, owningTeamId, ticketTransport)
+  const transferCandidates = await buildTransferCandidateChoices(runtime, guild, ticket.creatorId)
+  const participantChoices = await buildParticipantChoices(runtime, guild, runtimeTicket, ticket.creatorId)
+  const priorityLevelValue = runtimeDataValue(runtimeTicket, "opendiscord:priority")
+  const priorityLevel = typeof priorityLevelValue === "number" ? priorityLevelValue : Number.isFinite(Number(priorityLevelValue)) ? Number(priorityLevelValue) : null
+  const currentPriority = priorityLevel !== null ? runtime?.priorities?.getFromPriorityLevel?.(priorityLevel) : null
+  const priorityChoices = buildPriorityChoices(runtime, priorityLevel)
+  const topic = normalizeString(runtimeDataValue(runtimeTicket, "opendiscord:topic")) || null
+  const originalApplicantUserId = resolveOriginalApplicantUserId(runtimeTicket, ticket.creatorId)
+  const originalApplicantLabel = originalApplicantUserId === ticket.creatorId
+    ? unknownUserLabel(originalApplicantUserId)
+    : unknownUserLabel(originalApplicantUserId)
+  const creatorTransferWarning = originalApplicantUserId && ticket.creatorId && originalApplicantUserId !== ticket.creatorId
+    ? `Original applicant authority remains with ${originalApplicantLabel}; the current creator is ${unknownUserLabel(ticket.creatorId)}.`
+    : null
   const actionAvailability = await buildRuntimeActionAvailability({
     runtimeBridge,
     context,
@@ -407,7 +594,12 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     providerLock,
     owningTeamId,
     assignableStaff,
-    escalationTargets
+    escalationTargets,
+    moveTargets,
+    transferCandidates,
+    participantChoices,
+    priorityChoices,
+    currentCreatorId: ticket.creatorId
   })
 
   return {
@@ -422,10 +614,20 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     creatorLabel: unknownUserLabel(ticket.creatorId),
     teamLabel: owningTeamId ? team ? runtimeEntityLabel(team, owningTeamId) : `Missing team (${owningTeamId})` : null,
     assigneeLabel: unknownUserLabel(ticket.assignedStaffUserId),
-    participantLabels: [`${ticket.participantCount} participant(s)`],
+    priorityId: currentPriority ? runtimePriorityId(currentPriority) : priorityLevel !== null ? String(priorityLevel) : null,
+    priorityLabel: currentPriority ? runtimePriorityLabel(currentPriority, runtimePriorityId(currentPriority)) : priorityLevel !== null ? `Priority ${priorityLevel}` : null,
+    topic,
+    originalApplicantUserId,
+    originalApplicantLabel,
+    creatorTransferWarning,
+    participantLabels: participantChoices.filter((choice) => choice.present).map((choice) => choice.label),
     actionAvailability,
     assignableStaff,
     escalationTargets,
+    moveTargets,
+    transferCandidates,
+    participantChoices,
+    priorityChoices,
     providerLock
   }
 }
@@ -472,7 +674,12 @@ async function resolveRuntimeActionContext(runtimeBridge: DashboardRuntimeBridge
 }
 
 function actionPermissionKey(action: DashboardTicketActionId) {
-  return action === "assign" ? "claim" : action
+  if (action === "assign") return "claim"
+  if (action === "add-participant") return "add"
+  if (action === "remove-participant") return "remove"
+  if (action === "set-priority") return "priority"
+  if (action === "set-topic") return "topic"
+  return action
 }
 
 async function checkRuntimeTicketActionPermission(context: Awaited<ReturnType<typeof resolveRuntimeActionContext>>, action: DashboardTicketActionId) {
@@ -572,6 +779,109 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
       })
       const movedTicketId = normalizeString(typeof context.ticket.id === "string" ? context.ticket.id : context.ticket.id?.value) || ticketId
       return ticketActionSuccess("Ticket escalated.", movedTicketId)
+    }
+
+    if (action === "move") {
+      const targetOptionId = normalizeString(input.targetOptionId)
+      if (!detail.moveTargets.some((choice) => choice.optionId === targetOptionId)) {
+        return ticketActionWarning("Choose a same-owner same-transport move target before moving this ticket.", ticketId)
+      }
+      const targetOption = targetOptionId ? runtimeOptionById(context.runtime, targetOptionId) : null
+      if (!targetOption) {
+        return ticketActionWarning("Choose a valid move target before moving this ticket.", ticketId)
+      }
+      await context.runtime.actions.get("opendiscord:move-ticket").run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        data: targetOption
+      })
+      return ticketActionSuccess("Ticket moved.", ticketId)
+    }
+
+    if (action === "transfer") {
+      const newCreatorUserId = normalizeString(input.newCreatorUserId)
+      if (!detail.transferCandidates.some((choice) => choice.userId === newCreatorUserId)) {
+        return ticketActionWarning("Choose a different eligible creator before transferring this ticket.", ticketId)
+      }
+      const newCreator = await resolveRuntimeUser(context, newCreatorUserId)
+      await context.runtime.actions.get("opendiscord:transfer-ticket").run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        newCreator
+      })
+      return ticketActionSuccess("Ticket creator transferred.", ticketId)
+    }
+
+    if (action === "add-participant" || action === "remove-participant") {
+      const participantUserId = normalizeString(input.participantUserId)
+      const selected = detail.participantChoices.find((choice) => choice.userId === participantUserId)
+      if (!selected) {
+        return ticketActionWarning("Choose a valid user participant before updating this ticket.", ticketId)
+      }
+      if (action === "add-participant" && selected.present) {
+        return ticketActionWarning("Selected user is already a participant.", ticketId)
+      }
+      if (action === "remove-participant") {
+        if (!selected.present) return ticketActionWarning("Selected user is not a participant.", ticketId)
+        if (selected.userId === detail.ticket.creatorId) return ticketActionWarning("The current ticket creator cannot be removed as a participant.", ticketId)
+      }
+      const targetUser = await resolveRuntimeUser(context, participantUserId)
+      await context.runtime.actions.get(action === "add-participant" ? "opendiscord:add-ticket-user" : "opendiscord:remove-ticket-user").run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        data: targetUser
+      })
+      return ticketActionSuccess(action === "add-participant" ? "Ticket participant added." : "Ticket participant removed.", ticketId)
+    }
+
+    if (action === "set-priority") {
+      const priorityId = normalizeString(input.priorityId)
+      if (!detail.priorityChoices.some((choice) => choice.priorityId === priorityId)) {
+        return ticketActionWarning("Choose a valid priority before updating this ticket.", ticketId)
+      }
+      const newPriority = resolvePriorityChoice(context.runtime, priorityId)
+      if (!newPriority) {
+        return ticketActionWarning("Choose a configured Open Ticket priority before updating this ticket.", ticketId)
+      }
+      await context.runtime.actions.get("opendiscord:update-ticket-priority").run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        newPriority
+      })
+      return ticketActionSuccess("Ticket priority updated.", ticketId)
+    }
+
+    if (action === "set-topic") {
+      const topic = normalizeString(input.topic)
+      if (!topic) {
+        return ticketActionWarning("Enter a ticket topic before updating this ticket.", ticketId)
+      }
+      await context.runtime.actions.get("opendiscord:update-ticket-topic").run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        newTopic: topic
+      })
+      return ticketActionSuccess("Ticket topic updated.", ticketId)
     }
 
     const runtimeActionId = `opendiscord:${action}-ticket`

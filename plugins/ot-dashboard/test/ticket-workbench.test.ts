@@ -54,10 +54,17 @@ function createProjectRoot() {
       type: "ticket",
       channel: { transportMode: "channel_text" },
       routing: { supportTeamId: "lead", escalationTargetOptionIds: [] }
+    },
+    {
+      id: "triage-followup",
+      name: "Triage follow-up",
+      type: "ticket",
+      channel: { transportMode: "channel_text" },
+      routing: { supportTeamId: "triage", escalationTargetOptionIds: [] }
     }
   ])
   writeJson(path.join(root, "config", "panels.json"), [
-    { id: "front-desk", name: "Front desk", options: ["intake"] }
+    { id: "front-desk", name: "Front desk", options: ["intake", "triage-followup"] }
   ])
   writeJson(path.join(root, "config", "support-teams.json"), [
     { id: "triage", name: "Triage", roleIds: ["role-editor"], assignmentStrategy: "manual" },
@@ -139,10 +146,27 @@ function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActi
     creatorLabel: "Unknown user (creator-1)",
     teamLabel: "Triage",
     assigneeLabel: "Unassigned",
+    priorityId: "normal",
+    priorityLabel: "Normal",
+    topic: "Initial topic",
+    originalApplicantUserId: "creator-original",
+    originalApplicantLabel: "Unknown user (creator-original)",
+    creatorTransferWarning: "Original applicant authority remains with Unknown user (creator-original); the current creator is Unknown user (creator-1).",
     participantLabels: ["creator-1", "staff-1"],
     actionAvailability,
     assignableStaff: [{ userId: "staff-1", label: "Staff One" }],
     escalationTargets: [{ optionId: "escalated", optionLabel: "Escalated", panelId: null, panelLabel: "Missing panel", transportMode: "channel_text" }],
+    moveTargets: [{ optionId: "triage-followup", optionLabel: "Triage follow-up", panelId: "front-desk", panelLabel: "Front desk", transportMode: "channel_text", teamId: "triage", teamLabel: "Triage" }],
+    transferCandidates: [{ userId: "creator-2", label: "Creator Two" }],
+    participantChoices: [
+      { userId: "creator-1", label: "Creator One", present: true },
+      { userId: "staff-1", label: "Staff One", present: true },
+      { userId: "observer-1", label: "Observer One", present: false }
+    ],
+    priorityChoices: [
+      { priorityId: "normal", label: "Normal" },
+      { priorityId: "urgent", label: "Urgent" }
+    ],
     providerLock: null
   }
 }
@@ -159,7 +183,10 @@ async function startServer(options: {
   const members = new Map([
     ["admin-user", member("admin-user", ["role-admin"])],
     ["editor-user", member("editor-user", ["role-editor"])],
-    ["reviewer-user", member("reviewer-user", ["role-reviewer"])]
+    ["reviewer-user", member("reviewer-user", ["role-reviewer"])],
+    ["creator-2", member("creator-2", [])],
+    ["observer-1", member("observer-1", [])],
+    ["staff-1", member("staff-1", ["role-editor"])]
   ])
   const config: DashboardConfig = {
     host: "127.0.0.1",
@@ -225,18 +252,41 @@ async function startServer(options: {
         creatorLabel: `Unknown user (${base.creatorId})`,
         teamLabel: base.assignedTeamId === "triage" ? "Triage" : `Missing team (${base.assignedTeamId})`,
         assigneeLabel: base.assignedStaffUserId ? `Unknown user (${base.assignedStaffUserId})` : "Unassigned",
+        priorityId: "normal",
+        priorityLabel: "Normal",
+        topic: "Initial topic",
+        originalApplicantUserId: "creator-original",
+        originalApplicantLabel: "Unknown user (creator-original)",
+        creatorTransferWarning: "Original applicant authority remains with Unknown user (creator-original); the current creator is Unknown user (creator-1).",
         participantLabels: ["creator-1", "staff-1"],
         actionAvailability: {
           claim: { enabled: true, reason: null },
           unclaim: { enabled: false, reason: "Ticket is not currently claimed." },
           assign: { enabled: true, reason: null },
           escalate: { enabled: false, reason: "Locked by provider." },
+          move: { enabled: true, reason: null },
+          transfer: { enabled: true, reason: null },
+          "add-participant": { enabled: true, reason: null },
+          "remove-participant": { enabled: true, reason: null },
+          "set-priority": { enabled: true, reason: null },
+          "set-topic": { enabled: true, reason: null },
           close: { enabled: false, reason: "Locked by provider." },
           reopen: { enabled: false, reason: "Ticket is not closed." },
           refresh: { enabled: true, reason: null }
         },
         assignableStaff: [{ userId: "staff-1", label: "Staff One" }],
         escalationTargets: [{ optionId: "escalated", optionLabel: "Escalated", panelId: null, panelLabel: "Missing panel", transportMode: "channel_text" }],
+        moveTargets: [{ optionId: "triage-followup", optionLabel: "Triage follow-up", panelId: "front-desk", panelLabel: "Front desk", transportMode: "channel_text", teamId: "triage", teamLabel: "Triage" }],
+        transferCandidates: [{ userId: "creator-2", label: "Creator Two" }],
+        participantChoices: [
+          { userId: "creator-1", label: "Creator One", present: true },
+          { userId: "staff-1", label: "Staff One", present: true },
+          { userId: "observer-1", label: "Observer One", present: false }
+        ],
+        priorityChoices: [
+          { priorityId: "normal", label: "Normal" },
+          { priorityId: "urgent", label: "Urgent" }
+        ],
         providerLock: {
           providerId: "ot-eotfs-bridge",
           title: "Whitelist bridge",
@@ -406,6 +456,15 @@ test("ticket detail shows provider locks, safe back links, and form-post runtime
   assert.match(detailHtml, /href="\/dash\/admin\/tickets"/)
   assert.match(detailHtml, /Assign staff/)
   assert.match(detailHtml, /Locked by provider\./)
+  assert.match(detailHtml, /Operator workflows/)
+  assert.match(detailHtml, /Transfer creator/)
+  assert.match(detailHtml, /Move ticket/)
+  assert.match(detailHtml, /Add participant/)
+  assert.match(detailHtml, /Remove participant/)
+  assert.match(detailHtml, /Set priority/)
+  assert.match(detailHtml, /Set topic/)
+  assert.match(detailHtml, /Original applicant authority remains/)
+  assert.match(detailHtml, /Pin, unpin, and freeform rename remain Discord-only/)
   assert.match(detailHtml, /value="\/dash\/admin\/tickets"/)
 
   const csrfToken = csrfFrom(detailHtml)
@@ -435,7 +494,11 @@ test("ticket detail shows provider locks, safe back links, and form-post runtime
     actorUserId: "admin-user",
     reason: "dashboard assignment",
     assigneeUserId: "staff-1",
-    targetOptionId: undefined
+    targetOptionId: undefined,
+    newCreatorUserId: undefined,
+    participantUserId: undefined,
+    priorityId: undefined,
+    topic: undefined
   })
 
   await new Promise((resolve) => setTimeout(resolve, 25))
@@ -522,6 +585,12 @@ test("ticket action route forwards every locked action id through the runtime br
     })
     if (action === "assign") body.set("assigneeUserId", "staff-1")
     if (action === "escalate") body.set("targetOptionId", "escalated")
+    if (action === "move") body.set("targetOptionId", "triage-followup")
+    if (action === "transfer") body.set("newCreatorUserId", "creator-2")
+    if (action === "add-participant") body.set("participantUserId", "observer-1")
+    if (action === "remove-participant") body.set("participantUserId", "staff-1")
+    if (action === "set-priority") body.set("priorityId", "urgent")
+    if (action === "set-topic") body.set("topic", "Updated dashboard topic")
 
     const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1/actions/${action}`, {
       method: "POST",
@@ -542,6 +611,12 @@ test("ticket action route forwards every locked action id through the runtime br
   assert.ok(runtime.actionRequests.every((request) => request.actorUserId === "admin-user"))
   assert.equal(runtime.actionRequests.find((request) => request.action === "assign")?.assigneeUserId, "staff-1")
   assert.equal(runtime.actionRequests.find((request) => request.action === "escalate")?.targetOptionId, "escalated")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "move")?.targetOptionId, "triage-followup")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "transfer")?.newCreatorUserId, "creator-2")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "add-participant")?.participantUserId, "observer-1")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "remove-participant")?.participantUserId, "staff-1")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "set-priority")?.priorityId, "urgent")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "set-topic")?.topic, "Updated dashboard topic")
 })
 
 test("ticket workbench renders degraded read and write states instead of redirecting away", async (t) => {
