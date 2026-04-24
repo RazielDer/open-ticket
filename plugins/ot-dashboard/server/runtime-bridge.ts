@@ -176,6 +176,11 @@ function runtimeOptionById(runtime: any, optionId: string) {
   return runtimeConfigArray(runtime, "options").find((option) => normalizeString(option?.id) === optionId) || null
 }
 
+function runtimeExecutableOptionById(runtime: any, optionId: string) {
+  const option = runtime?.options?.get?.(optionId) || null
+  return option && typeof option.get === "function" ? option : null
+}
+
 function runtimeOptionSupportTeamId(option: any) {
   return normalizeString(runtimeDataValue(option, "opendiscord:routing-support-team") || option?.routing?.supportTeamId)
 }
@@ -266,7 +271,10 @@ function buildEscalationTargetChoices(runtime: any, option: any, ticketTransport
 
 function buildMoveTargetChoices(runtime: any, currentOptionId: string | null, currentTeamId: string | null, ticketTransport: DashboardTicketTransportMode): DashboardTicketMoveTargetChoice[] {
   const targets: DashboardTicketMoveTargetChoice[] = []
-  const options = runtime?.options?.getAll?.() || runtimeConfigArray(runtime, "options")
+  if (typeof runtime?.options?.getAll !== "function" || typeof runtime?.options?.get !== "function") {
+    return targets
+  }
+  const options = runtime.options.getAll()
   for (const option of options) {
     const optionId = runtimeEntityId(option) || normalizeString(option?.id)
     if (!optionId || optionId === currentOptionId) continue
@@ -786,7 +794,7 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
       if (!detail.moveTargets.some((choice) => choice.optionId === targetOptionId)) {
         return ticketActionWarning("Choose a same-owner same-transport move target before moving this ticket.", ticketId)
       }
-      const targetOption = targetOptionId ? runtimeOptionById(context.runtime, targetOptionId) : null
+      const targetOption = targetOptionId ? runtimeExecutableOptionById(context.runtime, targetOptionId) : null
       if (!targetOption) {
         return ticketActionWarning("Choose a valid move target before moving this ticket.", ticketId)
       }

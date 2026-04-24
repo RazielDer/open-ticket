@@ -1095,29 +1095,111 @@
       "participantsEmptyBody": "The runtime did not return participant labels for this ticket.",
       "factsTitle": "Ticket facts",
       "actionsTitle": "Actions",
+      "operatorWorkflowsTitle": "Operator workflows",
+      "missingOption": "Missing option",
+      "missingPanel": "Missing panel",
+      "noTeam": "No team",
+      "unassigned": "Unassigned",
+      "noTopicRecorded": "No topic recorded.",
+      "noParentChannelRecorded": "No parent channel recorded.",
       "states": {
         "open": "Open",
         "closed": "Closed",
         "claimed": "Claimed"
       },
       "facts": {
+        "ticketId": "Ticket ID",
         "opened": "Opened",
         "closed": "Closed",
         "claimed": "Claimed",
         "resolved": "Resolved",
         "option": "Option",
         "panel": "Panel",
+        "creator": "Creator",
+        "currentCreator": "Current creator",
+        "originalApplicant": "Original applicant",
         "team": "Team",
         "assignee": "Assignee",
         "transport": "Transport",
         "parentChannel": "Parent channel",
-        "parentMessage": "Parent message"
+        "parentMessage": "Parent message",
+        "priority": "Priority",
+        "topic": "Topic",
+        "participants": "Participants"
       },
       "actions": {
         "assigneeLabel": "Assignee",
-        "targetLabel": "Escalation target",
+        "targetLabel": "Target",
+        "escalationTargetLabel": "Escalation target",
+        "moveTargetLabel": "Move target",
+        "newCreatorLabel": "New creator",
+        "participantLabel": "Participant",
         "reasonLabel": "Reason",
-        "reasonPlaceholder": "Optional operator reason"
+        "reasonPlaceholder": "Optional operator reason",
+        "topicPlaceholder": "Ticket topic"
+      },
+      "summary": {
+        "state": "State",
+        "route": "Route",
+        "ticketOpen": "Ticket is open.",
+        "ticketNotOpen": "Ticket is not open."
+      },
+      "actionCopy": {
+        "claim": {
+          "title": "Claim ticket",
+          "body": "Mark yourself as the active staff owner."
+        },
+        "unclaim": {
+          "title": "Unclaim ticket",
+          "body": "Clear the current claim without changing the route."
+        },
+        "assign": {
+          "title": "Assign staff",
+          "body": "Assign eligible staff from the owning support team."
+        },
+        "escalate": {
+          "title": "Escalate route",
+          "body": "Move this ticket to a configured same-transport escalation target."
+        },
+        "move": {
+          "title": "Move ticket",
+          "body": "Reroute within the same transport and owning support team."
+        },
+        "transfer": {
+          "title": "Transfer creator",
+          "body": "Set a different current ticket creator through the Open Ticket transfer action."
+        },
+        "add_participant": {
+          "title": "Add participant",
+          "body": "Add a user participant to this ticket."
+        },
+        "remove_participant": {
+          "title": "Remove participant",
+          "body": "Remove a user participant without removing the current creator."
+        },
+        "set_priority": {
+          "title": "Set priority",
+          "body": "Update the stored ticket priority and refresh ticket presentation."
+        },
+        "set_topic": {
+          "title": "Set topic",
+          "body": "Update the stored ticket topic using the transport-aware Open Ticket action."
+        },
+        "close": {
+          "title": "Close ticket",
+          "body": "Close the ticket through the Open Ticket runtime action path."
+        },
+        "reopen": {
+          "title": "Reopen ticket",
+          "body": "Reopen the ticket through the Open Ticket runtime action path."
+        },
+        "refresh": {
+          "title": "Refresh ticket",
+          "body": "Reload dashboard detail state without mutating ticket persistence."
+        }
+      },
+      "deferredActions": {
+        "pinUnpinRename": "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
       }
     }
   },

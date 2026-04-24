@@ -92,3 +92,36 @@ test("transcript editor template and route model keep transcript copy locale-bac
     assert.equal(pageRouteSource.includes(routeSnippet), true, `expected transcript page route source to include: ${routeSnippet}`)
   }
 })
+
+test("ticket detail template and model keep extended operation copy locale-backed", () => {
+  const templateSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "public", "views", "sections", "ticket-detail.ejs"),
+    "utf8"
+  )
+  const modelSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "server", "ticket-workbench.ts"),
+    "utf8"
+  )
+
+  for (const phrase of [
+    "<strong>Priority:</strong>",
+    "<strong>Topic:</strong>",
+    "Operator workflows",
+    "Current creator:",
+    "Original applicant:",
+    "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
+  ]) {
+    assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
+  }
+
+  for (const localeCall of [
+    't("tickets.detail.operatorWorkflowsTitle")',
+    't("tickets.detail.facts.priority")',
+    't("tickets.detail.facts.topic")',
+    't("tickets.detail.facts.currentCreator")',
+    't("tickets.detail.facts.originalApplicant")',
+    't("tickets.detail.deferredActions.pinUnpinRename")'
+  ]) {
+    assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
+  }
+})

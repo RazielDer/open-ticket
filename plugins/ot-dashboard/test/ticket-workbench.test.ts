@@ -8,8 +8,17 @@ import type { Socket } from "net"
 
 import { createDashboardApp } from "../server/create-app"
 import type { DashboardConfig } from "../server/dashboard-config"
-import type { DashboardRuntimeBridge, DashboardRuntimeGuildMember } from "../server/runtime-bridge"
-import type { DashboardTicketRecord } from "../server/dashboard-runtime-registry"
+import {
+  defaultDashboardRuntimeBridge,
+  type DashboardRuntimeBridge,
+  type DashboardRuntimeGuildMember
+} from "../server/runtime-bridge"
+import {
+  clearDashboardRuntimeRegistry,
+  registerDashboardRuntime,
+  type DashboardTicketRecord
+} from "../server/dashboard-runtime-registry"
+import { ODTICKET_PLATFORM_METADATA_IDS } from "../../../src/core/api/openticket/ticket-platform"
 import {
   DASHBOARD_TICKET_ACTION_IDS,
   type DashboardTicketActionId,
@@ -128,6 +137,162 @@ function member(userId: string, roleIds: string[]): DashboardRuntimeGuildMember 
     avatarUrl: null,
     roleIds
   }
+}
+
+function runtimeMember(userId: string, roleIds: string[] = []) {
+  return {
+    id: userId,
+    displayName: userId,
+    user: { id: userId, username: userId, globalName: userId, bot: false },
+    roles: { cache: new Map(roleIds.map((roleId) => [roleId, { id: roleId }])) }
+  }
+}
+
+function runtimeDataSource(entries: Record<string, unknown>) {
+  const data = new Map(Object.entries(entries).map(([id, value]) => [id, { value }]))
+  return {
+    exists(id: string) {
+      return data.has(id)
+    },
+    get(id: string) {
+      return data.get(id) || { value: undefined }
+    }
+  }
+}
+
+function runtimeOption(id: string, name: string, teamId: string | null, transportMode = "channel_text") {
+  return {
+    id: { value: id },
+    name: { value: name },
+    ...runtimeDataSource({
+      "opendiscord:routing-support-team": teamId,
+      "opendiscord:channel-transport-mode": transportMode
+    })
+  }
+}
+
+function runtimeTicket(option: any, overrides: Record<string, unknown> = {}) {
+  return {
+    id: { value: "ticket-1" },
+    option,
+    ...runtimeDataSource({
+      "opendiscord:opened-by": "creator-1",
+      "opendiscord:previous-creators": ["creator-original"],
+      "opendiscord:participants": [{ type: "user", id: "staff-1" }],
+      "opendiscord:priority": 0,
+      "opendiscord:topic": "Initial topic",
+      "opendiscord:open": true,
+      "opendiscord:closed": false,
+      "opendiscord:claimed": false,
+      "opendiscord:pinned": false,
+      "opendiscord:opened-on": 1710000000000,
+      "opendiscord:channel-suffix": "creator",
+      [ODTICKET_PLATFORM_METADATA_IDS.transportMode]: "channel_text",
+      [ODTICKET_PLATFORM_METADATA_IDS.assignedTeamId]: "triage",
+      [ODTICKET_PLATFORM_METADATA_IDS.assignedStaffUserId]: null,
+      ...overrides
+    })
+  }
+}
+
+function registerRuntimeActionFixture(options: {
+  includeOptionManager?: boolean
+  actionRuns?: Array<{ id: string; params: any }>
+} = {}) {
+  clearDashboardRuntimeRegistry()
+  const intake = runtimeOption("intake", "Intake", "triage")
+  const followup = runtimeOption("triage-followup", "Triage follow-up", "triage")
+  const ticketRecord = runtimeTicket(intake)
+  const members = new Map([
+    ["admin-user", runtimeMember("admin-user", ["role-admin"])],
+    ["creator-1", runtimeMember("creator-1")],
+    ["creator-2", runtimeMember("creator-2")],
+    ["observer-1", runtimeMember("observer-1")],
+    ["staff-1", runtimeMember("staff-1", ["role-editor"])]
+  ])
+  const guild = {
+    id: "guild-1",
+    roles: { everyone: { id: "everyone" } },
+    members: {
+      cache: members,
+      async fetch() {
+        return members
+      }
+    }
+  }
+  const actionRuns = options.actionRuns || []
+  const runtime: any = {
+    configs: {
+      get(id: string) {
+        const configs: Record<string, unknown> = {
+          "opendiscord:general": { serverId: "guild-1", system: { permissions: {} } },
+          "opendiscord:options": [
+            { id: "intake", name: "Intake", type: "ticket", channel: { transportMode: "channel_text" }, routing: { supportTeamId: "triage" } },
+            { id: "triage-followup", name: "Triage follow-up", type: "ticket", channel: { transportMode: "channel_text" }, routing: { supportTeamId: "triage" } }
+          ],
+          "opendiscord:panels": [{ id: "front-desk", name: "Front desk", options: ["intake", "triage-followup"] }],
+          "opendiscord:support-teams": [{ id: "triage", name: "Triage", roleIds: ["role-editor"], assignmentStrategy: "manual" }]
+        }
+        return Object.prototype.hasOwnProperty.call(configs, id) ? { data: configs[id] } : null
+      }
+    },
+    tickets: {
+      get(id: string) {
+        return id === "ticket-1" ? ticketRecord : null
+      },
+      getAll() {
+        return [ticketRecord]
+      }
+    },
+    client: {
+      mainServer: guild,
+      async fetchGuildTextBasedChannel() {
+        return { id: "ticket-1", isThread: () => false }
+      },
+      async fetchGuildMember(_guild: any, userId: string) {
+        return members.get(userId) || null
+      },
+      client: {
+        users: {
+          async fetch(userId: string) {
+            return { id: userId, username: userId, displayName: userId }
+          }
+        }
+      }
+    },
+    actions: {
+      get(id: string) {
+        return {
+          async run(_source: string, params: any) {
+            actionRuns.push({ id, params })
+          }
+        }
+      }
+    },
+    priorities: {
+      getAll() {
+        return [
+          { rawName: "normal", priority: 0, renderDisplayName: () => "Normal" },
+          { rawName: "urgent", priority: 5, renderDisplayName: () => "Urgent" }
+        ]
+      },
+      getFromPriorityLevel(level: number) {
+        return this.getAll().find((priority) => priority.priority === level) || null
+      }
+    }
+  }
+  if (options.includeOptionManager !== false) {
+    runtime.options = {
+      get(id: string) {
+        return id === "intake" ? intake : id === "triage-followup" ? followup : null
+      },
+      getAll() {
+        return [intake, followup]
+      }
+    }
+  }
+  registerDashboardRuntime(runtime)
+  return { runtime, ticketRecord, intake, followup, actionRuns }
 }
 
 function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActionId[] = [...DASHBOARD_TICKET_ACTION_IDS]): DashboardTicketDetailRecord {
@@ -617,6 +782,53 @@ test("ticket action route forwards every locked action id through the runtime br
   assert.equal(runtime.actionRequests.find((request) => request.action === "remove-participant")?.participantUserId, "staff-1")
   assert.equal(runtime.actionRequests.find((request) => request.action === "set-priority")?.priorityId, "urgent")
   assert.equal(runtime.actionRequests.find((request) => request.action === "set-topic")?.topic, "Updated dashboard topic")
+})
+
+test("runtime ticket move stays disabled when only config fallback options are available", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  registerRuntimeActionFixture({ includeOptionManager: false })
+
+  const detail = await defaultDashboardRuntimeBridge.getTicketDetail?.("ticket-1", "admin-user")
+  assert.equal(detail?.moveTargets.length, 0)
+  assert.equal(detail?.actionAvailability.move.enabled, false)
+  assert.equal(
+    detail?.actionAvailability.move.reason,
+    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
+  )
+})
+
+test("runtime ticket action bridge executes SLICE-010A Open Ticket action branches", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  const fixture = registerRuntimeActionFixture()
+
+  const actions: DashboardTicketActionRequest[] = [
+    { ticketId: "ticket-1", action: "move", actorUserId: "admin-user", targetOptionId: "triage-followup", reason: "move" },
+    { ticketId: "ticket-1", action: "transfer", actorUserId: "admin-user", newCreatorUserId: "creator-2", reason: "transfer" },
+    { ticketId: "ticket-1", action: "add-participant", actorUserId: "admin-user", participantUserId: "observer-1", reason: "add" },
+    { ticketId: "ticket-1", action: "remove-participant", actorUserId: "admin-user", participantUserId: "staff-1", reason: "remove" },
+    { ticketId: "ticket-1", action: "set-priority", actorUserId: "admin-user", priorityId: "urgent", reason: "priority" },
+    { ticketId: "ticket-1", action: "set-topic", actorUserId: "admin-user", topic: "Updated dashboard topic" }
+  ]
+
+  for (const action of actions) {
+    const result = await defaultDashboardRuntimeBridge.runTicketAction?.(action)
+    assert.equal(result?.ok, true, `${action.action} should succeed`)
+  }
+
+  assert.deepEqual(fixture.actionRuns.map((run) => run.id), [
+    "opendiscord:move-ticket",
+    "opendiscord:transfer-ticket",
+    "opendiscord:add-ticket-user",
+    "opendiscord:remove-ticket-user",
+    "opendiscord:update-ticket-priority",
+    "opendiscord:update-ticket-topic"
+  ])
+  assert.equal(fixture.actionRuns[0].params.data, fixture.followup)
+  assert.equal(fixture.actionRuns[1].params.newCreator.id, "creator-2")
+  assert.equal(fixture.actionRuns[2].params.data.id, "observer-1")
+  assert.equal(fixture.actionRuns[3].params.data.id, "staff-1")
+  assert.equal(fixture.actionRuns[4].params.newPriority.rawName, "urgent")
+  assert.equal(fixture.actionRuns[5].params.newTopic, "Updated dashboard topic")
 })
 
 test("ticket workbench renders degraded read and write states instead of redirecting away", async (t) => {

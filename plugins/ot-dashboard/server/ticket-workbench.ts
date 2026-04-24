@@ -2,6 +2,7 @@ import { joinBasePath } from "./dashboard-config"
 import { formatDate, type DashboardTone } from "./control-center"
 import type { DashboardConfigService } from "./config-service"
 import type { DashboardTicketRecord } from "./dashboard-runtime-registry"
+import type { DashboardI18n } from "./i18n"
 import type {
   DashboardTicketActionAvailability,
   DashboardTicketActionId,
@@ -16,6 +17,8 @@ export const TICKET_WORKBENCH_STATUS_FILTERS = ["all", "open", "closed", "claime
 export const TICKET_WORKBENCH_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
 export const TICKET_WORKBENCH_SORTS = ["opened-desc", "opened-asc", "activity-desc", "activity-asc"] as const
 export const TICKET_WORKBENCH_LIMITS = [10, 25, 50, 100] as const
+
+type TicketWorkbenchTranslator = DashboardI18n["t"]
 
 export type TicketWorkbenchStatusFilter = (typeof TICKET_WORKBENCH_STATUS_FILTERS)[number]
 export type TicketWorkbenchTransportFilter = (typeof TICKET_WORKBENCH_TRANSPORT_FILTERS)[number]
@@ -573,34 +576,35 @@ export function buildFallbackTicketDetail(input: {
   }
 }
 
-function actionCopy(action: DashboardTicketActionId) {
+function actionCopy(t: TicketWorkbenchTranslator, action: DashboardTicketActionId) {
+  const key = action.replace(/-/g, "_")
   switch (action) {
     case "claim":
-      return { title: "Claim ticket", body: "Mark yourself as the active staff owner.", variant: "primary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
     case "unclaim":
-      return { title: "Unclaim ticket", body: "Clear the current claim without changing the route.", variant: "secondary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "assign":
-      return { title: "Assign staff", body: "Assign eligible staff from the owning support team.", variant: "primary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
     case "escalate":
-      return { title: "Escalate route", body: "Move this ticket to a configured same-transport escalation target.", variant: "secondary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "move":
-      return { title: "Move ticket", body: "Reroute within the same transport and owning support team.", variant: "secondary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "transfer":
-      return { title: "Transfer creator", body: "Set a different current ticket creator through the Open Ticket transfer action.", variant: "primary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
     case "add-participant":
-      return { title: "Add participant", body: "Add a user participant to this ticket.", variant: "secondary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "remove-participant":
-      return { title: "Remove participant", body: "Remove a user participant without removing the current creator.", variant: "danger" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "danger" as const, needsReason: true }
     case "set-priority":
-      return { title: "Set priority", body: "Update the stored ticket priority and refresh ticket presentation.", variant: "secondary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "set-topic":
-      return { title: "Set topic", body: "Update the stored ticket topic using the transport-aware Open Ticket action.", variant: "secondary" as const, needsReason: false }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: false }
     case "close":
-      return { title: "Close ticket", body: "Close the ticket through the Open Ticket runtime action path.", variant: "danger" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "danger" as const, needsReason: true }
     case "reopen":
-      return { title: "Reopen ticket", body: "Reopen the ticket through the Open Ticket runtime action path.", variant: "primary" as const, needsReason: true }
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
     default:
-      return { title: "Refresh ticket", body: "Reload dashboard detail state without mutating ticket persistence.", variant: "secondary" as const, needsReason: false }
+      return { title: t("tickets.detail.actionCopy.refresh.title"), body: t("tickets.detail.actionCopy.refresh.body"), variant: "secondary" as const, needsReason: false }
   }
 }
 
@@ -613,14 +617,14 @@ const ADVANCED_TICKET_ACTIONS = new Set<DashboardTicketActionId>([
   "set-topic"
 ])
 
-function actionChoices(detail: DashboardTicketDetailRecord, action: DashboardTicketActionId) {
+function actionChoices(t: TicketWorkbenchTranslator, detail: DashboardTicketDetailRecord, action: DashboardTicketActionId) {
   switch (action) {
     case "assign":
       return detail.assignableStaff.map((choice) => ({ value: choice.userId, label: choice.label }))
     case "escalate":
       return detail.escalationTargets.map((choice) => ({ value: choice.optionId, label: choice.optionLabel }))
     case "move":
-      return detail.moveTargets.map((choice) => ({ value: choice.optionId, label: `${choice.optionLabel} (${choice.teamLabel || "No team"})` }))
+      return detail.moveTargets.map((choice) => ({ value: choice.optionId, label: `${choice.optionLabel} (${choice.teamLabel || t("tickets.detail.noTeam")})` }))
     case "transfer":
       return detail.transferCandidates.map((choice) => ({ value: choice.userId, label: choice.label }))
     case "add-participant":
@@ -643,13 +647,13 @@ function actionChoiceName(action: DashboardTicketActionId): TicketWorkbenchActio
   return null
 }
 
-function actionChoiceLabel(action: DashboardTicketActionId) {
-  if (action === "assign") return "Assignee"
-  if (action === "escalate") return "Escalation target"
-  if (action === "move") return "Move target"
-  if (action === "transfer") return "New creator"
-  if (action === "add-participant" || action === "remove-participant") return "Participant"
-  if (action === "set-priority") return "Priority"
+function actionChoiceLabel(t: TicketWorkbenchTranslator, action: DashboardTicketActionId) {
+  if (action === "assign") return t("tickets.detail.actions.assigneeLabel")
+  if (action === "escalate") return t("tickets.detail.actions.escalationTargetLabel")
+  if (action === "move") return t("tickets.detail.actions.moveTargetLabel")
+  if (action === "transfer") return t("tickets.detail.actions.newCreatorLabel")
+  if (action === "add-participant" || action === "remove-participant") return t("tickets.detail.actions.participantLabel")
+  if (action === "set-priority") return t("tickets.detail.facts.priority")
   return null
 }
 
@@ -661,38 +665,40 @@ export function buildTicketWorkbenchDetailModel(input: {
   writesSupported: boolean
   readsSupported: boolean
   warningMessage?: string
+  t?: TicketWorkbenchTranslator
 }): TicketWorkbenchDetailModel {
+  const t = input.t || ((key: string) => key)
   const backHref = sanitizeTicketWorkbenchReturnTo(input.basePath, input.returnTo)
   const detailHref = joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(input.detail?.ticket.id || input.ticketId)}`)
   const returnToQuery = `returnTo=${encodeURIComponent(backHref)}`
   const detail = input.detail
   const facts = detail
     ? [
-        { label: "Ticket ID", value: detail.ticket.id },
-        { label: "Option", value: detail.optionLabel || "Missing option" },
-        { label: "Panel", value: detail.panelLabel || "Missing panel" },
-        { label: "Creator", value: detail.creatorLabel || unknownUserLabel(detail.ticket.creatorId) },
-        { label: "Original applicant", value: detail.originalApplicantLabel || unknownUserLabel(detail.originalApplicantUserId) },
-        { label: "Team", value: detail.teamLabel || resolveTeamLabel(new Map(), detail.ticket.assignedTeamId) },
-        { label: "Assignee", value: detail.assigneeLabel || unknownUserLabel(detail.ticket.assignedStaffUserId) },
-        { label: "Transport", value: transportLabel(detail.ticket.transportMode) },
-        { label: "Priority", value: detail.priorityLabel || "Unavailable" },
-        { label: "Topic", value: detail.topic || "No topic recorded." },
-        { label: "Participants", value: String(detail.ticket.participantCount) }
+        { label: t("tickets.detail.facts.ticketId"), value: detail.ticket.id },
+        { label: t("tickets.detail.facts.option"), value: detail.optionLabel || t("tickets.detail.missingOption") },
+        { label: t("tickets.detail.facts.panel"), value: detail.panelLabel || t("tickets.detail.missingPanel") },
+        { label: t("tickets.detail.facts.creator"), value: detail.creatorLabel || unknownUserLabel(detail.ticket.creatorId) },
+        { label: t("tickets.detail.facts.originalApplicant"), value: detail.originalApplicantLabel || unknownUserLabel(detail.originalApplicantUserId) },
+        { label: t("tickets.detail.facts.team"), value: detail.teamLabel || resolveTeamLabel(new Map(), detail.ticket.assignedTeamId) },
+        { label: t("tickets.detail.facts.assignee"), value: detail.assigneeLabel || unknownUserLabel(detail.ticket.assignedStaffUserId) },
+        { label: t("tickets.detail.facts.transport"), value: transportLabel(detail.ticket.transportMode) },
+        { label: t("tickets.detail.facts.priority"), value: detail.priorityLabel || t("common.unavailable") },
+        { label: t("tickets.detail.facts.topic"), value: detail.topic || t("tickets.detail.noTopicRecorded") },
+        { label: t("tickets.detail.facts.participants"), value: String(detail.ticket.participantCount) }
       ]
     : []
   const summaryCards = detail
     ? [
-        { label: "State", value: statusBadge(detail.ticket).label, detail: detail.ticket.open ? "Ticket is open." : "Ticket is not open.", tone: statusBadge(detail.ticket).tone },
-        { label: "Route", value: detail.optionLabel || "Missing option", detail: detail.panelLabel || "Missing panel", tone: "muted" as DashboardTone },
-        { label: "Assignee", value: detail.assigneeLabel || "Unassigned", detail: detail.teamLabel || "No team", tone: detail.ticket.assignedStaffUserId ? "success" as DashboardTone : "warning" as DashboardTone },
-        { label: "Transport", value: transportLabel(detail.ticket.transportMode), detail: detail.ticket.transportParentChannelId || "No parent channel recorded.", tone: "muted" as DashboardTone }
+        { label: t("tickets.detail.summary.state"), value: statusBadge(detail.ticket).label, detail: detail.ticket.open ? t("tickets.detail.summary.ticketOpen") : t("tickets.detail.summary.ticketNotOpen"), tone: statusBadge(detail.ticket).tone },
+        { label: t("tickets.detail.summary.route"), value: detail.optionLabel || t("tickets.detail.missingOption"), detail: detail.panelLabel || t("tickets.detail.missingPanel"), tone: "muted" as DashboardTone },
+        { label: t("tickets.detail.facts.assignee"), value: detail.assigneeLabel || t("tickets.detail.unassigned"), detail: detail.teamLabel || t("tickets.detail.noTeam"), tone: detail.ticket.assignedStaffUserId ? "success" as DashboardTone : "warning" as DashboardTone },
+        { label: t("tickets.detail.facts.transport"), value: transportLabel(detail.ticket.transportMode), detail: detail.ticket.transportParentChannelId || t("tickets.detail.noParentChannelRecorded"), tone: "muted" as DashboardTone }
       ]
     : []
   const providerLocked = new Set(detail?.providerLock?.lockedActions || [])
   const actionForms = detail
     ? DASHBOARD_TICKET_ACTION_IDS.map((action) => {
-        const copy = actionCopy(action)
+        const copy = actionCopy(t, action)
         const baseAvailability = detail.actionAvailability[action] || availability(false)
         const disabledByWrites = action !== "refresh" && !input.writesSupported
         const providerLockedReason = providerLocked.has(action) ? "Locked by provider." : null
@@ -708,13 +714,13 @@ export function buildTicketWorkbenchDetailModel(input: {
           actionHref: `${detailHref}/actions/${action}?${returnToQuery}`,
           availability: effectiveAvailability,
           needsReason: copy.needsReason,
-          choices: actionChoices(detail, action),
+          choices: actionChoices(t, detail, action),
           choiceName: actionChoiceName(action),
-          choiceLabel: actionChoiceLabel(action),
+          choiceLabel: actionChoiceLabel(t, action),
           textName: action === "set-topic" ? "topic" as const : null,
           textValue: action === "set-topic" ? detail.topic || "" : "",
-          textLabel: action === "set-topic" ? "Topic" : null,
-          textPlaceholder: action === "set-topic" ? "Ticket topic" : null,
+          textLabel: action === "set-topic" ? t("tickets.detail.facts.topic") : null,
+          textPlaceholder: action === "set-topic" ? t("tickets.detail.actions.topicPlaceholder") : null,
           buttonVariant: copy.variant
         }
       })
@@ -732,7 +738,7 @@ export function buildTicketWorkbenchDetailModel(input: {
     actionForms: actionForms.filter((form) => !ADVANCED_TICKET_ACTIONS.has(form.action)),
     advancedActionForms: actionForms.filter((form) => ADVANCED_TICKET_ACTIONS.has(form.action)),
     deferredActions: [
-      "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
+      t("tickets.detail.deferredActions.pinUnpinRename")
     ]
   }
 }

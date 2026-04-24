@@ -1035,7 +1035,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         readsSupported,
         warningMessage: runtimeAvailable
           ? writesSupported ? "" : "Ticket action writes are unavailable in the current dashboard runtime."
-          : "The Open Ticket runtime is not exposing ticket detail to the dashboard right now."
+          : "The Open Ticket runtime is not exposing ticket detail to the dashboard right now.",
+        t: i18n.t
       })
 
       renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {

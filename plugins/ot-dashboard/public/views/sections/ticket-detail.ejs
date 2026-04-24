@@ -49,8 +49,8 @@
           <div><strong><%= t("tickets.detail.facts.panel") %>:</strong> <%= ticketDetail.detail.panelLabel || t("common.unavailable") %></div>
           <div><strong><%= t("tickets.detail.facts.team") %>:</strong> <%= ticketDetail.detail.teamLabel || t("common.unavailable") %></div>
           <div><strong><%= t("tickets.detail.facts.assignee") %>:</strong> <%= ticketDetail.detail.assigneeLabel || t("common.unavailable") %></div>
-          <div><strong>Priority:</strong> <%= ticketDetail.detail.priorityLabel || t("common.unavailable") %></div>
-          <div><strong>Topic:</strong> <%= ticketDetail.detail.topic || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.priority") %>:</strong> <%= ticketDetail.detail.priorityLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.topic") %>:</strong> <%= ticketDetail.detail.topic || t("common.unavailable") %></div>
         </div>
       </section>
 
@@ -86,11 +86,11 @@
 
       <section class="section-card">
         <div class="section-heading">
-          <h3>Operator workflows</h3>
+          <h3><%= t("tickets.detail.operatorWorkflowsTitle") %></h3>
         </div>
         <div class="plugin-fact-list">
-          <div><strong>Current creator:</strong> <%= ticketDetail.detail.creatorLabel || t("common.unavailable") %></div>
-          <div><strong>Original applicant:</strong> <%= ticketDetail.detail.originalApplicantLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.currentCreator") %>:</strong> <%= ticketDetail.detail.creatorLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.originalApplicant") %>:</strong> <%= ticketDetail.detail.originalApplicantLabel || t("common.unavailable") %></div>
         </div>
         <% if (ticketDetail.detail.creatorTransferWarning) { %>
           <div class="inline-alert warning"><%= ticketDetail.detail.creatorTransferWarning %></div>
