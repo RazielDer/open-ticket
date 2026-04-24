@@ -115,7 +115,23 @@ test("ticket detail template and model keep extended operation copy locale-backe
     "Original applicant:",
     "Pin, unpin, and freeform rename remain Discord-only actions in this packet.",
     "Original applicant authority remains with",
-    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes."
+    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes.",
+    "Choose a same-owner same-transport move target before moving this ticket.",
+    "Choose a valid move target before moving this ticket.",
+    "Ticket moved.",
+    "Choose a different eligible creator before transferring this ticket.",
+    "Ticket creator transferred.",
+    "Choose a valid user participant before updating this ticket.",
+    "Selected user is already a participant.",
+    "Selected user is not a participant.",
+    "The current ticket creator cannot be removed as a participant.",
+    "Ticket participant added.",
+    "Ticket participant removed.",
+    "Choose a valid priority before updating this ticket.",
+    "Choose a configured Open Ticket priority before updating this ticket.",
+    "Ticket priority updated.",
+    "Enter a ticket topic before updating this ticket.",
+    "Ticket topic updated."
   ]) {
     assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase) || runtimeBridgeSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
   }
@@ -128,7 +144,23 @@ test("ticket detail template and model keep extended operation copy locale-backe
     't("tickets.detail.facts.originalApplicant")',
     't("tickets.detail.deferredActions.pinUnpinRename")',
     '"tickets.detail.warnings.creatorTransfer"',
-    '"tickets.detail.availability.noSameOwnerMoveTargets"'
+    '"tickets.detail.availability.noSameOwnerMoveTargets"',
+    '"tickets.detail.actionResults.moveMissingTarget"',
+    '"tickets.detail.actionResults.moveInvalidTarget"',
+    '"tickets.detail.actionResults.moveSuccess"',
+    '"tickets.detail.actionResults.transferMissingCreator"',
+    '"tickets.detail.actionResults.transferSuccess"',
+    '"tickets.detail.actionResults.participantInvalidUser"',
+    '"tickets.detail.actionResults.participantAlreadyPresent"',
+    '"tickets.detail.actionResults.participantNotPresent"',
+    '"tickets.detail.actionResults.participantCreatorRemoveDenied"',
+    '"tickets.detail.actionResults.participantAddSuccess"',
+    '"tickets.detail.actionResults.participantRemoveSuccess"',
+    '"tickets.detail.actionResults.priorityInvalid"',
+    '"tickets.detail.actionResults.priorityUnconfigured"',
+    '"tickets.detail.actionResults.prioritySuccess"',
+    '"tickets.detail.actionResults.topicMissing"',
+    '"tickets.detail.actionResults.topicSuccess"'
   ]) {
     assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall) || runtimeBridgeSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
   }

@@ -1076,7 +1076,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
 
     if (!action) {
-      const message = "Unsupported ticket action."
+      const message = i18n.t("tickets.detail.actionResults.unsupportedAction")
       await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
         eventType: "ticket-action",
         target: requestedTicketId,
@@ -1111,7 +1111,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         result = {
           ok: false,
           status: "warning" as const,
-          message: "Ticket is missing or no longer tracked.",
+          message: "tickets.detail.actionResults.missingTicket",
           ticketId: requestedTicketId
         }
       } else if (preflightAvailability && !preflightAvailability.enabled) {
@@ -1128,11 +1128,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       result = typeof runtimeBridge.runTicketAction === "function" && (action === "refresh" || supportsTicketWorkbenchWrites(runtimeBridge))
         ? await runtimeBridge.runTicketAction(actionRequest)
         : action === "refresh"
-          ? { ok: true, status: "success" as const, message: "Ticket detail refreshed.", ticketId: requestedTicketId }
+          ? { ok: true, status: "success" as const, message: "tickets.detail.actionResults.refreshSuccess", ticketId: requestedTicketId }
           : {
             ok: false,
             status: "warning" as const,
-            message: "Ticket action writes are unavailable in the current dashboard runtime.",
+            message: "tickets.detail.availability.writesUnavailable",
             ticketId: requestedTicketId
           }
     }
@@ -1156,7 +1156,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       }
     })
 
-    res.redirect(redirectToDetail(result.ticketId || requestedTicketId, result.status, result.message))
+    const resultMessage = translateTicketWorkbenchMessage(i18n.t, result.message) || result.message
+    res.redirect(redirectToDetail(result.ticketId || requestedTicketId, result.status, resultMessage))
   })
 
   app.get(joinBasePath(basePath, "admin/transcripts"), adminGuard.page("transcript.view.global"), async (req, res) => {

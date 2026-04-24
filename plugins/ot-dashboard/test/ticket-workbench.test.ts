@@ -466,7 +466,7 @@ async function startServer(options: {
         return {
           ok: true,
           status: "success" as const,
-          message: `${input.action} through test runtime.`,
+          message: input.action === "move" ? "tickets.detail.actionResults.moveSuccess" : `${input.action} through test runtime.`,
           ticketId: input.ticketId
         }
       }
@@ -768,8 +768,14 @@ test("ticket action route forwards every locked action id through the runtime br
     })
     await response.arrayBuffer()
     assert.equal(response.status, 302)
-    assert.match(String(response.headers.get("location")), /status=success/)
-    assert.match(String(response.headers.get("location")), /returnTo=%2Fdash%2Fadmin%2Ftickets%3Fstatus%3Dopen/)
+    const location = String(response.headers.get("location"))
+    assert.match(location, /status=success/)
+    assert.match(location, /returnTo=%2Fdash%2Fadmin%2Ftickets%3Fstatus%3Dopen/)
+    if (action === "move") {
+      const redirect = new URL(location, runtime.baseUrl)
+      assert.equal(redirect.searchParams.get("msg"), "Ticket moved.")
+      assert.equal(redirect.searchParams.get("msg")?.startsWith("tickets.detail."), false)
+    }
   }
 
   assert.deepEqual(runtime.actionRequests.map((request) => request.action), [...DASHBOARD_TICKET_ACTION_IDS])
@@ -864,7 +870,7 @@ test("ticket workbench renders degraded read and write states instead of redirec
   })
   await assignResponse.arrayBuffer()
   assert.equal(assignResponse.status, 302)
-  assert.match(String(redirectMessage(assignResponse.headers.get("location"))), /Ticket action writes are unavailable/)
+  assert.match(String(redirectMessage(assignResponse.headers.get("location"))), /Dashboard runtime ticket writes are unavailable/)
   assert.equal(readOnlyRuntime.actionRequests.length, 0)
 
   const refreshResponse = await fetch(`${readOnlyRuntime.baseUrl}/dash/admin/tickets/ticket-1/actions/refresh`, {

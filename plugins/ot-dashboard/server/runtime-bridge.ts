@@ -120,6 +120,40 @@ const ticketAvailabilityReasons = {
   noPriorityChoices: "tickets.detail.availability.noPriorityChoices"
 } as const
 
+const ticketActionResults = {
+  requestIncomplete: "tickets.detail.actionResults.requestIncomplete",
+  refreshSuccess: "tickets.detail.actionResults.refreshSuccess",
+  missingTicket: "tickets.detail.actionResults.missingTicket",
+  unavailable: "tickets.detail.actionResults.unavailable",
+  runtimeContextMissing: "tickets.detail.actionResults.runtimeContextMissing",
+  permissionDenied: "tickets.detail.actionResults.permissionDenied",
+  assignMissingAssignee: "tickets.detail.actionResults.assignMissingAssignee",
+  assignIneligibleAssignee: "tickets.detail.actionResults.assignIneligibleAssignee",
+  assignClaimedByOther: "tickets.detail.actionResults.assignClaimedByOther",
+  assignSuccess: "tickets.detail.actionResults.assignSuccess",
+  escalateMissingTarget: "tickets.detail.actionResults.escalateMissingTarget",
+  escalateInvalidTarget: "tickets.detail.actionResults.escalateInvalidTarget",
+  escalateSuccess: "tickets.detail.actionResults.escalateSuccess",
+  moveMissingTarget: "tickets.detail.actionResults.moveMissingTarget",
+  moveInvalidTarget: "tickets.detail.actionResults.moveInvalidTarget",
+  moveSuccess: "tickets.detail.actionResults.moveSuccess",
+  transferMissingCreator: "tickets.detail.actionResults.transferMissingCreator",
+  transferSuccess: "tickets.detail.actionResults.transferSuccess",
+  participantInvalidUser: "tickets.detail.actionResults.participantInvalidUser",
+  participantAlreadyPresent: "tickets.detail.actionResults.participantAlreadyPresent",
+  participantNotPresent: "tickets.detail.actionResults.participantNotPresent",
+  participantCreatorRemoveDenied: "tickets.detail.actionResults.participantCreatorRemoveDenied",
+  participantAddSuccess: "tickets.detail.actionResults.participantAddSuccess",
+  participantRemoveSuccess: "tickets.detail.actionResults.participantRemoveSuccess",
+  priorityInvalid: "tickets.detail.actionResults.priorityInvalid",
+  priorityUnconfigured: "tickets.detail.actionResults.priorityUnconfigured",
+  prioritySuccess: "tickets.detail.actionResults.prioritySuccess",
+  topicMissing: "tickets.detail.actionResults.topicMissing",
+  topicSuccess: "tickets.detail.actionResults.topicSuccess",
+  genericSuccess: "tickets.detail.actionResults.genericSuccess",
+  genericFailure: "tickets.detail.actionResults.genericFailure"
+} as const
+
 function isDashboardTicketActionId(value: string): value is DashboardTicketActionId {
   return (DASHBOARD_TICKET_ACTION_IDS as readonly string[]).includes(value)
 }
@@ -726,7 +760,7 @@ async function checkRuntimeTicketActionPermission(context: Awaited<ReturnType<ty
   )
   return {
     allowed: Boolean(result?.hasPerms),
-    reason: result?.hasPerms ? null : "The acting dashboard user does not have the required Open Ticket permission."
+    reason: result?.hasPerms ? null : ticketActionResults.permissionDenied
   }
 }
 
@@ -735,31 +769,31 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
   const action = normalizeString(input.action)
   const actorUserId = normalizeString(input.actorUserId)
   if (!ticketId || !isDashboardTicketActionId(action) || !actorUserId) {
-    return ticketActionWarning("The ticket action request is incomplete.", ticketId)
+    return ticketActionWarning(ticketActionResults.requestIncomplete, ticketId)
   }
 
   if (action === "refresh") {
-    return ticketActionSuccess("Ticket detail refreshed.", ticketId)
+    return ticketActionSuccess(ticketActionResults.refreshSuccess, ticketId)
   }
 
   const detail = await getRuntimeTicketDetail(runtimeBridge, ticketId, actorUserId)
   if (!detail) {
-    return ticketActionWarning("Ticket is missing or no longer tracked.", ticketId)
+    return ticketActionWarning(ticketActionResults.missingTicket, ticketId)
   }
 
   const availability = detail.actionAvailability[action]
   if (!availability.enabled) {
-    return ticketActionWarning(availability.reason || "This ticket action is unavailable.", ticketId)
+    return ticketActionWarning(availability.reason || ticketActionResults.unavailable, ticketId)
   }
 
   const context = await resolveRuntimeActionContext(runtimeBridge, ticketId, actorUserId)
   if (!context.runtime || !context.guild || !context.ticket || !context.channel || !context.user) {
-    return ticketActionDanger("The Open Ticket runtime could not resolve the ticket, channel, guild, or actor.", ticketId)
+    return ticketActionDanger(ticketActionResults.runtimeContextMissing, ticketId)
   }
 
   const permission = await checkRuntimeTicketActionPermission(context, action)
   if (!permission.allowed) {
-    return ticketActionWarning(permission.reason || "Open Ticket denied this action.", ticketId)
+    return ticketActionWarning(permission.reason || ticketActionResults.permissionDenied, ticketId)
   }
 
   try {
@@ -767,13 +801,13 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
     if (action === "assign") {
       const assigneeUserId = normalizeString(input.assigneeUserId)
       if (!assigneeUserId) {
-        return ticketActionWarning("Choose an assignee before assigning this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.assignMissingAssignee, ticketId)
       }
       if (!detail.assignableStaff.some((choice) => choice.userId === assigneeUserId)) {
-        return ticketActionWarning("Selected assignee is not eligible for the owning support team.", ticketId)
+        return ticketActionWarning(ticketActionResults.assignIneligibleAssignee, ticketId)
       }
       if (detail.ticket.claimed && detail.ticket.claimedBy && detail.ticket.claimedBy !== assigneeUserId) {
-        return ticketActionWarning("This ticket is currently claimed by another staff member. Unclaim it before assigning a different staff member.", ticketId)
+        return ticketActionWarning(ticketActionResults.assignClaimedByOther, ticketId)
       }
       await context.runtime.actions.get("opendiscord:assign-ticket").run("other", {
         guild: context.guild,
@@ -784,17 +818,17 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         assigneeUserId
       })
-      return ticketActionSuccess("Ticket assignee updated.", ticketId)
+      return ticketActionSuccess(ticketActionResults.assignSuccess, ticketId)
     }
 
     if (action === "escalate") {
       const targetOptionId = normalizeString(input.targetOptionId)
       if (!detail.escalationTargets.some((choice) => choice.optionId === targetOptionId)) {
-        return ticketActionWarning("Choose a route-scoped same-transport escalation target before escalating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.escalateMissingTarget, ticketId)
       }
       const targetOption = targetOptionId ? context.runtime.options?.get?.(targetOptionId) : null
       if (!targetOption) {
-        return ticketActionWarning("Choose a valid escalation target before escalating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.escalateInvalidTarget, ticketId)
       }
       await context.runtime.actions.get("opendiscord:escalate-ticket").run("other", {
         guild: context.guild,
@@ -806,17 +840,17 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         data: targetOption
       })
       const movedTicketId = normalizeString(typeof context.ticket.id === "string" ? context.ticket.id : context.ticket.id?.value) || ticketId
-      return ticketActionSuccess("Ticket escalated.", movedTicketId)
+      return ticketActionSuccess(ticketActionResults.escalateSuccess, movedTicketId)
     }
 
     if (action === "move") {
       const targetOptionId = normalizeString(input.targetOptionId)
       if (!detail.moveTargets.some((choice) => choice.optionId === targetOptionId)) {
-        return ticketActionWarning("Choose a same-owner same-transport move target before moving this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.moveMissingTarget, ticketId)
       }
       const targetOption = targetOptionId ? runtimeExecutableOptionById(context.runtime, targetOptionId) : null
       if (!targetOption) {
-        return ticketActionWarning("Choose a valid move target before moving this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.moveInvalidTarget, ticketId)
       }
       await context.runtime.actions.get("opendiscord:move-ticket").run("other", {
         guild: context.guild,
@@ -827,13 +861,13 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         data: targetOption
       })
-      return ticketActionSuccess("Ticket moved.", ticketId)
+      return ticketActionSuccess(ticketActionResults.moveSuccess, ticketId)
     }
 
     if (action === "transfer") {
       const newCreatorUserId = normalizeString(input.newCreatorUserId)
       if (!detail.transferCandidates.some((choice) => choice.userId === newCreatorUserId)) {
-        return ticketActionWarning("Choose a different eligible creator before transferring this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.transferMissingCreator, ticketId)
       }
       const newCreator = await resolveRuntimeUser(context, newCreatorUserId)
       await context.runtime.actions.get("opendiscord:transfer-ticket").run("other", {
@@ -845,21 +879,21 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         newCreator
       })
-      return ticketActionSuccess("Ticket creator transferred.", ticketId)
+      return ticketActionSuccess(ticketActionResults.transferSuccess, ticketId)
     }
 
     if (action === "add-participant" || action === "remove-participant") {
       const participantUserId = normalizeString(input.participantUserId)
       const selected = detail.participantChoices.find((choice) => choice.userId === participantUserId)
       if (!selected) {
-        return ticketActionWarning("Choose a valid user participant before updating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.participantInvalidUser, ticketId)
       }
       if (action === "add-participant" && selected.present) {
-        return ticketActionWarning("Selected user is already a participant.", ticketId)
+        return ticketActionWarning(ticketActionResults.participantAlreadyPresent, ticketId)
       }
       if (action === "remove-participant") {
-        if (!selected.present) return ticketActionWarning("Selected user is not a participant.", ticketId)
-        if (selected.userId === detail.ticket.creatorId) return ticketActionWarning("The current ticket creator cannot be removed as a participant.", ticketId)
+        if (!selected.present) return ticketActionWarning(ticketActionResults.participantNotPresent, ticketId)
+        if (selected.userId === detail.ticket.creatorId) return ticketActionWarning(ticketActionResults.participantCreatorRemoveDenied, ticketId)
       }
       const targetUser = await resolveRuntimeUser(context, participantUserId)
       await context.runtime.actions.get(action === "add-participant" ? "opendiscord:add-ticket-user" : "opendiscord:remove-ticket-user").run("other", {
@@ -871,17 +905,17 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         data: targetUser
       })
-      return ticketActionSuccess(action === "add-participant" ? "Ticket participant added." : "Ticket participant removed.", ticketId)
+      return ticketActionSuccess(action === "add-participant" ? ticketActionResults.participantAddSuccess : ticketActionResults.participantRemoveSuccess, ticketId)
     }
 
     if (action === "set-priority") {
       const priorityId = normalizeString(input.priorityId)
       if (!detail.priorityChoices.some((choice) => choice.priorityId === priorityId)) {
-        return ticketActionWarning("Choose a valid priority before updating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.priorityInvalid, ticketId)
       }
       const newPriority = resolvePriorityChoice(context.runtime, priorityId)
       if (!newPriority) {
-        return ticketActionWarning("Choose a configured Open Ticket priority before updating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.priorityUnconfigured, ticketId)
       }
       await context.runtime.actions.get("opendiscord:update-ticket-priority").run("other", {
         guild: context.guild,
@@ -892,13 +926,13 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         newPriority
       })
-      return ticketActionSuccess("Ticket priority updated.", ticketId)
+      return ticketActionSuccess(ticketActionResults.prioritySuccess, ticketId)
     }
 
     if (action === "set-topic") {
       const topic = normalizeString(input.topic)
       if (!topic) {
-        return ticketActionWarning("Enter a ticket topic before updating this ticket.", ticketId)
+        return ticketActionWarning(ticketActionResults.topicMissing, ticketId)
       }
       await context.runtime.actions.get("opendiscord:update-ticket-topic").run("other", {
         guild: context.guild,
@@ -909,7 +943,7 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         sendMessage: true,
         newTopic: topic
       })
-      return ticketActionSuccess("Ticket topic updated.", ticketId)
+      return ticketActionSuccess(ticketActionResults.topicSuccess, ticketId)
     }
 
     const runtimeActionId = `opendiscord:${action}-ticket`
@@ -921,9 +955,9 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
       reason,
       sendMessage: true
     })
-    return ticketActionSuccess(`Ticket ${action} action completed.`, ticketId)
+    return ticketActionSuccess(ticketActionResults.genericSuccess, ticketId)
   } catch (error) {
-    return ticketActionDanger(error instanceof Error ? error.message : "Ticket action failed.", ticketId)
+    return ticketActionDanger(error instanceof Error ? error.message : ticketActionResults.genericFailure, ticketId)
   }
 }
 
