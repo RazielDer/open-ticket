@@ -223,6 +223,13 @@ function collectAllAssetRefs(document: LocalTranscriptDocument) {
         }
 
         for (const attachment of message.attachments) add(attachment.asset)
+        if (message.formRecord) {
+            for (const answer of message.formRecord.answers) {
+                if (answer.answerData?.kind == "file_upload") {
+                    answer.answerData.files.forEach((file) => add(file.asset))
+                }
+            }
+        }
 
         for (const component of message.components) {
             if (component.type == "buttons") {

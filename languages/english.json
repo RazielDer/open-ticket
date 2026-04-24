@@ -451,6 +451,8 @@
         
         "move":"Move a ticket.",
         "moveId":"The identifier of the option that you want to move to.",
+        "escalate":"Escalate a ticket to an allowed support route.",
+        "escalateId":"The identifier of the ticket option that you want to escalate to.",
         "rename":"Rename a ticket.",
         "renameName":"The new name for this ticket.",
         "add":"Add a user to a ticket.",
@@ -515,6 +517,7 @@
         "pin":"Pin a ticket. This will move the ticket to the top and will add a '📌' emoij to the name.",
         "unpin":"Unpin a ticket. The ticket will stay on it's position but will lose the '📌' emoij.",
         "move":"Move a ticket. This will change the type of this ticket.",
+        "escalate":"Escalate a ticket to an allowed support-team route.",
         "rename":"Rename a ticket. This will change the channel name of this ticket.",
         "claim":"Claim a ticket. With this, you can let your team know you are handling this ticket.",
         "unclaim":"Unclaim a ticket. With this, you can let your team know that this ticket is free again.",

@@ -1435,6 +1435,347 @@ export interface ODModalDataQuestion {
     value?:string
 }
 
+/**## ODModalInputKind `type`
+ * The fixed input families supported by the Open Ticket modal component foundation.
+ */
+export type ODModalInputKind =
+    "text-input"|
+    "string-select"|
+    "user-select"|
+    "role-select"|
+    "channel-select"|
+    "mentionable-select"|
+    "file-upload"|
+    "radio-group"|
+    "checkbox-group"|
+    "checkbox"
+
+/**## ODModalInputSupport `interface`
+ * The support status for a modal input family on the pinned Open Ticket Discord.js stack.
+ */
+export interface ODModalInputSupport {
+    status:"stable"|"preview"|"unsupported",
+    reason:string|null
+}
+
+/**## ODModalChoiceOptionData `interface`
+ * Reusable option contract for modal string-select components.
+ */
+export interface ODModalChoiceOptionData {
+    label:string,
+    value:string,
+    description?:string,
+    emoji?:discord.ComponentEmojiResolvable,
+    default?:boolean
+}
+
+/**## ODModalSelectionConstraintsData `interface`
+ * Reusable min/max selection contract for modal inputs that expose selection counts.
+ */
+export interface ODModalSelectionConstraintsData {
+    minValues?:number,
+    maxValues?:number,
+    required?:boolean
+}
+
+/**## ODModalFileUploadConfigData `interface`
+ * Reusable file-upload contract. Attachment storage, transcript custody, and safety policy belong to later slices.
+ */
+export interface ODModalFileUploadConfigData {
+    minFiles?:number,
+    maxFiles?:number,
+    required?:boolean,
+    attachmentPolicy?:string|null
+}
+
+interface ODModalLabelChildBaseData {
+    kind:ODModalInputKind,
+    customId:string
+}
+
+export interface ODModalTextInputChildData extends ODModalLabelChildBaseData {
+    kind:"text-input",
+    style?:"short"|"paragraph",
+    label?:string,
+    minLength?:number,
+    maxLength?:number,
+    required?:boolean,
+    placeholder?:string,
+    value?:string
+}
+
+export interface ODModalStringSelectChildData extends ODModalLabelChildBaseData, ODModalSelectionConstraintsData {
+    kind:"string-select",
+    placeholder?:string,
+    options:ODModalChoiceOptionData[]
+}
+
+export interface ODModalUserSelectChildData extends ODModalLabelChildBaseData, ODModalSelectionConstraintsData {
+    kind:"user-select",
+    placeholder?:string,
+    defaultUsers?:discord.Snowflake[]
+}
+
+export interface ODModalRoleSelectChildData extends ODModalLabelChildBaseData, ODModalSelectionConstraintsData {
+    kind:"role-select",
+    placeholder?:string,
+    defaultRoles?:discord.Snowflake[]
+}
+
+export interface ODModalChannelSelectChildData extends ODModalLabelChildBaseData, ODModalSelectionConstraintsData {
+    kind:"channel-select",
+    placeholder?:string,
+    channelTypes?:discord.ChannelType[],
+    defaultChannels?:discord.Snowflake[]
+}
+
+export interface ODModalMentionableSelectChildData extends ODModalLabelChildBaseData, ODModalSelectionConstraintsData {
+    kind:"mentionable-select",
+    placeholder?:string,
+    defaultUsers?:discord.Snowflake[],
+    defaultRoles?:discord.Snowflake[]
+}
+
+export interface ODModalFileUploadChildData extends ODModalLabelChildBaseData, ODModalFileUploadConfigData {
+    kind:"file-upload"
+}
+
+export interface ODModalUnsupportedChildData extends ODModalLabelChildBaseData {
+    kind:"radio-group"|"checkbox-group"|"checkbox"
+}
+
+export type ODModalLabelChildData =
+    ODModalTextInputChildData|
+    ODModalStringSelectChildData|
+    ODModalUserSelectChildData|
+    ODModalRoleSelectChildData|
+    ODModalChannelSelectChildData|
+    ODModalMentionableSelectChildData|
+    ODModalFileUploadChildData|
+    ODModalUnsupportedChildData
+
+export interface ODModalLabelComponentData {
+    type:"label",
+    label:string,
+    description?:string,
+    component:ODModalLabelChildData
+}
+
+export interface ODModalTextDisplayComponentData {
+    type:"text-display",
+    content:string
+}
+
+export type ODModalTopLevelComponentData = ODModalLabelComponentData|ODModalTextDisplayComponentData
+
+const ODModalUnsupportedInputReasons: Record<"radio-group"|"checkbox-group"|"checkbox",string> = {
+    "radio-group":"Radio groups are not exposed as stable modal inputs on the pinned Discord.js modal stack.",
+    "checkbox-group":"Checkbox groups are not exposed as stable modal inputs on the pinned Discord.js modal stack.",
+    "checkbox":"Checkboxes are not exposed as stable modal inputs on the pinned Discord.js modal stack."
+}
+
+/**Get support status for a modal input kind on the pinned Open Ticket Discord.js stack. */
+export const getModalInputSupport = (kind:ODModalInputKind): ODModalInputSupport => {
+    if (
+        kind == "text-input" ||
+        kind == "string-select" ||
+        kind == "user-select" ||
+        kind == "role-select" ||
+        kind == "channel-select" ||
+        kind == "mentionable-select" ||
+        kind == "file-upload"
+    ) return {status:"stable",reason:null}
+
+    if (kind == "radio-group" || kind == "checkbox-group" || kind == "checkbox"){
+        return {status:"unsupported",reason:ODModalUnsupportedInputReasons[kind]}
+    }
+
+    return {status:"unsupported",reason:"Unknown modal input kind."}
+}
+
+type ODDiscordComponentBuilder = { toJSON():unknown }
+type ODDiscordSelectBuilder = ODDiscordComponentBuilder & {
+    setCustomId(customId:string): ODDiscordSelectBuilder,
+    setPlaceholder(placeholder:string): ODDiscordSelectBuilder,
+    setMinValues(minValues:number): ODDiscordSelectBuilder,
+    setMaxValues(maxValues:number): ODDiscordSelectBuilder,
+    setRequired(required?:boolean): ODDiscordSelectBuilder
+}
+type ODDiscordLabelBuilder = ODDiscordComponentBuilder & {
+    setLabel(label:string): ODDiscordLabelBuilder,
+    setDescription(description:string): ODDiscordLabelBuilder,
+    setTextInputComponent(component:discord.TextInputBuilder): ODDiscordLabelBuilder,
+    setStringSelectMenuComponent(component:discord.StringSelectMenuBuilder): ODDiscordLabelBuilder,
+    setUserSelectMenuComponent(component:discord.UserSelectMenuBuilder): ODDiscordLabelBuilder,
+    setRoleSelectMenuComponent(component:discord.RoleSelectMenuBuilder): ODDiscordLabelBuilder,
+    setChannelSelectMenuComponent(component:discord.ChannelSelectMenuBuilder): ODDiscordLabelBuilder,
+    setMentionableSelectMenuComponent(component:discord.MentionableSelectMenuBuilder): ODDiscordLabelBuilder,
+    setFileUploadComponent(component:unknown): ODDiscordLabelBuilder
+}
+type ODDiscordTextDisplayBuilder = ODDiscordComponentBuilder & {
+    setContent(content:string): ODDiscordTextDisplayBuilder
+}
+type ODDiscordFileUploadBuilder = ODDiscordComponentBuilder & {
+    setCustomId(customId:string): ODDiscordFileUploadBuilder,
+    setMinValues(minValues:number): ODDiscordFileUploadBuilder,
+    setMaxValues(maxValues:number): ODDiscordFileUploadBuilder,
+    setRequired(required?:boolean): ODDiscordFileUploadBuilder
+}
+type ODDiscordModalComponentConstructors = {
+    LabelBuilder: new () => ODDiscordLabelBuilder,
+    TextDisplayBuilder: new () => ODDiscordTextDisplayBuilder,
+    FileUploadBuilder: new () => ODDiscordFileUploadBuilder
+}
+type ODDiscordModalBuilderWithComponents = discord.ModalBuilder & {
+    addLabelComponents(...components:ODDiscordLabelBuilder[]): discord.ModalBuilder,
+    addTextDisplayComponents(...components:ODDiscordTextDisplayBuilder[]): discord.ModalBuilder
+}
+
+const getDiscordModalComponentConstructors = (): ODDiscordModalComponentConstructors => {
+    const constructors = discord as unknown as ODDiscordModalComponentConstructors
+    if (!constructors.LabelBuilder || !constructors.TextDisplayBuilder || !constructors.FileUploadBuilder){
+        throw new ODSystemError("ODModal:build() => installed Discord.js modal component builders are unavailable!")
+    }
+    return constructors
+}
+
+const buildUnknownModalFallbackResult = (id:ODId): ODModalBuildResult => {
+    const modal = new discord.ModalBuilder()
+    modal.setCustomId("od:unknown-modal")
+    modal.setTitle("❌ <ODError:Unknown Modal>")
+    modal.addComponents(
+        new discord.ActionRowBuilder<discord.ModalActionRowComponentBuilder>()
+            .addComponents(
+                new discord.TextInputBuilder()
+                    .setStyle(discord.TextInputStyle.Short)
+                    .setCustomId("error")
+                    .setLabel("error")
+                    .setRequired(false)
+                    .setPlaceholder("Contact the bot creator for more info!")
+            )
+    )
+    return {id,modal}
+}
+
+const assertModalInputStable = (kind:ODModalInputKind): void => {
+    const support = getModalInputSupport(kind)
+    if (support.status != "stable"){
+        throw new ODSystemError("ODModal:build() => modal input kind \""+kind+"\" is "+support.status+": "+(support.reason ?? "No reason provided."))
+    }
+}
+
+const applyModalSelectionConstraints = <Builder extends ODDiscordSelectBuilder>(builder:Builder, data:ODModalSelectionConstraintsData): Builder => {
+    if (data.minValues !== undefined) builder.setMinValues(data.minValues)
+    if (data.maxValues !== undefined) builder.setMaxValues(data.maxValues)
+    if (data.required !== undefined) builder.setRequired(data.required)
+    return builder
+}
+
+const buildModalTextInputChild = (component:ODModalTextInputChildData, fallbackLabel:string): discord.TextInputBuilder => {
+    const input = new discord.TextInputBuilder()
+        .setStyle(component.style == "paragraph" ? discord.TextInputStyle.Paragraph : discord.TextInputStyle.Short)
+        .setCustomId(component.customId)
+        .setLabel(component.label ?? fallbackLabel)
+        .setRequired(component.required ? true : false)
+
+    if (component.minLength !== undefined) input.setMinLength(component.minLength)
+    if (component.maxLength !== undefined) input.setMaxLength(component.maxLength)
+    if (component.value !== undefined) input.setValue(component.value)
+    if (component.placeholder !== undefined) input.setPlaceholder(component.placeholder)
+
+    return input
+}
+
+const buildModalStringSelectChild = (component:ODModalStringSelectChildData): discord.StringSelectMenuBuilder => {
+    const select = applyModalSelectionConstraints(new discord.StringSelectMenuBuilder().setCustomId(component.customId) as unknown as ODDiscordSelectBuilder, component) as unknown as discord.StringSelectMenuBuilder
+    if (component.placeholder !== undefined) select.setPlaceholder(component.placeholder)
+    select.setOptions(...component.options.map((option) => ({
+        label:option.label,
+        value:option.value,
+        description:option.description,
+        emoji:option.emoji,
+        default:option.default
+    })))
+    return select
+}
+
+const buildModalUserSelectChild = (component:ODModalUserSelectChildData): discord.UserSelectMenuBuilder => {
+    const select = applyModalSelectionConstraints(new discord.UserSelectMenuBuilder().setCustomId(component.customId) as unknown as ODDiscordSelectBuilder, component) as unknown as discord.UserSelectMenuBuilder
+    if (component.placeholder !== undefined) select.setPlaceholder(component.placeholder)
+    if (component.defaultUsers) select.setDefaultUsers(...component.defaultUsers)
+    return select
+}
+
+const buildModalRoleSelectChild = (component:ODModalRoleSelectChildData): discord.RoleSelectMenuBuilder => {
+    const select = applyModalSelectionConstraints(new discord.RoleSelectMenuBuilder().setCustomId(component.customId) as unknown as ODDiscordSelectBuilder, component) as unknown as discord.RoleSelectMenuBuilder
+    if (component.placeholder !== undefined) select.setPlaceholder(component.placeholder)
+    if (component.defaultRoles) select.setDefaultRoles(...component.defaultRoles)
+    return select
+}
+
+const buildModalChannelSelectChild = (component:ODModalChannelSelectChildData): discord.ChannelSelectMenuBuilder => {
+    const select = applyModalSelectionConstraints(new discord.ChannelSelectMenuBuilder().setCustomId(component.customId) as unknown as ODDiscordSelectBuilder, component) as unknown as discord.ChannelSelectMenuBuilder
+    if (component.placeholder !== undefined) select.setPlaceholder(component.placeholder)
+    if (component.channelTypes) select.setChannelTypes(...component.channelTypes)
+    if (component.defaultChannels) select.setDefaultChannels(...component.defaultChannels)
+    return select
+}
+
+const buildModalMentionableSelectChild = (component:ODModalMentionableSelectChildData): discord.MentionableSelectMenuBuilder => {
+    const select = applyModalSelectionConstraints(new discord.MentionableSelectMenuBuilder().setCustomId(component.customId) as unknown as ODDiscordSelectBuilder, component) as unknown as discord.MentionableSelectMenuBuilder
+    if (component.placeholder !== undefined) select.setPlaceholder(component.placeholder)
+    const defaultValues: ({type:discord.SelectMenuDefaultValueType.User,id:string}|{type:discord.SelectMenuDefaultValueType.Role,id:string})[] = []
+    if (component.defaultUsers) defaultValues.push(...component.defaultUsers.map((id) => ({id,type:discord.SelectMenuDefaultValueType.User as discord.SelectMenuDefaultValueType.User})))
+    if (component.defaultRoles) defaultValues.push(...component.defaultRoles.map((id) => ({id,type:discord.SelectMenuDefaultValueType.Role as discord.SelectMenuDefaultValueType.Role})))
+    if (defaultValues.length > 0) select.setDefaultValues(...defaultValues)
+    return select
+}
+
+const buildModalFileUploadChild = (component:ODModalFileUploadChildData): ODDiscordFileUploadBuilder => {
+    const constructors = getDiscordModalComponentConstructors()
+    const input = new constructors.FileUploadBuilder().setCustomId(component.customId)
+    if (component.minFiles !== undefined) input.setMinValues(component.minFiles)
+    if (component.maxFiles !== undefined) input.setMaxValues(component.maxFiles)
+    if (component.required !== undefined) input.setRequired(component.required)
+    return input
+}
+
+const buildModalLabelChild = (component:ODModalLabelChildData, fallbackLabel:string): ODDiscordComponentBuilder => {
+    assertModalInputStable(component.kind)
+
+    if (component.kind == "text-input") return buildModalTextInputChild(component,fallbackLabel)
+    else if (component.kind == "string-select") return buildModalStringSelectChild(component)
+    else if (component.kind == "user-select") return buildModalUserSelectChild(component)
+    else if (component.kind == "role-select") return buildModalRoleSelectChild(component)
+    else if (component.kind == "channel-select") return buildModalChannelSelectChild(component)
+    else if (component.kind == "mentionable-select") return buildModalMentionableSelectChild(component)
+    else if (component.kind == "file-upload") return buildModalFileUploadChild(component)
+
+    throw new ODSystemError("ODModal:build() => unsupported modal input kind \""+component.kind+"\"!")
+}
+
+const buildModalLabelComponent = (component:ODModalLabelComponentData): ODDiscordLabelBuilder => {
+    const constructors = getDiscordModalComponentConstructors()
+    const label = new constructors.LabelBuilder().setLabel(component.label)
+    if (component.description !== undefined) label.setDescription(component.description)
+
+    const child = buildModalLabelChild(component.component,component.label)
+    if (component.component.kind == "text-input") label.setTextInputComponent(child as discord.TextInputBuilder)
+    else if (component.component.kind == "string-select") label.setStringSelectMenuComponent(child as discord.StringSelectMenuBuilder)
+    else if (component.component.kind == "user-select") label.setUserSelectMenuComponent(child as discord.UserSelectMenuBuilder)
+    else if (component.component.kind == "role-select") label.setRoleSelectMenuComponent(child as discord.RoleSelectMenuBuilder)
+    else if (component.component.kind == "channel-select") label.setChannelSelectMenuComponent(child as discord.ChannelSelectMenuBuilder)
+    else if (component.component.kind == "mentionable-select") label.setMentionableSelectMenuComponent(child as discord.MentionableSelectMenuBuilder)
+    else if (component.component.kind == "file-upload") label.setFileUploadComponent(child)
+
+    return label
+}
+
+const buildModalTextDisplayComponent = (component:ODModalTextDisplayComponentData): ODDiscordTextDisplayBuilder => {
+    const constructors = getDiscordModalComponentConstructors()
+    return new constructors.TextDisplayBuilder().setContent(component.content)
+}
+
 /**## ODModalData `interface`
  * This interface contains the data to build a modal.
  */
@@ -1445,6 +1786,8 @@ export interface ODModalData {
     title:string|null,
     /**The collection of questions in this modal */
     questions:ODModalDataQuestion[],
+    /**The collection of modal components in this modal */
+    components:ODModalTopLevelComponentData[],
 }
 
 /**## ODModalBuildResult `interface`
@@ -1467,7 +1810,8 @@ export class ODModalInstance {
     data: ODModalData = {
         customId:"",
         title:null,
-        questions:[]
+        questions:[],
+        components:[]
     }
 
     /**Set the custom id of this modal */
@@ -1488,6 +1832,34 @@ export class ODModalInstance {
     /**Add a question to this modal! */
     addQuestion(question:ODModalDataQuestion){
         this.data.questions.push(question)
+        return this
+    }
+    /**Set the components of this modal */
+    setComponents(...components:ODModalData["components"]){
+        this.data.components = components
+        return this
+    }
+    /**Add a component to this modal! */
+    addComponent(component:ODModalTopLevelComponentData){
+        this.data.components.push(component)
+        return this
+    }
+    /**Add a label-wrapped input component to this modal! */
+    addLabelComponent(component:ODModalLabelComponentData): this
+    addLabelComponent(label:string, component:ODModalLabelChildData, description?:string): this
+    addLabelComponent(labelOrComponent:string|ODModalLabelComponentData, component?:ODModalLabelChildData, description?:string){
+        if (typeof labelOrComponent == "string"){
+            if (!component) throw new ODSystemError("ODModalInstance:addLabelComponent() => missing label child component!")
+            this.data.components.push({type:"label",label:labelOrComponent,description,component})
+        }else this.data.components.push(labelOrComponent)
+        return this
+    }
+    /**Add helper text to this modal. This component never yields a submitted value. */
+    addTextDisplayComponent(component:ODModalTextDisplayComponentData): this
+    addTextDisplayComponent(content:string): this
+    addTextDisplayComponent(contentOrComponent:string|ODModalTextDisplayComponentData){
+        if (typeof contentOrComponent == "string") this.data.components.push({type:"text-display",content:contentOrComponent})
+        else this.data.components.push(contentOrComponent)
         return this
     }
     /**Remove a question from this modal */
@@ -1516,39 +1888,58 @@ export class ODModal<Source extends string,Params> extends ODBuilderImplementati
     /**Build this modal & compile it for discord.js */
     async build(source:Source, params:Params){
         if (this.didCache && this.cache && this.allowCache) return this.cache
-        
-        //create instance
-        const instance = new ODModalInstance()
 
-        //wait for workers to finish
-        await this.workers.executeWorkers(instance,source,params)
+        try{
+            //create instance
+            const instance = new ODModalInstance()
 
-        //create the discord.js modal
-        const modal = new discord.ModalBuilder()
-        modal.setCustomId(instance.data.customId)
-        if (instance.data.title) modal.setTitle(instance.data.title)
-        else modal.setTitle(instance.data.customId)
-        
-        instance.data.questions.forEach((question) => {
-            const input = new discord.TextInputBuilder()
-                .setStyle(question.style == "paragraph" ? discord.TextInputStyle.Paragraph : discord.TextInputStyle.Short)
-                .setCustomId(question.customId)
-                .setLabel(question.label ? question.label : question.customId)
-                .setRequired(question.required ? true : false)
+            //wait for workers to finish
+            await this.workers.executeWorkers(instance,source,params)
+
+            const hasQuestions = instance.data.questions.length > 0
+            const hasComponents = instance.data.components.length > 0
+            if (hasQuestions && hasComponents) throw new ODSystemError("ODModal:build(\""+this.id.value+"\") => mixed legacy questions and modal components are forbidden!")
+
+            //create the discord.js modal
+            const modal = new discord.ModalBuilder()
+            modal.setCustomId(instance.data.customId)
+            if (instance.data.title) modal.setTitle(instance.data.title)
+            else modal.setTitle(instance.data.customId)
             
-            if (question.minLength) input.setMinLength(question.minLength)
-            if (question.maxLength) input.setMaxLength(question.maxLength)
-            if (question.value) input.setValue(question.value)
-            if (question.placeholder) input.setPlaceholder(question.placeholder)
+            instance.data.questions.forEach((question) => {
+                const input = new discord.TextInputBuilder()
+                    .setStyle(question.style == "paragraph" ? discord.TextInputStyle.Paragraph : discord.TextInputStyle.Short)
+                    .setCustomId(question.customId)
+                    .setLabel(question.label ? question.label : question.customId)
+                    .setRequired(question.required ? true : false)
+                
+                if (question.minLength) input.setMinLength(question.minLength)
+                if (question.maxLength) input.setMaxLength(question.maxLength)
+                if (question.value) input.setValue(question.value)
+                if (question.placeholder) input.setPlaceholder(question.placeholder)
 
-            modal.addComponents(
-                new discord.ActionRowBuilder<discord.ModalActionRowComponentBuilder>()
-                    .addComponents(input)
-            )
-        })
+                modal.addComponents(
+                    new discord.ActionRowBuilder<discord.ModalActionRowComponentBuilder>()
+                        .addComponents(input)
+                )
+            })
 
-        this.cache = {id:this.id,modal}
-        this.didCache = true
-        return {id:this.id,modal}
+            if (hasComponents){
+                const componentModal = modal as ODDiscordModalBuilderWithComponents
+                instance.data.components.forEach((component) => {
+                    if (component.type == "label") componentModal.addLabelComponents(buildModalLabelComponent(component))
+                    else if (component.type == "text-display") componentModal.addTextDisplayComponents(buildModalTextDisplayComponent(component))
+                    else throw new ODSystemError("ODModal:build(\""+this.id.value+"\") => unsupported top-level modal component!")
+                })
+            }
+
+            this.cache = {id:this.id,modal}
+            this.didCache = true
+            return {id:this.id,modal}
+        }catch(err){
+            process.emit("uncaughtException",new ODSystemError("ODModal:build(\""+this.id.value+"\") => Major Error (see next error)"))
+            process.emit("uncaughtException",err)
+            return buildUnknownModalFallbackResult(this.id)
+        }
     }
 }

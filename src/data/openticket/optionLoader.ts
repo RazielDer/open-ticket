@@ -68,6 +68,8 @@ export const loadTicketOption = (option:api.ODJsonConfig_DefaultOptionTicketType
         new api.ODOptionData("opendiscord:allow-blacklisted-users",option.allowCreationByBlacklistedUsers),
         new api.ODOptionData("opendiscord:questions",option.questions),
 
+        new api.ODOptionData("opendiscord:channel-transport-mode",option.channel.transportMode ?? "channel_text"),
+        new api.ODOptionData("opendiscord:channel-thread-parent",option.channel.threadParentChannel ?? ""),
         new api.ODOptionData("opendiscord:channel-prefix",option.channel.prefix),
         new api.ODOptionData("opendiscord:channel-suffix",option.channel.suffix),
         new api.ODOptionData("opendiscord:channel-category",option.channel.category),
@@ -75,6 +77,9 @@ export const loadTicketOption = (option:api.ODJsonConfig_DefaultOptionTicketType
         new api.ODOptionData("opendiscord:channel-category-backup",option.channel.backupCategory),
         new api.ODOptionData("opendiscord:channel-categories-claimed",option.channel.claimedCategory),
         new api.ODOptionData("opendiscord:channel-topic",option.channel.topic),
+
+        new api.ODOptionData("opendiscord:routing-support-team",option.routing?.supportTeamId ?? ""),
+        new api.ODOptionData("opendiscord:routing-escalation-targets",option.routing?.escalationTargetOptionIds ?? []),
         
         new api.ODOptionData("opendiscord:dm-message-enabled",option.dmMessage.enabled),
         new api.ODOptionData("opendiscord:dm-message-text",option.dmMessage.text),

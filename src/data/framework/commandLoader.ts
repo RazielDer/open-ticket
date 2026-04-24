@@ -249,6 +249,30 @@ export const loadAllSlashCommands = async () => {
         ]
     }))
 
+    //ESCALATE
+    if (allowedCommands.includes("escalate")) commands.add(new api.ODSlashCommand("opendiscord:escalate",{
+        type:act.ChatInput,
+        name:"escalate",
+        description:lang.getTranslation("commands.escalate"),
+        contexts:[discord.InteractionContextType.Guild],
+        integrationTypes:[discord.ApplicationIntegrationType.GuildInstall],
+        options:[
+            {
+                name:"id",
+                description:lang.getTranslation("commands.escalateId"),
+                type:acot.String,
+                required:true,
+                autocomplete:true
+            },
+            {
+                name:"reason",
+                description:lang.getTranslation("commands.reason"),
+                type:acot.String,
+                required:false
+            }
+        ]
+    }))
+
     //RENAME
     if (allowedCommands.includes("rename")) commands.add(new api.ODSlashCommand("opendiscord:rename",{
         type:act.ChatInput,
@@ -825,6 +849,29 @@ export const loadAllTextCommands = async () => {
     //MOVE
     if (allowedCommands.includes("move")) commands.add(new api.ODTextCommand("opendiscord:move",{
         name:"move",
+        prefix,
+        dmPermission:false,
+        guildPermission:true,
+        allowBots:false,
+        options:[
+            {
+                name:"id",
+                type:"string",
+                required:true,
+                choices:ticketChoices
+            },
+            {
+                name:"reason",
+                type:"string",
+                required:false,
+                allowSpaces:true
+            }
+        ]
+    }))
+
+    //ESCALATE
+    if (allowedCommands.includes("escalate")) commands.add(new api.ODTextCommand("opendiscord:escalate",{
+        name:"escalate",
         prefix,
         dmPermission:false,
         guildPermission:true,

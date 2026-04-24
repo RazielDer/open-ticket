@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { setTicketAssignedStaff } from "./ticketRouting.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,7 +12,6 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:claim-ticket").workers.add([
         new api.ODWorker("opendiscord:claim-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to claim ticket! Open Ticket doesn't support threads!")
 
             await opendiscord.events.get("onTicketClaim").emit([ticket,user,channel,reason])
             
@@ -20,13 +20,14 @@ export const registerActions = async () => {
             ticket.get("opendiscord:claimed-by").value = user.id
             ticket.get("opendiscord:claimed-on").value = new Date().getTime()
             ticket.get("opendiscord:busy").value = true
+            setTicketAssignedStaff(ticket,user.id)
 
             //update stats
             await opendiscord.stats.get("opendiscord:global").setStat("opendiscord:tickets-claimed",1,"increase")
             await opendiscord.stats.get("opendiscord:user").setStat("opendiscord:tickets-claimed",user.id,1,"increase")
 
             //update category
-            if (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true){
+            if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
                 const rawClaimCategory = ticket.option.get("opendiscord:channel-categories-claimed").value.find((c) => c.user == user.id)
                 const claimCategory = (rawClaimCategory) ? rawClaimCategory.category : null
                 if (claimCategory){

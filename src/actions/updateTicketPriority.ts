@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,27 +12,39 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:update-ticket-priority").workers.add([
         new api.ODWorker("opendiscord:update-ticket-priority",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,newPriority,reason} = params
-            if (channel.isThread() || !(channel instanceof discord.TextChannel)) throw new api.ODSystemError("Unable to set priority of ticket! Open Ticket doesn't support threads!")
+            if (channel.isDMBased()) throw new api.ODSystemError("Unable to set priority of ticket outside a guild text channel!")
 
             const oldPriority = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value)
             await opendiscord.events.get("onTicketPriorityChange").emit([ticket,user,channel,oldPriority,newPriority,reason])
+
+            const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
+            const priorityEmoji = newPriority.channelEmoji ?? ""
+            const originalName = channel.name
+            const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channel.name)
+            if (channel.isThread()){
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename private-thread ticket on priority update","warning")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    return cancel()
+                }
+            }
 
             //update ticket
             ticket.get("opendiscord:busy").value = true
             if (newPriority) ticket.get("opendiscord:priority").value = newPriority.priority
 
             //rename channel (and give error when crashed)
-            const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
-            const priorityEmoji = newPriority.channelEmoji ?? ""
-
-            const originalName = channel.name
-            const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channel.name)
-            try{
-                await utilities.timedAwait(channel.setName(newName),2500,(err) => {
-                    opendiscord.log("Failed to rename channel on ticket priority update","error")
-                })
-            }catch(err){
-                await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-priority",{guild,channel,user,originalName,newName})).message)
+            if (!channel.isThread()){
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename channel on ticket priority update","error")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-priority",{guild,channel,user,originalName,newName})).message)
+                }
             }
 
             //reply with new message

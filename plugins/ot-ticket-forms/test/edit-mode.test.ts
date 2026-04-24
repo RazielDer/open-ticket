@@ -39,8 +39,8 @@ test("modal edit mode hydrates saved answers into text questions without mutatin
         }
     ])
 
-    assert.equal(hydrated[0].value, "RazielDer")
-    assert.equal(hydrated[1].value, undefined)
+    assert.equal((hydrated[0] as any).value, "RazielDer")
+    assert.equal((hydrated[1] as any).value, undefined)
     assert.equal("value" in questions[0], false)
 })
 

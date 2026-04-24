@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const options = ui.readJson("options-data", []);
   const availableQuestions = ui.readJson("available-questions-data", []);
+  const supportTeams = ui.readJson("support-teams-data", []);
   const dependencyGraph = ui.readJson("dependency-graph-data", {
     optionPanels: {},
     questionOptions: {}
@@ -51,6 +52,8 @@ document.addEventListener("DOMContentLoaded", () => {
     transcriptUseGlobalDefault: document.getElementById("transcriptUseGlobalDefault"),
     transcriptChannels: document.getElementById("transcriptChannels"),
     transcriptRoutingHelper: document.getElementById("transcriptRoutingHelper"),
+    routingSupportTeamId: document.getElementById("routingSupportTeamId"),
+    routingEscalationTargetIds: document.getElementById("routingEscalationTargetIds"),
     slowModeEnabled: document.getElementById("slowModeEnabled"),
     slowModeSeconds: document.getElementById("slowModeSeconds"),
     dmMessageJson: document.getElementById("dmMessageJson"),
@@ -86,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const buttonColors = Array.from(fields.buttonColor?.options || []).map((option) => option.value);
   const channelSuffixes = Array.from(fields.channelSuffix?.options || []).map((option) => option.value);
   const roleModes = Array.from(fields.roleMode?.options || []).map((option) => option.value);
+  const supportTeamIds = new Set(supportTeams.map((team) => String(team.id || "")));
   const questionCheckboxes = Array.from(document.querySelectorAll("[data-question-id]"));
   const questionById = new Map(availableQuestions.map((question) => [String(question.id), question]));
   const inventoryButtons = Array.from(document.querySelectorAll("[data-option-select]"));
@@ -314,6 +318,8 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.userMaximum.value = 3;
     fields.transcriptUseGlobalDefault.checked = true;
     fields.transcriptChannels.value = ui.stringifyList(buildDefaultTranscriptRouting().channels);
+    fields.routingSupportTeamId.value = "";
+    fields.routingEscalationTargetIds.value = "[]";
     fields.slowModeSeconds.value = 20;
     fields.dmMessageJson.value = ui.stringifyJson(buildDefaultDmMessage());
     fields.ticketMessageJson.value = ui.stringifyJson(buildDefaultTicketMessage());
@@ -358,6 +364,8 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.userMaximum.value = option.limits?.userMaximum ?? 3;
     fields.transcriptUseGlobalDefault.checked = option.transcripts?.useGlobalDefault !== false;
     fields.transcriptChannels.value = ui.stringifyList(option.transcripts?.channels || []);
+    fields.routingSupportTeamId.value = option.routing?.supportTeamId || "";
+    fields.routingEscalationTargetIds.value = ui.stringifyList(option.routing?.escalationTargetOptionIds || []);
     fields.slowModeEnabled.checked = Boolean(option.slowMode?.enabled);
     fields.slowModeSeconds.value = option.slowMode?.slowModeSeconds ?? 20;
     fields.dmMessageJson.value = ui.stringifyJson(option.dmMessage || buildDefaultDmMessage());
@@ -444,6 +452,14 @@ document.addEventListener("DOMContentLoaded", () => {
       option.transcripts = {
         useGlobalDefault: fields.transcriptUseGlobalDefault.checked,
         channels: ui.parseList(fields.transcriptChannels.value)
+      };
+      const routingSupportTeamId = fields.routingSupportTeamId.value.trim();
+      if (routingSupportTeamId && !supportTeamIds.has(routingSupportTeamId)) {
+        throw new Error(messages["options.flash.validationRoutingTargets"] || "Choose an existing support team for this route.");
+      }
+      option.routing = {
+        supportTeamId: routingSupportTeamId,
+        escalationTargetOptionIds: ui.parseList(fields.routingEscalationTargetIds.value)
       };
       option.slowMode = {
         enabled: fields.slowModeEnabled.checked,

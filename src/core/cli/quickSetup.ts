@@ -1296,6 +1296,7 @@ async function saveQuickSetupConfig(){
                 pin:"admin",
                 unpin:"admin",
                 move:"admin",
+                escalate:"admin",
                 rename:"admin",
                 add:"admin",
                 remove:"admin",
@@ -1395,6 +1396,11 @@ async function saveQuickSetupConfig(){
                 backupCategory:"",
                 claimedCategory:[],
                 topic:ticket.description
+            },
+
+            routing:{
+                supportTeamId:"",
+                escalationTargetOptionIds:[]
             },
             
             dmMessage:{

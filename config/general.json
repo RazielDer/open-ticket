@@ -91,6 +91,7 @@
             "pin":"admin (OR everyone OR none OR role id)",
             "unpin":"admin (OR everyone OR none OR role id)",
             "move":"admin (OR everyone OR none OR role id)",
+            "escalate":"admin (OR everyone OR none OR role id)",
             "rename":"admin (OR everyone OR none OR role id)",
             "add":"admin (OR everyone OR none OR role id)",
             "remove":"admin (OR everyone OR none OR role id)",

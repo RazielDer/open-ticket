@@ -36,6 +36,7 @@ export interface ODConfigManagerIds_Default {
     "opendiscord:questions":ODJsonConfig_DefaultQuestions,
     "opendiscord:options":ODJsonConfig_DefaultOptions,
     "opendiscord:panels":ODJsonConfig_DefaultPanels,
+    "opendiscord:support-teams":ODJsonConfig_DefaultSupportTeams,
     "opendiscord:transcripts":ODJsonConfig_DefaultTranscripts
 }
 
@@ -172,6 +173,7 @@ export interface ODJsonConfig_DefaultSystemPermissions {
     pin:ODJsonConfig_DefaultCmdPermissionSettingsType,
     unpin:ODJsonConfig_DefaultCmdPermissionSettingsType,
     move:ODJsonConfig_DefaultCmdPermissionSettingsType,
+    escalate:ODJsonConfig_DefaultCmdPermissionSettingsType,
     rename:ODJsonConfig_DefaultCmdPermissionSettingsType,
     add:ODJsonConfig_DefaultCmdPermissionSettingsType,
     remove:ODJsonConfig_DefaultCmdPermissionSettingsType,
@@ -406,6 +408,10 @@ export interface ODJsonConfig_DefaultOptionPingSettingsType {
  * All settings related to the ticket channel itself in a ticket option.
  */
 export interface ODJsonConfig_DefaultOptionTicketChannelType {
+    /**The Discord transport used for this ticket option. */
+    transportMode?:"channel_text"|"private_thread",
+    /**The parent text channel for private-thread tickets. Required when transportMode is private_thread. */
+    threadParentChannel?:string,
     /**The prefix used in the name of this ticket channel. */
     prefix:string,
     /**The type of suffix used in the name of this ticket channel. */
@@ -427,6 +433,16 @@ export interface ODJsonConfig_DefaultOptionTicketChannelType {
     topic:string
 }
 
+/**## ODJsonConfig_DefaultOptionRoutingType `interface`
+ * Support-team routing and escalation settings for a ticket option.
+ */
+export interface ODJsonConfig_DefaultOptionRoutingType {
+    /**The support team that owns new tickets for this option. Empty keeps legacy role-only routing. */
+    supportTeamId:string,
+    /**Ticket option IDs that this option may escalate into. */
+    escalationTargetOptionIds:string[]
+}
+
 /**## ODJsonConfig_DefaultOptionTicketType `interface`
  * This interface is an object which has all ticket properties for options in the `options.json` config!
  */
@@ -443,6 +459,8 @@ export interface ODJsonConfig_DefaultOptionTicketType extends ODJsonConfig_Defau
     questions:string[],
     /**All settings related to the ticket channel itself. */
     channel:ODJsonConfig_DefaultOptionTicketChannelType,
+    /**All settings related to support-team ownership and escalation targets. */
+    routing:ODJsonConfig_DefaultOptionRoutingType,
     /**All settings related to the message sent in DM to the creator when the ticket is created. */
     dmMessage:{
         /**Enable this message. */
@@ -548,6 +566,32 @@ export type ODJsonConfig_DefaultOptionsData = (ODJsonConfig_DefaultOptionTicketT
  */
 export class ODJsonConfig_DefaultOptions extends ODJsonConfig {
     declare data: ODJsonConfig_DefaultOptionsData
+}
+
+/**## ODJsonConfig_DefaultSupportTeamType `interface`
+ * A support team that can own ticket routes.
+ */
+export interface ODJsonConfig_DefaultSupportTeamType {
+    /**Unique support-team id. */
+    id:string,
+    /**Human-readable team name. */
+    name:string,
+    /**Discord role IDs that make up this support team. */
+    roleIds:string[],
+    /**How new/rerouted tickets are assigned within this support team. */
+    assignmentStrategy:"manual"|"round_robin"
+}
+
+/**## ODJsonConfig_DefaultSupportTeamsData `type`
+ * All contents of the `support-teams.json` config file.
+ */
+export type ODJsonConfig_DefaultSupportTeamsData = ODJsonConfig_DefaultSupportTeamType[]
+
+/**## ODJsonConfig_DefaultSupportTeams `default_class`
+ * This default class is made for the `support-teams.json` config!
+ */
+export class ODJsonConfig_DefaultSupportTeams extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultSupportTeamsData
 }
 
 /**## ODJsonConfig_DefaultPanelEmbedSettingsType `interface`

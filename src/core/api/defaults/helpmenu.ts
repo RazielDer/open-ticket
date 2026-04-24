@@ -142,6 +142,7 @@ export interface ODHelpMenuManagerCategoryIds_DefaultTicketAdvanced {
     "opendiscord:pin":ODHelpMenuCommandComponent,
     "opendiscord:unpin":ODHelpMenuCommandComponent,
     "opendiscord:move":ODHelpMenuCommandComponent,
+    "opendiscord:escalate":ODHelpMenuCommandComponent,
     "opendiscord:rename":ODHelpMenuCommandComponent
 }
 

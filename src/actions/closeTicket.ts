@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING, getTicketUserParticipantIds, removePrivateThreadMembers } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -12,7 +13,20 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:close-ticket").workers.add([
         new api.ODWorker("opendiscord:close-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to close ticket! Open Ticket doesn't support threads!")
+
+            if (channel.isThread()){
+                try{
+                    if (generalConfig.data.system.removeParticipantsOnClose){
+                        await removePrivateThreadMembers(channel as discord.PrivateThreadChannel,getTicketUserParticipantIds(ticket))
+                    }
+                    await (channel as discord.PrivateThreadChannel).setLocked(true,"Ticket Closed")
+                    await (channel as discord.PrivateThreadChannel).setArchived(true,"Ticket Closed")
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    opendiscord.log("Unable to close private-thread ticket before state mutation.","warning",[{key:"channelid",value:channel.id,hidden:true}])
+                    return cancel()
+                }
+            }
 
             await opendiscord.events.get("onTicketClose").emit([ticket,user,channel,reason])
             
@@ -34,7 +48,7 @@ export const registerActions = async () => {
             await opendiscord.stats.get("opendiscord:user").setStat("opendiscord:tickets-closed",user.id,1,"increase")
 
             //update category
-            if (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true){
+            if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
                 const closeCategory = ticket.option.get("opendiscord:channel-category-closed").value
                 if (closeCategory !== ""){
                     try {
@@ -53,61 +67,63 @@ export const registerActions = async () => {
             }
 
             //update permissions (non-staff => readonly)
-            const permissions: discord.OverwriteResolvable[] = [{
-                type:discord.OverwriteType.Role,
-                id:guild.roles.everyone.id,
-                allow:[],
-                deny:["ViewChannel","SendMessages","ReadMessageHistory"]
-            }]
-            const globalAdmins = opendiscord.configs.get("opendiscord:general").data.globalAdmins
-            const optionAdmins = ticket.option.get("opendiscord:admins").value
-            const readonlyAdmins = ticket.option.get("opendiscord:admins-readonly").value
+            if (!channel.isThread()){
+                const permissions: discord.OverwriteResolvable[] = [{
+                    type:discord.OverwriteType.Role,
+                    id:guild.roles.everyone.id,
+                    allow:[],
+                    deny:["ViewChannel","SendMessages","ReadMessageHistory"]
+                }]
+                const globalAdmins = opendiscord.configs.get("opendiscord:general").data.globalAdmins
+                const optionAdmins = ticket.option.get("opendiscord:admins").value
+                const readonlyAdmins = ticket.option.get("opendiscord:admins-readonly").value
 
-            globalAdmins.forEach((admin) => {
-                permissions.push({
-                    type:discord.OverwriteType.Role,
-                    id:admin,
-                    allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages"],
-                    deny:[]
-                })
-            })
-            optionAdmins.forEach((admin) => {
-                if (globalAdmins.includes(admin)) return
-                permissions.push({
-                    type:discord.OverwriteType.Role,
-                    id:admin,
-                    allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages"],
-                    deny:[]
-                })
-            })
-            readonlyAdmins.forEach((admin) => {
-                if (globalAdmins.includes(admin)) return
-                if (optionAdmins.includes(admin)) return
-                permissions.push({
-                    type:discord.OverwriteType.Role,
-                    id:admin,
-                    allow:["ViewChannel","ReadMessageHistory"],
-                    deny:["SendMessages","AddReactions","AttachFiles","SendPolls"]
-                })
-            })
-            ticket.get("opendiscord:participants").value.forEach((participant) => {
-                //all participants that aren't roles/admins => readonly (OR non-viewable when enabled)
-                if (participant.type == "user"){
-                    if (generalConfig.data.system.removeParticipantsOnClose) permissions.push({
-                        type:discord.OverwriteType.Member,
-                        id:participant.id,
-                        allow:[],
-                        deny:["SendMessages","AddReactions","AttachFiles","SendPolls","ViewChannel","ReadMessageHistory"]
+                globalAdmins.forEach((admin) => {
+                    permissions.push({
+                        type:discord.OverwriteType.Role,
+                        id:admin,
+                        allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages"],
+                        deny:[]
                     })
-                    else permissions.push({
-                        type:discord.OverwriteType.Member,
-                        id:participant.id,
+                })
+                optionAdmins.forEach((admin) => {
+                    if (globalAdmins.includes(admin)) return
+                    permissions.push({
+                        type:discord.OverwriteType.Role,
+                        id:admin,
+                        allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages"],
+                        deny:[]
+                    })
+                })
+                readonlyAdmins.forEach((admin) => {
+                    if (globalAdmins.includes(admin)) return
+                    if (optionAdmins.includes(admin)) return
+                    permissions.push({
+                        type:discord.OverwriteType.Role,
+                        id:admin,
                         allow:["ViewChannel","ReadMessageHistory"],
                         deny:["SendMessages","AddReactions","AttachFiles","SendPolls"]
                     })
-                }
-            })
-            channel.permissionOverwrites.set(permissions)
+                })
+                ticket.get("opendiscord:participants").value.forEach((participant) => {
+                    //all participants that aren't roles/admins => readonly (OR non-viewable when enabled)
+                    if (participant.type == "user"){
+                        if (generalConfig.data.system.removeParticipantsOnClose) permissions.push({
+                            type:discord.OverwriteType.Member,
+                            id:participant.id,
+                            allow:[],
+                            deny:["SendMessages","AddReactions","AttachFiles","SendPolls","ViewChannel","ReadMessageHistory"]
+                        })
+                        else permissions.push({
+                            type:discord.OverwriteType.Member,
+                            id:participant.id,
+                            allow:["ViewChannel","ReadMessageHistory"],
+                            deny:["SendMessages","AddReactions","AttachFiles","SendPolls"]
+                        })
+                    }
+                })
+                channel.permissionOverwrites.set(permissions)
+            }
 
             //update ticket message
             const ticketMessage = await opendiscord.tickets.getTicketMessage(ticket)

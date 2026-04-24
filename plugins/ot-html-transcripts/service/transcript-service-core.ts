@@ -1894,7 +1894,7 @@ export class TranscriptServiceCore {
         if (!value || typeof value != "object" || Array.isArray(value)) return false
         const document = value as Partial<LocalTranscriptDocument>
 
-        return document.version == "1.0"
+        return (document.version == "1.0" || document.version == "2.0")
             && typeof document.transcriptId == "string"
             && typeof document.generatedAt == "string"
             && typeof document.searchText == "string"

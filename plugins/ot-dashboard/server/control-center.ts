@@ -118,6 +118,7 @@ export function buildAdminNav(context: DashboardAppContext, activeKey: string) {
   const { basePath, i18n } = context
   const items = [
     { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "admin.shell" },
+    { key: "tickets", label: i18n.t("nav.tickets"), href: joinBasePath(basePath, "admin/tickets"), requiredCapability: "ticket.workbench" },
     { key: "transcripts", label: i18n.t("nav.transcripts"), href: joinBasePath(basePath, "admin/transcripts"), requiredCapability: "transcript.view.global" },
     { key: "addons", label: i18n.t("nav.addOns"), href: joinBasePath(basePath, "admin/plugins"), requiredCapability: "plugin.manage" },
     { key: "advanced", label: i18n.t("nav.advanced"), href: joinBasePath(basePath, "admin/advanced"), requiredCapability: "config.write.security" }
@@ -288,6 +289,9 @@ export function buildParityWarnings(id: ManagedConfigId) {
     ],
     questions: [
       "The guided editor enforces current question constraints. Use raw JSON when you need a full-fidelity review of the stored schema."
+    ],
+    "support-teams": [
+      "Support-team edits are admin-only because team ids are referenced by ticket-option routing and escalation guards."
     ],
     transcripts: [
       "Transcript styling changes can be extensive. Review the raw JSON before applying broad import or restore operations."

@@ -5,6 +5,9 @@ import type {
     LocalTranscriptComponent,
     LocalTranscriptDocument,
     LocalTranscriptEmbed,
+    LocalTranscriptFormAnswerData,
+    LocalTranscriptFormAnswerFile,
+    LocalTranscriptFormRecord,
     LocalTranscriptMessage
 } from "../contracts/document"
 
@@ -200,6 +203,36 @@ a { color: #8fd3ff; }
   border: 1px solid var(--border);
   background: var(--embed-bg);
 }
+.form-record {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(143, 211, 255, 0.28);
+  background: rgba(143, 211, 255, 0.08);
+}
+.form-record-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.form-answer {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.form-answer-title {
+  display: block;
+  margin-bottom: 6px;
+}
+.form-answer-files {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
 .reply {
   display: flex;
   gap: 10px;
@@ -314,10 +347,77 @@ function renderMessage(message: LocalTranscriptMessage) {
   </div>
   ${message.reply.type ? renderReply(message.author, message.reply) : ""}
   ${message.content ? `<div class="message-body">${renderFormattedText(message.content)}</div>` : ""}
+  ${message.formRecord ? renderFormRecord(message.formRecord) : ""}
   ${message.embeds.map((embed) => renderEmbed(embed)).join("")}
   ${message.attachments.map((attachment) => renderAttachment(attachment)).join("")}
   ${message.components.map((component) => renderComponent(component)).join("")}
 </article>`
+}
+
+function renderFormRecord(record: LocalTranscriptFormRecord) {
+    const completedAt = record.completedAt ? ` • completed ${escapeHtml(formatTimestamp(Date.parse(record.completedAt)))}` : ""
+    return `<section class="form-record">
+  <div class="form-record-header">
+    <strong>Archived form result</strong>
+    <span class="muted">${escapeHtml(record.formName || record.formId)} • ${escapeHtml(record.draftState)}${completedAt}</span>
+  </div>
+  ${record.answers.map((answer) => `<div class="form-answer">
+    <strong class="form-answer-title">${escapeHtml(String(answer.position))}. ${escapeHtml(answer.question)}</strong>
+    <div>${answer.answer ? renderFormattedText(answer.answer) : `<span class="muted">No compatibility answer text was archived.</span>`}</div>
+    ${renderFormAnswerData(answer.answerData)}
+  </div>`).join("")}
+</section>`
+}
+
+function renderFormAnswerData(answerData: LocalTranscriptFormAnswerData | null) {
+    if (!answerData) return ""
+
+    if (answerData.kind == "text") {
+        return answerData.value
+            ? `<div class="muted" style="margin-top:6px">Structured text answer preserved.</div>`
+            : `<div class="muted" style="margin-top:6px">Structured text answer was empty.</div>`
+    }
+
+    if (answerData.kind == "file_upload") {
+        return `<div class="form-answer-files">
+  ${answerData.files.length > 0
+            ? answerData.files.map((file) => renderFormAnswerFile(file)).join("")
+            : `<div class="attachment"><strong>No files archived.</strong><div class="muted">The submitted file answer did not contain file metadata.</div></div>`}
+</div>`
+    }
+
+    const selected = answerData.selected
+    if (selected.length == 0) {
+        return `<div class="muted" style="margin-top:6px">No structured selections were archived.</div>`
+    }
+
+    return `<div class="pill-row" style="margin-top:10px">${selected.map((entry) => `<span class="pill">${escapeHtml(entry.label)}</span>`).join("")}</div>`
+}
+
+function renderFormAnswerFile(file: LocalTranscriptFormAnswerFile) {
+    const size = file.size === false ? "unknown size" : formatByteSize(file.size)
+    const type = file.contentType || "unknown"
+    if (!file.asset || file.asset.status != "mirrored" || !file.asset.assetName) {
+        return `<div class="attachment">
+  <strong>${escapeHtml(file.name)}</strong>
+  <div class="muted">${escapeHtml(type)} • ${escapeHtml(size)}</div>
+  <div style="margin-top:8px">File evidence unavailable in this archive.${file.asset?.unavailableReason ? ` <span class="muted">${escapeHtml(file.asset.unavailableReason)}</span>` : ""}</div>
+</div>`
+    }
+
+    if (file.displayKind == "image") {
+        return `<div class="attachment"><strong>${escapeHtml(file.name)}</strong><div class="muted">${escapeHtml(size)}</div><div style="margin-top:10px">${renderImageAsset(file.asset, file.name)}</div></div>`
+    }
+
+    if (file.displayKind == "video") {
+        return `<div class="attachment"><strong>${escapeHtml(file.name)}</strong><div class="muted">${escapeHtml(size)}</div><video controls preload="metadata" src="${assetUrl(file.asset)}"></video></div>`
+    }
+
+    if (file.displayKind == "audio") {
+        return `<div class="attachment"><strong>${escapeHtml(file.name)}</strong><div class="muted">${escapeHtml(size)}</div><audio controls preload="metadata" src="${assetUrl(file.asset)}"></audio></div>`
+    }
+
+    return `<div class="attachment"><strong>${escapeHtml(file.name)}</strong><div class="muted">${escapeHtml(type)} • ${escapeHtml(size)}</div><div style="margin-top:10px"><a href="${assetUrl(file.asset)}" target="_blank" rel="noopener noreferrer">Download archived file evidence</a></div></div>`
 }
 
 function renderReply(_author: LocalTranscriptActor, reply: LocalTranscriptMessage["reply"]) {
@@ -483,4 +583,12 @@ function formatTimestamp(timestamp: number) {
         second: "2-digit",
         hour12: false
     })
+}
+
+function formatByteSize(bytes: number) {
+    if (!Number.isFinite(bytes) || bytes < 0) return "unknown size"
+    if (bytes < 1024) return `${Math.round(bytes)} B`
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`
+    return `${Math.round(bytes / (1024 * 1024 * 1024))} GB`
 }

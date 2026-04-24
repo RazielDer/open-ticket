@@ -27,6 +27,7 @@ import {
   ROLE_MODES,
   STATUS_MODES,
   STATUS_TYPES,
+  SUPPORT_TEAM_ASSIGNMENT_STRATEGIES,
   TRANSCRIPT_FILE_MODES,
   TRANSCRIPT_MODES,
   TRANSCRIPT_TEXT_LAYOUTS
@@ -412,6 +413,47 @@ function normalizeTicketOptionTranscriptRoutingConfig(input: unknown) {
   }
 }
 
+function normalizeTicketOptionRoutingConfig(input: unknown) {
+  if (!isPlainObject(input)) {
+    return {
+      supportTeamId: "",
+      escalationTargetOptionIds: []
+    }
+  }
+
+  return {
+    supportTeamId: ensureString(input.supportTeamId, "").trim(),
+    escalationTargetOptionIds: normalizeUniqueStringEntries(input.escalationTargetOptionIds)
+  }
+}
+
+function normalizeSupportTeam(team: any) {
+  const normalized: any = deepMerge(
+    {
+      id: team.id || slugify(team.name || `support-team-${Date.now()}`),
+      name: team.name || "",
+      roleIds: [],
+      assignmentStrategy: "manual"
+    },
+    team
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.name = ensureString(normalized.name, "").trim()
+  normalized.roleIds = normalizeUniqueStringEntries(normalized.roleIds)
+  normalized.assignmentStrategy = ensureString(normalized.assignmentStrategy, "manual")
+  assertOneOf(normalized.assignmentStrategy, SUPPORT_TEAM_ASSIGNMENT_STRATEGIES, "Support team assignment strategy")
+
+  if (!normalized.id) {
+    throw new Error("Support team ID is required.")
+  }
+  if (!normalized.name) {
+    throw new Error("Support team name is required.")
+  }
+
+  return normalized
+}
+
 function normalizeTranscriptHtmlStyleDraftInput(
   input: Record<string, unknown>,
   fallback?: Partial<DashboardTranscriptHtmlStyleDraftShape> | null
@@ -593,6 +635,10 @@ function normalizeTicketOption(option: any) {
     transcripts: {
       useGlobalDefault: true,
       channels: []
+    },
+    routing: {
+      supportTeamId: "",
+      escalationTargetOptionIds: []
     }
   }
 
@@ -637,6 +683,7 @@ function normalizeTicketOption(option: any) {
   normalized.slowMode.enabled = ensureBoolean(normalized.slowMode.enabled)
   normalized.slowMode.slowModeSeconds = ensureNumber(normalized.slowMode.slowModeSeconds, defaults.slowMode.slowModeSeconds)
   normalized.transcripts = normalizeTicketOptionTranscriptRoutingConfig(normalized.transcripts)
+  normalized.routing = normalizeTicketOptionRoutingConfig(normalized.routing)
 
   return normalized
 }
@@ -659,6 +706,7 @@ function normalizeRoleOption(option: any) {
   normalized.removeRolesOnAdd = parseStringArray(normalized.removeRolesOnAdd)
   normalized.addOnMemberJoin = ensureBoolean(normalized.addOnMemberJoin)
   delete normalized.transcripts
+  delete normalized.routing
 
   return normalized
 }
@@ -674,6 +722,7 @@ function normalizeWebsiteOption(option: any) {
   validateOptionButton(normalized.button, false)
   normalized.url = ensureString(normalized.url, "")
   delete normalized.transcripts
+  delete normalized.routing
 
   return normalized
 }
@@ -824,6 +873,7 @@ export interface DashboardReferenceItem {
 export interface DashboardEditorDependencyGraph {
   optionPanels: Record<string, DashboardReferenceItem[]>
   questionOptions: Record<string, DashboardReferenceItem[]>
+  supportTeamOptions: Record<string, DashboardReferenceItem[]>
 }
 
 export class DashboardConfigOperationError extends Error {
@@ -893,16 +943,39 @@ function buildQuestionOptionReferences(options: any[]): Record<string, Dashboard
   return references
 }
 
-function buildDuplicateIdError(kind: "option" | "panel" | "question", duplicateId: string) {
+function buildSupportTeamOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const supportTeamId = ensureString(option.routing?.supportTeamId, "").trim()
+    if (!supportTeamId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[supportTeamId] = references[supportTeamId] || []
+    references[supportTeamId].push(reference)
+  })
+
+  return references
+}
+
+function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team", duplicateId: string) {
+  const codeKind = kind.toUpperCase().replace(/\s+/g, "_")
   return new DashboardConfigOperationError(
     `${kind[0].toUpperCase()}${kind.slice(1)} ID "${duplicateId}" already exists.`,
-    `${kind.toUpperCase()}_DUPLICATE_ID`,
+    `${codeKind}_DUPLICATE_ID`,
     `Choose a different ${kind} ID before saving.`
   )
 }
 
 function buildReferenceGuardError(
-  kind: "option" | "question",
+  kind: "option" | "question" | "support team",
   action: "delete" | "rename",
   currentId: string,
   references: DashboardReferenceItem[],
@@ -916,10 +989,12 @@ function buildReferenceGuardError(
 
   return new DashboardConfigOperationError(
     `Cannot ${actionText} because these ${targetLabel} still reference it: ${labels}.`,
-    `${kind.toUpperCase()}_${action.toUpperCase()}_BLOCKED`,
+    `${kind.toUpperCase().replace(/\s+/g, "_")}_${action.toUpperCase()}_BLOCKED`,
     kind === "option"
       ? "Remove this option from the listed panels first, then try again."
-      : "Remove this question from the listed options first, then try again.",
+      : kind === "question"
+        ? "Remove this question from the listed options first, then try again."
+        : "Remove this support team from the listed ticket option routes first, then try again.",
     references
   )
 }
@@ -938,6 +1013,7 @@ export interface DashboardConfigService {
   listAvailableLanguages: () => string[]
   getAvailableOptions: () => Array<{ id: string; name: string; emoji: string; type: string; description: string }>
   listAvailableQuestions: () => Array<{ id: string; name: string; type: string; required: boolean }>
+  listAvailableSupportTeams: () => Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }>
   getEditorDependencyGraph: () => DashboardEditorDependencyGraph
   normalizeGeneralDraft: (body: Record<string, unknown>, fallback?: Record<string, unknown> | null) => Record<string, unknown>
   inspectGeneralGlobalAdmins: (input: unknown) => DashboardGeneralGlobalAdminsDraftState
@@ -950,12 +1026,13 @@ export interface DashboardConfigService {
   saveOption: (option: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   savePanel: (panel: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   saveQuestion: (question: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
+  saveSupportTeam: (team: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   reorderArrayItems: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams">,
     orderedIds: string[]
   ) => { success: true; count: number; orderedIds: string[]; items: Record<string, unknown>[] }
   deleteArrayItem: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams">,
     index: number
   ) => { success: true; count: number; removedId: string; items: Record<string, unknown>[] }
   readDashboardPluginConfig: () => Partial<DashboardConfig>
@@ -999,7 +1076,11 @@ export function createConfigService(
   }
 
   const readManagedText = (id: ManagedConfigId): string => {
-    return fs.readFileSync(getFilePath(id), "utf8")
+    const filePath = getFilePath(id)
+    if (id === "support-teams" && !fs.existsSync(filePath)) {
+      return "[]\n"
+    }
+    return fs.readFileSync(filePath, "utf8")
   }
 
   const readManagedJson = <T>(id: ManagedConfigId): T => {
@@ -1023,6 +1104,27 @@ export function createConfigService(
 
   const saveRawJson = (id: ManagedConfigId, text: string): unknown => {
     const parsed = JSON.parse(text)
+    if (id === "support-teams") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("support-teams.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((team: any) => String(team?.id || "").trim()).filter(Boolean))
+      const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("support-teams")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("support team", "delete", currentId, currentReferences)
+        }
+      }
+    }
+    if (id === "options") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("options.json must be an array.")
+      }
+      validateOptionRoutingReferences(parsed)
+    }
     writeManagedJson(id, parsed)
     return parsed
   }
@@ -1280,25 +1382,103 @@ export function createConfigService(
     }))
   }
 
+  const listAvailableSupportTeams = (): Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }> => {
+    const teams = readManagedJson<any[]>("support-teams")
+    return teams.map((team) => ({
+      id: String(team.id || ""),
+      name: String(team.name || team.id || "Support team"),
+      roleIds: parseStringArray(team.roleIds),
+      assignmentStrategy: String(team.assignmentStrategy || "manual")
+    }))
+  }
+
   const getEditorDependencyGraph = (): DashboardEditorDependencyGraph => {
     const options = readManagedJson<any[]>("options")
     const panels = readManagedJson<any[]>("panels")
 
     return {
       optionPanels: buildOptionPanelReferences(panels),
-      questionOptions: buildQuestionOptionReferences(options)
+      questionOptions: buildQuestionOptionReferences(options),
+      supportTeamOptions: buildSupportTeamOptionReferences(options)
     }
   }
 
   const ensureUniqueArrayId = (
     items: any[],
-    kind: "option" | "panel" | "question",
+    kind: "option" | "panel" | "question" | "support team",
     candidateId: string,
     currentIndex = -1
   ) => {
     const duplicate = items.some((existing, index) => index !== currentIndex && String(existing.id || "") === candidateId)
     if (duplicate) {
       throw buildDuplicateIdError(kind, candidateId)
+    }
+  }
+
+  const validateOptionRoutingReferences = (items: any[]) => {
+    const supportTeamIds = new Set(readManagedJson<any[]>("support-teams").map((team) => String(team.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+    const ticketById = new Map(ticketOptions.map((option) => [String(option.id || ""), option]))
+
+    for (const option of ticketOptions) {
+      const routing = normalizeTicketOptionRoutingConfig(option.routing)
+      if (routing.supportTeamId && !supportTeamIds.has(routing.supportTeamId)) {
+        throw new DashboardConfigOperationError(
+          `Ticket option "${option.id}" references unknown support team "${routing.supportTeamId}".`,
+          "OPTION_ROUTING_UNKNOWN_SUPPORT_TEAM",
+          "Create the support team first or leave supportTeamId empty for legacy role-only routing.",
+          [],
+          400
+        )
+      }
+
+      for (const targetId of routing.escalationTargetOptionIds) {
+        const target = ticketById.get(targetId)
+        if (!target) {
+          throw new DashboardConfigOperationError(
+            `Ticket option "${option.id}" escalation target "${targetId}" must be an existing ticket option.`,
+            "OPTION_ROUTING_UNKNOWN_ESCALATION_TARGET",
+            "Escalation targets must point at existing ticket options.",
+            [],
+            400
+          )
+        }
+
+        const targetRouting = normalizeTicketOptionRoutingConfig(target.routing)
+        if (!targetRouting.supportTeamId) {
+          throw new DashboardConfigOperationError(
+            `Escalation target "${targetId}" must have a non-empty supportTeamId.`,
+            "OPTION_ROUTING_TARGET_WITHOUT_TEAM",
+            "Assign the target option to a support team before using it as an escalation target.",
+            [],
+            400
+          )
+        }
+
+        const sourceMode = option.channel?.transportMode === "private_thread" ? "private_thread" : "channel_text"
+        const targetMode = target.channel?.transportMode === "private_thread" ? "private_thread" : "channel_text"
+        if (sourceMode !== targetMode) {
+          throw new DashboardConfigOperationError(
+            `Escalation target "${targetId}" must use the same transportMode as "${option.id}".`,
+            "OPTION_ROUTING_TRANSPORT_MISMATCH",
+            "Create a same-transport target option for escalation.",
+            [],
+            400
+          )
+        }
+
+        const sourceParent = String(option.channel?.threadParentChannel || "").trim()
+        const targetParent = String(target.channel?.threadParentChannel || "").trim()
+        if (sourceMode === "private_thread" && sourceParent !== targetParent) {
+          throw new DashboardConfigOperationError(
+            `Private-thread escalation target "${targetId}" must use the same threadParentChannel as "${option.id}".`,
+            "OPTION_ROUTING_THREAD_PARENT_MISMATCH",
+            "Private-thread escalation stays inside the same parent text channel.",
+            [],
+            400
+          )
+        }
+      }
     }
   }
 
@@ -1400,6 +1580,7 @@ export function createConfigService(
       "pin",
       "unpin",
       "move",
+      "escalate",
       "rename",
       "add",
       "remove",
@@ -1524,6 +1705,7 @@ export function createConfigService(
     listAvailableLanguages,
     getAvailableOptions,
     listAvailableQuestions,
+    listAvailableSupportTeams,
     getEditorDependencyGraph,
     normalizeGeneralDraft,
     inspectGeneralGlobalAdmins(input) {
@@ -1556,6 +1738,7 @@ export function createConfigService(
 
         ensureUniqueArrayId(items, "option", nextId, editIndex)
         items[editIndex] = normalized
+        validateOptionRoutingReferences(items)
         writeManagedJson("options", items)
         return {
           success: true as const,
@@ -1572,6 +1755,7 @@ export function createConfigService(
       normalized.id = nextId
       ensureUniqueArrayId(items, "option", nextId)
       items.push(normalized)
+      validateOptionRoutingReferences(items)
       writeManagedJson("options", items)
       return {
         success: true as const,
@@ -1685,6 +1869,52 @@ export function createConfigService(
         index: items.length - 1
       }
     },
+    saveSupportTeam(team, editIndex) {
+      const items = deepClone(readManagedJson<any[]>("support-teams"))
+      const action = Number.isInteger(editIndex) && editIndex >= 0 && editIndex < items.length ? "updated" as const : "created" as const
+
+      if (action === "updated") {
+        const current = items[editIndex]
+        const merged = deepMerge(current, team)
+        const normalized = normalizeSupportTeam(merged)
+        const previousId = String(current.id || "")
+        const nextId = String(normalized.id || "")
+
+        if (nextId !== previousId) {
+          const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))[previousId] || []
+          if (references.length > 0) {
+            throw buildReferenceGuardError("support team", "rename", previousId, references, nextId)
+          }
+        }
+
+        ensureUniqueArrayId(items, "support team", nextId, editIndex)
+        items[editIndex] = normalized
+        writeManagedJson("support-teams", items)
+        return {
+          success: true as const,
+          id: nextId,
+          action,
+          count: items.length,
+          item: normalized,
+          index: editIndex
+        }
+      }
+
+      const normalized = normalizeSupportTeam(team)
+      const nextId = String(normalized.id || slugify(normalized.name || `support-team-${Date.now()}`))
+      normalized.id = nextId
+      ensureUniqueArrayId(items, "support team", nextId)
+      items.push(normalized)
+      writeManagedJson("support-teams", items)
+      return {
+        success: true as const,
+        id: nextId,
+        action,
+        count: items.length,
+        item: normalized,
+        index: items.length - 1
+      }
+    },
     reorderArrayItems(id, orderedIds) {
       const items = deepClone(readManagedJson<any[]>(id))
       const normalizedIds = Array.isArray(orderedIds) ? orderedIds.map((value) => String(value)) : []
@@ -1736,6 +1966,13 @@ export function createConfigService(
         const references = buildQuestionOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
         if (references.length > 0) {
           throw buildReferenceGuardError("question", "delete", removedId, references)
+        }
+      }
+
+      if (id === "support-teams") {
+        const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("support team", "delete", removedId, references)
         }
       }
 

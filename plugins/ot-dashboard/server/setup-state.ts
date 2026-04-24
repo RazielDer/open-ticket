@@ -28,6 +28,7 @@ export interface SetupStateInput {
   options: Array<Record<string, unknown>> | null | undefined
   panels: Array<Record<string, unknown>> | null | undefined
   questions: Array<Record<string, unknown>> | null | undefined
+  supportTeams?: Array<Record<string, unknown>> | null | undefined
   transcripts: Record<string, any> | null | undefined
 }
 
@@ -71,6 +72,14 @@ function buildQuestionsStatus(collection: Array<Record<string, unknown>> | null 
   }
 
   return { id: "questions", state: "ready", reason: "configured" }
+}
+
+function buildSupportTeamsStatus(collection: Array<Record<string, unknown>> | null | undefined): SetupStatusItem {
+  if (!Array.isArray(collection) || collection.length === 0) {
+    return { id: "support-teams", state: "optional", reason: "empty_optional" }
+  }
+
+  return { id: "support-teams", state: "ready", reason: "configured" }
 }
 
 function buildTranscriptsStatus(transcripts: Record<string, any> | null | undefined): SetupStatusItem {
@@ -135,6 +144,7 @@ export function evaluateSetupState(
     buildCollectionStatus("options", input.options),
     buildCollectionStatus("panels", input.panels),
     buildQuestionsStatus(input.questions),
+    buildSupportTeamsStatus(input.supportTeams),
     buildTranscriptsStatus(input.transcripts)
   ]
 

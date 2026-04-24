@@ -22,6 +22,7 @@ const DEFAULT_PERMISSIONS = {
     pin:"admin",
     unpin:"admin",
     move:"admin",
+    escalate:"admin",
     rename:"admin",
     add:"admin",
     remove:"admin",
@@ -53,6 +54,8 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
     questions:[],
 
     channel:{
+        transportMode:"channel_text",
+        threadParentChannel:"",
         prefix:"whitelist-",
         suffix:"user-name",
         category:"",
@@ -60,6 +63,11 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         backupCategory:"",
         claimedCategory:[],
         topic:""
+    },
+
+    routing:{
+        supportTeamId:"",
+        escalationTargetOptionIds:[]
     },
 
     dmMessage:{

@@ -32,12 +32,12 @@ export class ODTranscriptManager extends ODManager<ODTranscriptCompiler<any,null
 /**## ODTranscriptCompilerInitFunction `type`
  * This function will initiate/prepare the transcript system for an incoming transcript.
  */
-export type ODTranscriptCompilerInitFunction<InitData extends object|null> = (ticket:ODTicket, channel:discord.TextChannel, user:discord.User) => (ODTranscriptCompilerInitResult<InitData>)|Promise<ODTranscriptCompilerInitResult<InitData>>
+export type ODTranscriptCompilerInitFunction<InitData extends object|null> = (ticket:ODTicket, channel:discord.GuildTextBasedChannel, user:discord.User) => (ODTranscriptCompilerInitResult<InitData>)|Promise<ODTranscriptCompilerInitResult<InitData>>
 
 /**## ODTranscriptCompilerCompileFunction `type`
  * This function will generate/compile the transcript itself.
  */
-export type ODTranscriptCompilerCompileFunction<Data extends object,InitData extends object|null> = (ticket:ODTicket, channel:discord.TextChannel, user:discord.User, initData:InitData) => ODTranscriptCompilerCompileResult<Data>|Promise<ODTranscriptCompilerCompileResult<Data>>
+export type ODTranscriptCompilerCompileFunction<Data extends object,InitData extends object|null> = (ticket:ODTicket, channel:discord.GuildTextBasedChannel, user:discord.User, initData:InitData) => ODTranscriptCompilerCompileResult<Data>|Promise<ODTranscriptCompilerCompileResult<Data>>
 
 /**## ODTicketClearFilter `type`
  * This function will finish, clear-up & shut-down the transcript system. This will also initiate the sending of the messages to all recipients.
@@ -65,7 +65,7 @@ export interface ODTranscriptCompilerCompileResult<Data extends object> {
     /**The ticket this transcript is being created for. */
     ticket:ODTicket,
     /**The channel this transcript is being created for. */
-    channel:discord.TextChannel,
+    channel:discord.GuildTextBasedChannel,
     /**The user who created the transcript. */
     user:discord.User
     /**Was the compilation successfull? */
@@ -505,7 +505,44 @@ export interface ODTranscriptMessageData {
     /**When this message is a reply to something, the data will be here. */
     reply: (ODTranscriptMessageReplyData|ODTranscriptInteractionReplyData|null),
     /**All reactions of htis message. */
-    reactions: ODTranscriptReactionData[]
+    reactions: ODTranscriptReactionData[],
+    /**Optional richer result-first form record data attached by transcript-aware plugins. */
+    formRecord?: ODTranscriptFormRecordData|null
+}
+
+/**## ODTranscriptFormRecordData `interface`
+ * Additive result-first form answer data for local transcript compilers.
+ */
+export interface ODTranscriptFormRecordData {
+    source: "ot-ticket-forms",
+    formId: string,
+    formName: string|false,
+    applicantDiscordUserId: string,
+    draftState: "initial"|"partial"|"completed",
+    updatedAt: string,
+    completedAt: string|false,
+    answers: ODTranscriptFormAnswerRecordData[]
+}
+
+export interface ODTranscriptFormAnswerRecordData {
+    position: number,
+    question: string,
+    answer: string|false,
+    answerData: ODTranscriptFormAnswerData|null
+}
+
+export type ODTranscriptFormAnswerData =
+    | { kind: "text", value: string|false }
+    | { kind: "string_select", selected: { value: string, label: string }[] }
+    | { kind: "user_select"|"role_select"|"channel_select"|"mentionable_select", selected: { id: string, label: string, entityKind: "user"|"role"|"channel" }[] }
+    | { kind: "file_upload", files: ODTranscriptFormAnswerFileData[] }
+
+export interface ODTranscriptFormAnswerFileData {
+    name: string,
+    url: string,
+    contentType: string|false,
+    size: number|false,
+    displayKind: "image"|"video"|"audio"|"file"
 }
 
 /**## ODTranscriptMessageType `type`

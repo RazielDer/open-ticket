@@ -1,0 +1,230 @@
+<%
+  const hasActiveFilters = ticketList.activeFilters.length > 0
+%>
+
+<section class="section-card transcript-workspace-shell ticket-workbench-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("tickets.page.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("tickets.page.workspaceBody") %></p>
+    </div>
+  </div>
+
+  <% if (!ticketList.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= ticketList.warningMessage %></p>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell ticket-filter-shell" data-responsive-disclosure="ticket-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("tickets.page.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.filtersBody") %></p>
+    </div>
+    <% if (hasActiveFilters) { %>
+      <span class="pill-tag"><%= t("tickets.page.activeFilterCount", { count: ticketList.activeFilters.length }) %></span>
+    <% } %>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= ticketList.filterAction %>" class="stack-form">
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.searchLabel") %></span>
+          <input class="text-input" type="search" name="q" value="<%= ticketList.request.q %>" placeholder="<%= t('tickets.page.filters.searchPlaceholder') %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.statusLabel") %></span>
+          <select class="select-input" name="status">
+            <% ticketList.request.statusOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.status === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.transportLabel") %></span>
+          <select class="select-input" name="transport">
+            <% ticketList.request.transportOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.transport === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.sortLabel") %></span>
+          <select class="select-input" name="sort">
+            <% ticketList.request.sortOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.sort === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <details class="editor-disclosure transcript-filter-advanced" <%= (ticketList.request.teamId || ticketList.request.assigneeId || ticketList.request.optionId || ticketList.request.panelId || ticketList.request.creatorId || ticketList.request.limit !== 25) ? 'open' : '' %>>
+        <summary class="transcript-filter-advanced-summary">
+          <div>
+            <h4><%= t("tickets.page.filters.moreTitle") %></h4>
+            <p class="item-copy"><%= t("tickets.page.filters.moreBody") %></p>
+          </div>
+        </summary>
+        <div class="editor-disclosure-body">
+          <div class="form-grid three-up transcript-filter-grid transcript-filter-grid-advanced">
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.teamLabel") %></span>
+              <select class="select-input" name="teamId">
+                <option value=""><%= t("tickets.page.filters.anyTeam") %></option>
+                <% ticketList.supportTeams.forEach((team) => { %>
+                  <option value="<%= team.id %>" <%= ticketList.request.teamId === team.id ? 'selected' : '' %>><%= team.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.assigneeLabel") %></span>
+              <input class="text-input" type="text" name="assigneeId" value="<%= ticketList.request.assigneeId %>" placeholder="<%= t('tickets.page.filters.assigneePlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.optionLabel") %></span>
+              <select class="select-input" name="optionId">
+                <option value=""><%= t("tickets.page.filters.anyOption") %></option>
+                <% ticketList.options.forEach((option) => { %>
+                  <option value="<%= option.id %>" <%= ticketList.request.optionId === option.id ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.panelLabel") %></span>
+              <select class="select-input" name="panelId">
+                <option value=""><%= t("tickets.page.filters.anyPanel") %></option>
+                <% ticketList.panels.forEach((panel) => { %>
+                  <option value="<%= panel.id %>" <%= ticketList.request.panelId === panel.id ? 'selected' : '' %>><%= panel.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.creatorLabel") %></span>
+              <input class="text-input" type="text" name="creatorId" value="<%= ticketList.request.creatorId %>" placeholder="<%= t('tickets.page.filters.creatorPlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.rowsLabel") %></span>
+              <select class="select-input" name="limit">
+                <% ticketList.request.limitOptions.forEach((value) => { %>
+                  <option value="<%= value %>" <%= ticketList.request.limit === value ? 'selected' : '' %>><%= value %></option>
+                <% }) %>
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("tickets.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= ticketList.clearFiltersHref %>"><%= t("tickets.page.filters.clearAction") %></a>
+        </div>
+
+        <% if (hasActiveFilters) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("tickets.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% ticketList.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="section-card transcript-records-shell ticket-records-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("tickets.page.inventoryTitle") %></h3>
+      <div class="transcript-records-summary">
+        <p class="transcript-inline-label"><%= t("tickets.page.filteredSummaryTitle") %></p>
+        <div class="transcript-summary-strip" aria-label="<%= t('tickets.page.filteredSummaryTitle') %>">
+          <% ticketList.filteredSummary.cards.forEach((card) => { %>
+            <article class="transcript-summary-token tone-<%= card.tone %>">
+              <p class="transcript-summary-token-label"><%= card.label %></p>
+              <strong class="transcript-summary-token-value"><%= card.value %></strong>
+            </article>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+    <span class="pill-tag"><%= t("tickets.page.inventoryCount", { count: ticketList.total }) %></span>
+  </div>
+
+  <% if (!ticketList.available) { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.unavailableTitle") %></h3>
+      <p><%= ticketList.warningMessage %></p>
+    </div>
+  <% } else if (ticketList.items.length) { %>
+    <div class="table-wrap">
+      <table class="data-table transcript-records-table ticket-records-table">
+        <thead>
+          <tr>
+            <th><%= t("tickets.page.table.ticket") %></th>
+            <th><%= t("tickets.page.table.status") %></th>
+            <th><%= t("tickets.page.table.route") %></th>
+            <th><%= t("tickets.page.table.owner") %></th>
+            <th><%= t("tickets.page.table.activity") %></th>
+            <th><%= t("tickets.page.table.access") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% ticketList.items.forEach((item) => { %>
+            <tr data-filter-item="<%= item.searchText %>">
+              <td class="transcript-record-cell">
+                <strong class="transcript-record-title"><%= item.id %></strong>
+                <div class="field-help"><%= item.transportLabel %></div>
+              </td>
+              <td><span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span></td>
+              <td>
+                <strong><%= item.optionLabel %></strong>
+                <div class="field-help"><%= item.panelLabel %></div>
+              </td>
+              <td>
+                <strong><%= item.assigneeLabel %></strong>
+                <div class="field-help"><%= item.teamLabel %> / <%= item.creatorLabel %></div>
+              </td>
+              <td>
+                <div><%= item.activityLabel %></div>
+                <div class="field-help"><%= t("tickets.page.table.openedMeta", { value: item.openedLabel }) %></div>
+              </td>
+              <td><a class="transcript-table-link" href="<%= item.detailHref %>"><%= t("tickets.page.openAction") %></a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar">
+      <p class="pagination-summary"><%= t("tickets.page.paginationShowing", { start: ticketList.pageStart, end: ticketList.pageEnd, total: ticketList.total }) %></p>
+      <div class="sticky-actions">
+        <% if (ticketList.previousHref) { %>
+          <a class="btn secondary" href="<%= ticketList.previousHref %>"><%= t("common.previous") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.previous") %></span>
+        <% } %>
+        <% ticketList.pageLinks.forEach((pageLink) => { %>
+          <a class="btn <%= pageLink.active ? 'primary' : 'subtle' %>" href="<%= pageLink.href %>"><%= pageLink.page %></a>
+        <% }) %>
+        <% if (ticketList.nextHref) { %>
+          <a class="btn secondary" href="<%= ticketList.nextHref %>"><%= t("common.next") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.next") %></span>
+        <% } %>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.emptyTitle") %></h3>
+      <p><%= t("tickets.page.emptyBody") %></p>
+    </div>
+  <% } %>
+</section>

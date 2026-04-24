@@ -39,6 +39,7 @@
   "nav": {
     "home": "Home",
     "setup": "Setup",
+    "tickets": "Tickets",
     "transcripts": "Transcripts",
     "addOns": "Add-ons",
     "advanced": "Advanced"
@@ -109,6 +110,10 @@
       "questions": {
         "title": "Questions",
         "description": "Question definitions, placeholders, required flags, and response length controls."
+      },
+      "supportTeams": {
+        "title": "Support teams",
+        "description": "Admin-only team ownership, role membership, assignment strategy, and route escalation bindings."
       },
       "transcripts": {
         "title": "Transcripts",
@@ -744,6 +749,8 @@
       "questionPickerEmptyBody": "Add questions in the Questions workspace before assigning them to ticket options here.",
       "questionRequired": "required",
       "questionOptional": "optional",
+      "supportRoutingTitle": "Support-team routing",
+      "supportRoutingBody": "Bind ticket ownership to one support team and limit valid escalation targets.",
       "transcriptRoutingTitle": "Transcript delivery routing",
       "transcriptRoutingBody": "Choose whether this option inherits the default transcript route or uses explicit channel IDs.",
       "ticketAdvancedTitle": "Advanced ticket behavior",
@@ -772,6 +779,10 @@
       "categoryId": "Category ID",
       "closedCategoryId": "Closed category ID",
       "backupCategoryId": "Backup category ID",
+      "supportTeamId": "Support team",
+      "legacyRoleRouting": "Legacy role-only routing",
+      "escalationTargets": "Escalation target option IDs",
+      "escalationTargetsHelp": "Enter comma-separated, newline-separated, or JSON-array ticket option IDs. Targets must use the same transport and have a support team.",
       "useGlobalTranscriptDefault": "Use global transcript default",
       "transcriptChannels": "Explicit transcript channel IDs",
       "transcriptChannelsHelp": "Enter comma-separated, newline-separated, or JSON-array channel IDs. Leaving this empty while inheritance is off disables transcript channel posting for this option.",
@@ -823,7 +834,43 @@
       "validationButtonColor": "Choose a valid button color.",
       "validationChannelSuffix": "Choose a valid channel suffix.",
       "validationRoleMode": "Choose a valid role mode.",
-      "validationMessageJson": "Advanced message settings must be valid JSON objects."
+      "validationMessageJson": "Advanced message settings must be valid JSON objects.",
+      "validationRoutingTargets": "Choose an existing support team and valid escalation target option IDs."
+    }
+  },
+  "supportTeams": {
+    "title": "Support teams configuration",
+    "subtitle": "Manage admin-only support teams for routing, assignment, and escalation.",
+    "emptyTitle": "No support teams configured",
+    "emptyBody": "Create a support team before binding ticket options to managed ownership.",
+    "workspace": {
+      "savedTeamsLabel": "Saved teams",
+      "inventoryTitle": "Support team inventory",
+      "newButton": "New support team",
+      "newDraftTitle": "New unsaved support team",
+      "referencingOptionsTitle": "Referencing ticket options",
+      "referencingOptionsEmpty": "No ticket options currently reference this support team.",
+      "saveTitle": "Save support team"
+    },
+    "fields": {
+      "id": "ID",
+      "name": "Name",
+      "roleIds": "Role IDs",
+      "roleIdsHelp": "Enter comma-separated, newline-separated, or JSON-array Discord role IDs. Duplicate role IDs are ignored.",
+      "assignmentStrategy": "Assignment strategy"
+    },
+    "modal": {
+      "addTitle": "Add support team",
+      "editTitle": "Edit support team"
+    },
+    "flash": {
+      "deleteConfirm": "Delete this support team?",
+      "deleteSuccess": "Support team deleted.",
+      "saveSuccess": "Support team saved.",
+      "validationId": "Enter a support-team ID.",
+      "validationName": "Enter a support-team name.",
+      "validationRoles": "Add at least one support-team role ID.",
+      "validationStrategy": "Choose a valid assignment strategy."
     }
   },
   "panels": {
@@ -977,6 +1024,101 @@
       "validationMinimum": "Minimum length must stay between 0 and 1024.",
       "validationMaximum": "Maximum length must stay between 1 and 1024.",
       "validationLength": "Minimum length cannot exceed maximum length."
+    }
+  },
+  "tickets": {
+    "title": "Tickets",
+    "page": {
+      "eyebrow": "Ticket workbench",
+      "headline": "Tickets",
+      "subtitle": "Search live tickets, open detail records, and keep browser mutations on the ticket detail page.",
+      "workspaceTitle": "Ticket workbench",
+      "workspaceBody": "Use the list for search, filtering, pagination, and navigation only. Claim, assignment, escalation, close, reopen, and refresh actions stay on ticket detail pages.",
+      "unavailableBadge": "Unavailable",
+      "unavailableTitle": "Ticket inventory is unavailable",
+      "filtersTitle": "Find tickets",
+      "filtersBody": "Filter the live ticket inventory without mutating ticket state.",
+      "activeFilterCount": "{count} active",
+      "activeFiltersTitle": "Active filters",
+      "filteredSummaryTitle": "Filtered summary",
+      "inventoryTitle": "Ticket records",
+      "inventoryCount": "{count} ticket(s)",
+      "openAction": "Open detail",
+      "paginationShowing": "Showing {start}-{end} of {total}",
+      "emptyTitle": "No tickets to show",
+      "emptyBody": "Try clearing filters or wait for the runtime to publish ticket inventory.",
+      "filters": {
+        "searchLabel": "Search",
+        "searchPlaceholder": "Ticket, creator, team, or assignee",
+        "statusLabel": "Status",
+        "transportLabel": "Transport",
+        "sortLabel": "Sort",
+        "moreTitle": "Route and ownership filters",
+        "moreBody": "Narrow by team, assignee, option, panel, creator, or page size.",
+        "teamLabel": "Team",
+        "anyTeam": "Any team",
+        "assigneeLabel": "Assignee ID",
+        "assigneePlaceholder": "Discord user ID",
+        "optionLabel": "Option",
+        "anyOption": "Any option",
+        "panelLabel": "Panel",
+        "anyPanel": "Any panel",
+        "creatorLabel": "Creator ID",
+        "creatorPlaceholder": "Discord user ID",
+        "rowsLabel": "Rows",
+        "applyAction": "Apply filters",
+        "clearAction": "Clear filters"
+      },
+      "table": {
+        "ticket": "Ticket",
+        "status": "Status",
+        "route": "Route",
+        "owner": "Owner",
+        "activity": "Activity",
+        "access": "Access",
+        "openedMeta": "Opened {value}"
+      }
+    },
+    "detail": {
+      "eyebrow": "Ticket detail",
+      "headline": "Ticket {id}",
+      "subtitle": "Inspect ticket state, route ownership, transport metadata, participants, provider locks, and guarded runtime actions.",
+      "unavailableTitle": "Ticket detail is unavailable",
+      "unavailableBody": "The dashboard could not load this ticket from the Open Ticket runtime.",
+      "backAction": "Back to tickets",
+      "lifecycleTitle": "Lifecycle",
+      "routeTitle": "Route and assignment",
+      "transportTitle": "Transport",
+      "participantsTitle": "Participants",
+      "participantsCount": "{count} item(s)",
+      "participantsEmptyTitle": "No participants recorded",
+      "participantsEmptyBody": "The runtime did not return participant labels for this ticket.",
+      "factsTitle": "Ticket facts",
+      "actionsTitle": "Actions",
+      "states": {
+        "open": "Open",
+        "closed": "Closed",
+        "claimed": "Claimed"
+      },
+      "facts": {
+        "opened": "Opened",
+        "closed": "Closed",
+        "claimed": "Claimed",
+        "resolved": "Resolved",
+        "option": "Option",
+        "panel": "Panel",
+        "team": "Team",
+        "assignee": "Assignee",
+        "transport": "Transport",
+        "parentChannel": "Parent channel",
+        "parentMessage": "Parent message"
+      },
+      "actions": {
+        "assigneeLabel": "Assignee",
+        "targetLabel": "Escalation target",
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Optional operator reason"
+      }
     }
   },
   "transcripts": {
@@ -1630,6 +1772,7 @@
     "backupOrConfigurationNotFound": "Backup or configuration not found.",
     "pluginNotFound": "Plugin not found.",
     "pluginAssetNotFound": "Plugin asset not found.",
+    "ticketNotFound": "Ticket not found.",
     "transcriptNotFound": "Transcript not found.",
     "reviewTokenExpired": "The review token is missing or expired.",
     "configDraftSource": "Draft review",

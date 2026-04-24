@@ -12,7 +12,6 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:delete-ticket").workers.add([
         new api.ODWorker("opendiscord:delete-ticket",3,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to delete ticket! Open Ticket doesn't support threads!")
 
             await opendiscord.events.get("onTicketDelete").emit([ticket,user,channel,reason])
 

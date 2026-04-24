@@ -11,7 +11,7 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:create-transcript").workers.add([
         new api.ODWorker("opendiscord:select-compiler",4,async (instance,params,source,cancel) => {
             const {channel,user,ticket} = params
-            if (channel.type != discord.ChannelType.GuildText) return cancel()
+            if (!channel.isTextBased() || channel.isDMBased()) return cancel()
             if (!transcriptConfig.data.general.enabled) return cancel()
             
             await opendiscord.events.get("onTranscriptCreate").emit([opendiscord.transcripts,ticket,channel,user])
@@ -36,7 +36,7 @@ export const registerActions = async () => {
         }),
         new api.ODWorker("opendiscord:init-transcript",3,async (instance,params,source,cancel) => {
             const {channel,user,ticket} = params
-            if (channel.type != discord.ChannelType.GuildText) return cancel()
+            if (!channel.isTextBased() || channel.isDMBased()) return cancel()
             if (!transcriptConfig.data.general.enabled) return cancel()
             
             //run transcript compiler init()
@@ -71,7 +71,7 @@ export const registerActions = async () => {
         }),
         new api.ODWorker("opendiscord:compile-transcript",2,async (instance,params,source,cancel) => {
             const {channel,user,ticket} = params
-            if (channel.type != discord.ChannelType.GuildText) return cancel()
+            if (!channel.isTextBased() || channel.isDMBased()) return cancel()
             if (!instance.compiler){
                 instance.success = false
                 cancel()

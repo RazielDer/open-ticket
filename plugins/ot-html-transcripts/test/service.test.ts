@@ -1548,6 +1548,48 @@ test("scanTranscriptIntegrity classifies building, broken archives, invalid docu
     })
 })
 
+test("service integrity and repair paths accept 2.0 transcript documents", async () => {
+    await withService("integrity-v2-document", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-v2-document")
+        const document = createFakeDocument("tr-v2-document")
+        document.version = "2.0"
+        document.messages[0]!.formRecord = {
+            source: "ot-ticket-forms",
+            formId: "whitelist-review",
+            formName: "Whitelist Review",
+            applicantDiscordUserId: "user-1",
+            draftState: "completed",
+            updatedAt: "2026-04-21T12:00:00.000Z",
+            completedAt: "2026-04-21T12:05:00.000Z",
+            answers: [{
+                position: 1,
+                question: "Name",
+                answer: "RazielDer",
+                answerData: { kind: "text", value: "RazielDer" }
+            }]
+        }
+        await writeArchiveFixture(archivePath, document, { writeHtml: false })
+        await service.createTranscript({
+            id: "tr-v2-document",
+            status: "active",
+            archivePath
+        })
+
+        const reportBefore = await service.scanTranscriptIntegrity("tr-v2-document")
+        assert.equal(reportBefore?.issues.some((issue) => issue.code == "document-invalid"), false)
+        assert.equal(reportBefore?.issues.some((issue) => issue.code == "html-missing"), true)
+
+        const result = await service.repairTranscriptIntegrity("tr-v2-document")
+        const reportAfter = await service.scanTranscriptIntegrity("tr-v2-document")
+        const html = await fs.promises.readFile(path.join(archivePath, "index.html"), "utf8")
+
+        assert.equal(result.ok, true)
+        assert.equal(reportAfter?.health, "healthy")
+        assert.match(html, /Archived form result/)
+        assert.match(html, /Whitelist Review/)
+    })
+})
+
 test("repairTranscriptIntegrity rerenders missing index.html and logs integrity-repaired", async () => {
     await withService("integrity-rerender", async (service, root) => {
         const archivePath = path.join(root, "archives", "tr-rerender")

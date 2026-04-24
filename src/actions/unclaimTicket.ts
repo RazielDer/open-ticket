@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { setTicketAssignedStaff } from "./ticketRouting.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,7 +12,6 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:unclaim-ticket").workers.add([
         new api.ODWorker("opendiscord:unclaim-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to unclaim ticket! Open Ticket doesn't support threads!")
 
             await opendiscord.events.get("onTicketUnclaim").emit([ticket,user,channel,reason])
 
@@ -20,9 +20,10 @@ export const registerActions = async () => {
             ticket.get("opendiscord:claimed-by").value = null
             ticket.get("opendiscord:claimed-on").value = null
             ticket.get("opendiscord:busy").value = true
+            setTicketAssignedStaff(ticket,null)
 
             //update category
-            if (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true){
+            if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
                 const channelCategory = ticket.option.get("opendiscord:channel-category").value
                 const channelBackupCategory = ticket.option.get("opendiscord:channel-category-backup").value
                 if (channelCategory !== ""){

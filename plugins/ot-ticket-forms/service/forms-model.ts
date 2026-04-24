@@ -1,4 +1,8 @@
-import type { OTFormsAnswerTarget, OTFormsCapturedAnswer, OTFormsDraftState } from "../types/configDefaults"
+import type { OTFormsAnswerData, OTFormsAnswerTarget, OTFormsCapturedAnswer, OTFormsDraftState } from "../types/configDefaults"
+import {
+    cloneOTFormsAnswerData,
+    cloneOTFormsCapturedAnswers
+} from "./answer-runtime"
 
 export const OT_FORMS_PLUGIN_SERVICE_ID = "ot-ticket-forms:service" as const
 export const OT_FORMS_COMPLETED_TICKET_FORM_CATEGORY = "ot-ticket-forms:completed-ticket-forms" as const
@@ -8,6 +12,7 @@ export interface OTFormsCompletedTicketFormAnswer {
     position: number
     question: string
     answer: string | null
+    answerData?: OTFormsAnswerData | null
 }
 
 export interface OTFormsCompletedTicketFormContext {
@@ -93,7 +98,8 @@ export function normalizeCompletedTicketFormSnapshot(snapshot: OTFormsCompletedT
         answers: [...snapshot.answers].sort((left, right) => left.position - right.position).map((answer) => ({
             position: answer.position,
             question: answer.question,
-            answer: answer.answer
+            answer: answer.answer,
+            answerData: cloneOTFormsAnswerData(answer.answerData)
         }))
     }
 }
@@ -118,12 +124,8 @@ export function normalizeTicketDraftSnapshot(snapshot: OTFormsTicketDraftSnapsho
         completedAt: snapshot.completedAt,
         startFormMessageId,
         managedRecordMessageId,
-        answers: [...snapshot.answers]
+        answers: cloneOTFormsCapturedAnswers(snapshot.answers)
             .sort((left, right) => left.question.position - right.question.position)
-            .map((entry) => ({
-                question: { ...entry.question },
-                answer: entry.answer
-            }))
     }
 }
 

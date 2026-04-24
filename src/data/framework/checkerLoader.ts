@@ -27,6 +27,7 @@ export const loadAllConfigCheckers = async () => {
     opendiscord.checkers.add(new api.ODChecker("opendiscord:questions",opendiscord.checkers.storage,2,opendiscord.configs.get("opendiscord:questions"),defaultQuestionsStructure,{cliDisplayName:"Questions Config",cliDisplayDescription:"Create, modify & delete questions which are used in options."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:options",opendiscord.checkers.storage,1,opendiscord.configs.get("opendiscord:options"),defaultOptionsStructure,{cliDisplayName:"Options Config",cliDisplayDescription:"Create, modify & delete options which are used in panels."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:panels",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:panels"),defaultPanelsStructure,{cliDisplayName:"Panels Config",cliDisplayDescription:"Create, modify & delete panels which can be spawned in discord."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:support-teams",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:support-teams"),defaultSupportTeamsStructure,{cliDisplayName:"Support Teams Config",cliDisplayDescription:"Create support teams for ticket routing, assignment, and escalation."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:transcripts",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:transcripts"),defaultTranscriptsStructure,{cliDisplayName:"Transcript Config",cliDisplayDescription:"Configure everything related to transcripts."}))
 }
 
@@ -34,6 +35,7 @@ export const loadAllConfigCheckerFunctions = async () => {
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:unused-options",defaultUnusedOptionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:unused-questions",defaultUnusedQuestionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:dropdown-options",defaultDropdownOptionsFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:support-team-routing",defaultSupportTeamRoutingFunction))
 }
 
 export const loadAllConfigCheckerTranslations = async () => {
@@ -329,6 +331,7 @@ export const defaultGeneralStructure = new api.ODCheckerObjectStructure("opendis
             {key:"pin",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-pin","role",false,["admin","everyone","none"],{cliDisplayName:"Pin",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"unpin",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-unpin","role",false,["admin","everyone","none"],{cliDisplayName:"Unpin",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"move",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-move","role",false,["admin","everyone","none"],{cliDisplayName:"Move",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
+            {key:"escalate",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-escalate","role",false,["admin","everyone","none"],{cliDisplayName:"Escalate",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"rename",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-rename","role",false,["admin","everyone","none"],{cliDisplayName:"Rename",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"add",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-add","role",false,["admin","everyone","none"],{cliDisplayName:"Add User",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"remove",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-remove","role",false,["admin","everyone","none"],{cliDisplayName:"Remove User",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
@@ -397,7 +400,9 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
         }})},
 
         //TICKET CHANNEL
-        {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory"],children:[
+        {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory","transportMode","threadParentChannel"],children:[
+            {key:"transportMode",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-transport-mode",{choices:["channel_text","private_thread"],cliDisplayName:"Transport Mode",cliDisplayDescription:"Use channel_text for classic ticket channels or private_thread for private-thread tickets."})},
+            {key:"threadParentChannel",optional:true,checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-thread-parent","channel",true,[],{cliDisplayName:"Thread Parent Channel",cliDisplayDescription:"The parent text channel used when transportMode is private_thread."})},
             {key:"prefix",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-prefix",{maxLength:25,regex:/^[^\s]*$/,cliDisplayName:"Prefix",cliDisplayDescription:"The prefix of the name of the ticket channel. (e.g. 'question-')"})},
             {key:"suffix",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-suffix",{choices:["user-name","user-nickname","user-id","random-number","random-hex","counter-dynamic","counter-fixed"],cliDisplayName:"Suffix",cliDisplayDescription:"The suffix mode to use. The number/text will be appended after the prefix."})},
             
@@ -409,7 +414,34 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
                 {key:"category",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-claimed-category","category",false,[],{cliDisplayName:"Category",cliDisplayDescription:"A discord category ID to move the ticket to."})}
             ],cliDisplayName:"Claimed Category",cliDisplayDescription:"A collection of a user ID and a category ID. The ticket will be moved to the category when this user claims the ticket."}),cliDisplayName:"Claimed Categories",cliDisplayDescription:"Add categories to move the ticket to when a user claims a ticket."})},
             {key:"topic",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-topic",{cliDisplayName:"Channel Topic",cliDisplayDescription:"The topic text of the ticket channel. Visible in the discord client when general.json 'channelTopic'.'showOptionTopic' is enabled."})},
-        ],cliDisplayName:"Channel",cliDisplayDescription:"Manage all settings related to the ticket channel and categories."})},
+        ],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+            const lt = checker.locationTraceDeref(locationTrace)
+            if (!value || typeof value != "object") return false
+
+            if (value["transportMode"] == "private_thread"){
+                if (typeof value["threadParentChannel"] != "string" || value["threadParentChannel"].trim().length < 1){
+                    checker.createMessage("opendiscord:ticket-channel-thread-parent-required","error","Private-thread tickets require channel.threadParentChannel to resolve to a guild text channel.",lt,null,["threadParentChannel"],locationId,locationDocs)
+                    return false
+                }
+
+                const ignoredFields = ["category","backupCategory","closedCategory","claimedCategory"].filter((key) => {
+                    const field = value[key]
+                    if (Array.isArray(field)) return field.length > 0
+                    return typeof field == "string" && field.trim().length > 0
+                })
+                if (ignoredFields.length > 0){
+                    checker.createMessage("opendiscord:ticket-channel-thread-ignores-category-routing","warning","Private-thread tickets ignore category, backupCategory, closedCategory, and claimedCategory routing fields.",lt,null,ignoredFields,locationId,locationDocs)
+                }
+            }
+
+            return true
+        },cliDisplayName:"Channel",cliDisplayDescription:"Manage all settings related to the ticket channel and categories."})},
+
+        //ROUTING
+        {key:"routing",optional:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-routing",{children:[
+            {key:"supportTeamId",checker:new api.ODCheckerStringStructure("opendiscord:ticket-routing-support-team",{cliDisplayName:"Support Team ID",cliDisplayDescription:"The support team that owns this ticket option. Leave empty for legacy role-only routing."})},
+            {key:"escalationTargetOptionIds",checker:new api.ODCheckerCustomStructure_UniqueIdArray("opendiscord:ticket-routing-escalation-targets","openticket","option-ids","option-escalation-targets",{allowDoubles:false,cliDisplayPropertyName:"target option",cliDisplayName:"Escalation Targets",cliDisplayDescription:"Ticket option IDs this option can escalate into."},{cliDisplayName:"Escalation Target",cliDisplayDescription:"An existing ticket option ID."})},
+        ],cliDisplayName:"Routing",cliDisplayDescription:"Manage support-team ownership and route-aware escalation targets."})},
 
         //DM MESSAGE
         {key:"dmMessage",checker:new api.ODCheckerEnabledObjectStructure("opendiscord:ticket-dm-message",{property:"enabled",enabledValue:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-dm-message",{children:[
@@ -517,6 +549,13 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
         {key:"addOnMemberJoin",checker:new api.ODCheckerBooleanStructure("opendiscord:role-add-on-join",{cliDisplayName:"Add On Member Join",cliDisplayDescription:"Automatically add these roles to a user when joining the server."})},
     ],cliDisplayName:"Reaction Role Option",cliDisplayDescription:"Manage all settings of this reaction role option."})},
 ],cliDisplayName:"Option",cliDisplayDescription:"Manage an option of one of the 3 types: ticket, website, role."}),cliDisplayName:"Options",cliDisplayDescription:"A list of all options in the bot. Here you can add, modify & remove ticket types, website buttons & reaction roles!"})
+
+export const defaultSupportTeamsStructure = new api.ODCheckerArrayStructure("opendiscord:support-teams",{allowedTypes:["object"],cliDisplayPropertyName:"support team",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:support-team",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","assignmentStrategy"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:support-team-id","openticket","support-team-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:64,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this support team."})},
+    {key:"name",checker:new api.ODCheckerStringStructure("opendiscord:support-team-name",{minLength:1,maxLength:80,cliDisplayName:"Name",cliDisplayDescription:"The human-readable name of this support team."})},
+    {key:"roleIds",checker:new api.ODCheckerCustomStructure_DiscordIdArray("opendiscord:support-team-role-ids","role",[],{allowDoubles:false,minLength:1,cliDisplayPropertyName:"team role",cliDisplayName:"Team Roles",cliDisplayDescription:"Discord role IDs that make a guild member eligible for this support team."},{cliDisplayName:"Team Role",cliDisplayDescription:"A Discord role ID that belongs to this support team."})},
+    {key:"assignmentStrategy",checker:new api.ODCheckerStringStructure("opendiscord:support-team-assignment-strategy",{choices:["manual","round_robin"],cliDisplayName:"Assignment Strategy",cliDisplayDescription:"Manual leaves tickets unassigned; round_robin assigns the next eligible non-bot member."})},
+],cliDisplayName:"Support Team",cliDisplayDescription:"Support-team ownership, role membership, and assignment strategy."})})
 
 export const defaultPanelsStructure = new api.ODCheckerArrayStructure("opendiscord:panels",{allowedTypes:["object"],cliDisplayPropertyName:"panel",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:panels",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","dropdown"],children:[
     {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:panel-id","openticket","panel-ids",{regex:/^[A-Za-z0-9-éèçàêâôûî]+$/,minLength:3,maxLength:40,cliDisplayName:"Id",cliDisplayDescription:"The id of this panel. Used in the /panel command."})},
@@ -694,6 +733,74 @@ export const defaultDropdownOptionsFunction = (manager:api.ODCheckerManager, fun
             //give error when non-ticket options exist in dropdown panel!
             final.push(functions.createMessage("opendiscord:panels","opendiscord:dropdown-option",panelConfig.file,"error","A panel with dropdown enabled can only contain options of the 'ticket' type!",[index,"options"],null,[],new api.ODId("opendiscord:dropdown-options"),null))
         }
+    })
+
+    return {valid:(final.length < 1),messages:final}
+}
+
+function normalizeRoutingSupportTeamId(option:any): string {
+    return typeof option?.routing?.supportTeamId == "string" ? option.routing.supportTeamId.trim() : ""
+}
+
+function normalizeRoutingEscalationTargets(option:any): string[] {
+    if (!Array.isArray(option?.routing?.escalationTargetOptionIds)) return []
+    return Array.from(new Set(
+        option.routing.escalationTargetOptionIds
+            .map((value:any) => String(value || "").trim())
+            .filter((value:string) => value.length > 0)
+    ))
+}
+
+function normalizeRoutingTransportMode(option:any): "channel_text"|"private_thread" {
+    return option?.channel?.transportMode == "private_thread" ? "private_thread" : "channel_text"
+}
+
+function normalizeRoutingThreadParent(option:any): string {
+    return typeof option?.channel?.threadParentChannel == "string" ? option.channel.threadParentChannel.trim() : ""
+}
+
+export const defaultSupportTeamRoutingFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    const supportTeamsConfig = opendiscord.configs.get("opendiscord:support-teams")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!supportTeamsConfig || !optionConfig || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const supportTeamIds = new Set(
+        (Array.isArray(supportTeamsConfig.data) ? supportTeamsConfig.data : [])
+            .map((team:any) => typeof team?.id == "string" ? team.id.trim() : "")
+            .filter(Boolean)
+    )
+    const ticketOptions = optionConfig.data.filter((option:any) => option?.type == "ticket")
+    const ticketOptionById = new Map(ticketOptions.map((option:any) => [String(option.id || ""),option]))
+    const final: api.ODCheckerMessage[] = []
+
+    ticketOptions.forEach((option:any,index:number) => {
+        const supportTeamId = normalizeRoutingSupportTeamId(option)
+        if (supportTeamId && !supportTeamIds.has(supportTeamId)){
+            final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-invalid-support-team",optionConfig.file,"error",`Ticket option "${option.id}" references unknown support team "${supportTeamId}".`,[index,"routing","supportTeamId"],null,[`"${supportTeamId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+        }
+
+        normalizeRoutingEscalationTargets(option).forEach((targetId) => {
+            const target = ticketOptionById.get(targetId)
+            if (!target){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-invalid-escalation-target",optionConfig.file,"error",`Ticket option "${option.id}" escalation target "${targetId}" must be an existing ticket option.`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+                return
+            }
+
+            const targetSupportTeamId = normalizeRoutingSupportTeamId(target)
+            if (!targetSupportTeamId){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-missing-team",optionConfig.file,"error",`Escalation target "${targetId}" must have a non-empty routing.supportTeamId.`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+
+            const sourceMode = normalizeRoutingTransportMode(option)
+            const targetMode = normalizeRoutingTransportMode(target)
+            if (sourceMode != targetMode){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-transport-mismatch",optionConfig.file,"error",`Escalation target "${targetId}" must use the same transportMode as "${option.id}".`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+
+            if (sourceMode == "private_thread" && normalizeRoutingThreadParent(option) != normalizeRoutingThreadParent(target)){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-thread-parent-mismatch",optionConfig.file,"error",`Private-thread escalation target "${targetId}" must use the same threadParentChannel as "${option.id}".`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+        })
     })
 
     return {valid:(final.length < 1),messages:final}

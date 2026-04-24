@@ -3,7 +3,7 @@ import type { ODValidJsonType } from "../modules/base"
 import { ODTicketData } from "./ticket"
 
 export interface ODTicketPlatformMetadata {
-    transportMode: string
+    transportMode: "channel_text" | "private_thread"
     transportParentChannelId: string | null
     transportParentMessageId: string | null
     assignedTeamId: string | null
@@ -227,7 +227,7 @@ function cloneTicketPlatformValue<T>(value: T): T {
 
 function normalizeTicketPlatformField<Key extends TicketPlatformMetadataKey>(key: Key, value: unknown): ODTicketPlatformMetadata[Key] {
     if (key == "transportMode") {
-        return (typeof value == "string" && value.length > 0 ? value : ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode) as ODTicketPlatformMetadata[Key]
+        return (value == "private_thread" || value == "channel_text" ? value : ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode) as ODTicketPlatformMetadata[Key]
     }
 
     if (key == "firstStaffResponseAt" || key == "resolvedAt" || key == "awaitingUserSince" || key == "closeRequestAt") {

@@ -58,6 +58,18 @@ import {
   type DashboardTranscriptPrepareExportResult,
   type DashboardTranscriptRetentionPreview
 } from "../transcript-service-bridge"
+import {
+  supportsTicketWorkbenchReads,
+  supportsTicketWorkbenchWrites
+} from "../runtime-bridge"
+import {
+  buildFallbackTicketDetail,
+  buildTicketWorkbenchDetailModel,
+  buildTicketWorkbenchListModel,
+  parseDashboardTicketActionId,
+  parseTicketWorkbenchListRequest,
+  sanitizeTicketWorkbenchReturnTo
+} from "../ticket-workbench"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
   const access = res.locals.dashboardAccess as { capabilities?: string[] } | undefined
@@ -291,6 +303,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     backupOrConfigurationNotFound: i18n.t("routeMessages.backupOrConfigurationNotFound"),
     pluginNotFound: i18n.t("routeMessages.pluginNotFound"),
     pluginAssetNotFound: i18n.t("routeMessages.pluginAssetNotFound"),
+    ticketNotFound: i18n.t("routeMessages.ticketNotFound"),
     transcriptNotFound: i18n.t("routeMessages.transcriptNotFound"),
     reviewTokenExpired: i18n.t("routeMessages.reviewTokenExpired")
   }
@@ -963,13 +976,181 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }))
   })
 
-  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("admin.shell"), (_req, res) => {
-    const access = adminGuard.getAccess(res)
-    if (access?.tier !== "admin") {
-      return res.redirect(access?.preferredEntryPath || joinBasePath(basePath, "visual/options"))
+  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), (req, res) => {
+    const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+    const runtimeAvailable = snapshot.ticketSummary.available === true
+    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
+    const model = buildTicketWorkbenchListModel({
+      basePath,
+      currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
+      request,
+      tickets: readsSupported ? runtimeBridge.listTickets() : [],
+      configService,
+      readsSupported,
+      warningMessage: runtimeAvailable
+        ? ""
+        : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now."
+    })
+
+    renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
+      pageTitle: `${i18n.t("tickets.title")} | ${brand.title}`,
+      pageEyebrow: i18n.t("tickets.page.eyebrow"),
+      pageHeadline: i18n.t("tickets.page.headline"),
+      pageSubtitle: i18n.t("tickets.page.subtitle"),
+      pageAlert: getAlert(req),
+      hidePageIntro: true,
+      pageClass: "page-ticket-workbench",
+      contentView: "sections/tickets",
+      ticketList: model
+    }))
+  })
+
+  app.get(joinBasePath(basePath, "admin/tickets/:ticketId"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
+    try {
+      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+      const runtimeAvailable = snapshot.ticketSummary.available === true
+      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+      const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
+      const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+      let detail = readsSupported && typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(req.params.ticketId, actorUserId)
+        : null
+
+      if (!detail && readsSupported) {
+        const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === req.params.ticketId) || null
+        detail = ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+      }
+
+      if (readsSupported && !detail) {
+        return res.status(404).send(routeText.ticketNotFound)
+      }
+
+      const model = buildTicketWorkbenchDetailModel({
+        basePath,
+        returnTo: req.query.returnTo,
+        ticketId: req.params.ticketId,
+        detail,
+        writesSupported,
+        readsSupported,
+        warningMessage: runtimeAvailable
+          ? writesSupported ? "" : "Ticket action writes are unavailable in the current dashboard runtime."
+          : "The Open Ticket runtime is not exposing ticket detail to the dashboard right now."
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
+        pageTitle: `${detail?.ticket.id || req.params.ticketId} | ${brand.title}`,
+        pageEyebrow: i18n.t("tickets.detail.eyebrow"),
+        pageHeadline: detail
+          ? i18n.t("tickets.detail.headline", { id: detail.ticket.id })
+          : i18n.t("tickets.detail.unavailableTitle"),
+        pageSubtitle: i18n.t("tickets.detail.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards.map((card) => metricCard(card.label, card.value, card.detail, card.tone)),
+        heroActions: [
+          { href: model.backHref, label: i18n.t("tickets.detail.backAction"), variant: "secondary" }
+        ],
+        contentView: "sections/ticket-detail",
+        ticketDetail: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/:ticketId/actions/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const requestedTicketId = req.params.ticketId
+    const action = parseDashboardTicketActionId(req.params.actionId)
+    const rawReturnTo = req.body?.returnTo || req.query.returnTo
+    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, rawReturnTo)
+    const redirectToDetail = (ticketId: string, status: string, message: string) => {
+      const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(ticketId)}`)
+      const params = new URLSearchParams({
+        status,
+        msg: message,
+        returnTo
+      })
+      return `${detailHref}?${params.toString()}`
     }
 
-    res.redirect(joinBasePath(basePath, "admin"))
+    if (!action) {
+      const message = "Unsupported ticket action."
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-action",
+        target: requestedTicketId,
+        outcome: "failure",
+        reason: "invalid-action",
+        details: {
+          actionId: req.params.actionId,
+          actorUserId: adminGuard.getAccess(res)?.identity?.userId || null
+        }
+      })
+      return res.redirect(redirectToDetail(requestedTicketId, "warning", message))
+    }
+
+    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+    const actionRequest = {
+      ticketId: requestedTicketId,
+      action,
+      actorUserId,
+      reason: typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined,
+      assigneeUserId: typeof req.body?.assigneeUserId === "string" ? req.body.assigneeUserId : undefined,
+      targetOptionId: typeof req.body?.targetOptionId === "string" ? req.body.targetOptionId : undefined
+    }
+    let result
+    if (action !== "refresh" && supportsTicketWorkbenchReads(runtimeBridge) && typeof runtimeBridge.getTicketDetail === "function") {
+      const preflightDetail = await runtimeBridge.getTicketDetail(requestedTicketId, actorUserId)
+      const preflightAvailability = preflightDetail?.actionAvailability?.[action]
+      if (!preflightDetail) {
+        result = {
+          ok: false,
+          status: "warning" as const,
+          message: "Ticket is missing or no longer tracked.",
+          ticketId: requestedTicketId
+        }
+      } else if (preflightAvailability && !preflightAvailability.enabled) {
+        result = {
+          ok: false,
+          status: "warning" as const,
+          message: preflightAvailability.reason || "This ticket action is unavailable.",
+          ticketId: requestedTicketId
+        }
+      }
+    }
+
+    if (!result) {
+      result = typeof runtimeBridge.runTicketAction === "function" && (action === "refresh" || supportsTicketWorkbenchWrites(runtimeBridge))
+        ? await runtimeBridge.runTicketAction(actionRequest)
+        : action === "refresh"
+          ? { ok: true, status: "success" as const, message: "Ticket detail refreshed.", ticketId: requestedTicketId }
+          : {
+            ok: false,
+            status: "warning" as const,
+            message: "Ticket action writes are unavailable in the current dashboard runtime.",
+            ticketId: requestedTicketId
+          }
+    }
+
+    if (!result.ticketId) {
+      result = { ...result, ticketId: requestedTicketId }
+    }
+
+    await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+      eventType: "ticket-action",
+      target: requestedTicketId,
+      outcome: result.ok ? "success" : "failure",
+      reason: action,
+      details: {
+        action,
+        requestedTicketId,
+        resultTicketId: result.ticketId,
+        actorUserId,
+        status: result.status,
+        warnings: "warnings" in result ? result.warnings || [] : []
+      }
+    })
+
+    res.redirect(redirectToDetail(result.ticketId || requestedTicketId, result.status, result.message))
   })
 
   app.get(joinBasePath(basePath, "admin/transcripts"), adminGuard.page("transcript.view.global"), async (req, res) => {
