@@ -124,6 +124,29 @@ class OTEotfsBridgeService extends api.ODManagerData {
     ownsTicketFollowups(optionId: string): boolean {
         return isEligibleOptionId(getBridgeConfig().eligibleOptionIds, optionId)
     }
+
+    async getDashboardTicketLockState(ticketId: string): Promise<{
+        providerId: string
+        title: string
+        message: string
+        lockedActions: ("claim"|"unclaim"|"assign"|"escalate"|"close"|"reopen"|"refresh")[]
+    } | null> {
+        const state = bridgeTicketStateStore.get(ticketId)
+        if (!state || !state.bridgeCaseId) return null
+
+        const lifecycleState = this.resolveApplicantLifecycleState(ticketId)
+        const lockedActions: ("claim"|"unclaim"|"assign"|"escalate"|"close"|"reopen"|"refresh")[] = lifecycleState == "submitted" || lifecycleState == "locked"
+            ? ["escalate","close","reopen"]
+            : []
+        if (lockedActions.length < 1) return null
+
+        return {
+            providerId: "ot-eotfs-bridge",
+            title: "Whitelist bridge",
+            message: "This ticket is owned by the whitelist bridge lifecycle. Bridge-owned terminal and route actions stay disabled in the dashboard.",
+            lockedActions
+        }
+    }
 }
 
 class BridgeHttpError extends Error {

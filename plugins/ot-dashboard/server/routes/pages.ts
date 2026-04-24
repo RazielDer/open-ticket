@@ -13,7 +13,7 @@ import {
   sanitizeReturnTo,
   setAdminSession
 } from "../auth"
-import { getManagedConfig } from "../config-registry"
+import { getManagedConfig, type ManagedConfigId } from "../config-registry"
 import {
   EMOJI_STYLES,
   OPTION_BUTTON_COLORS,
@@ -33,6 +33,7 @@ import {
   ROLE_MODES,
   STATUS_MODES,
   STATUS_TYPES,
+  SUPPORT_TEAM_ASSIGNMENT_STRATEGIES,
   TRANSCRIPT_FILE_MODES,
   TRANSCRIPT_MODES,
   TRANSCRIPT_TEXT_LAYOUTS
@@ -123,7 +124,7 @@ function savedFlag(req: express.Request): boolean {
   return req.query.saved === "1"
 }
 
-function buildWorkspaceTools(context: DashboardAppContext, id: "general" | "options" | "panels" | "questions") {
+function buildWorkspaceTools(context: DashboardAppContext, id: Exclude<ManagedConfigId, "transcripts">) {
   const definition = getManagedConfig(id)
   if (!definition) {
     throw new Error(`Unknown managed config: ${id}`)
@@ -519,6 +520,7 @@ export function registerPageRoutes(app: express.Express, context: DashboardAppCo
       pageTitle: `${i18n.t("options.title")} | ${brand.title}`,
       options: configService.readManagedJson<Record<string, unknown>[]>("options"),
       availableQuestions: configService.listAvailableQuestions(),
+      supportTeams: configService.listAvailableSupportTeams(),
       dependencyGraph: JSON.stringify(configService.getEditorDependencyGraph()),
       optionTypes: OPTION_TYPES,
       buttonColors: OPTION_BUTTON_COLORS,
@@ -540,6 +542,7 @@ export function registerPageRoutes(app: express.Express, context: DashboardAppCo
         "options.flash.validationChannelSuffix",
         "options.flash.validationRoleMode",
         "options.flash.validationMessageJson",
+        "options.flash.validationRoutingTargets",
         "options.flash.deleteConfirm",
         "options.flash.deleteSuccess",
         "options.flash.saveSuccess",
@@ -548,6 +551,35 @@ export function registerPageRoutes(app: express.Express, context: DashboardAppCo
         "options.flash.validationUrl"
       ])),
       pageKey: "options"
+    })
+  })
+
+  app.get(joinBasePath(basePath, "visual/support-teams"), adminGuard.page("config.write.general"), (req, res) => {
+    renderPage(res, "config-support-teams", {
+      pageTitle: `${i18n.t("supportTeams.title")} | ${brand.title}`,
+      supportTeams: configService.readManagedJson<Record<string, unknown>[]>("support-teams"),
+      dependencyGraph: JSON.stringify(configService.getEditorDependencyGraph()),
+      assignmentStrategies: SUPPORT_TEAM_ASSIGNMENT_STRATEGIES,
+      advancedTools: buildWorkspaceTools(context, "support-teams"),
+      saved: savedFlag(req),
+      messages: JSON.stringify(i18n.pick([
+        "common.cancel",
+        "common.closeDialog",
+        "common.delete",
+        "common.save",
+        "common.edit",
+        "common.add",
+        "supportTeams.modal.addTitle",
+        "supportTeams.modal.editTitle",
+        "supportTeams.flash.deleteConfirm",
+        "supportTeams.flash.deleteSuccess",
+        "supportTeams.flash.saveSuccess",
+        "supportTeams.flash.validationId",
+        "supportTeams.flash.validationName",
+        "supportTeams.flash.validationRoles",
+        "supportTeams.flash.validationStrategy"
+      ])),
+      pageKey: "support-teams"
     })
   })
 

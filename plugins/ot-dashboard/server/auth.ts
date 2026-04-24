@@ -44,6 +44,7 @@ export type DashboardCapability =
   | "viewer.portal"
   | "config.write.visual"
   | "admin.shell"
+  | "ticket.workbench"
   | "transcript.view.global"
   | "transcript.manage"
   | "config.write.general"
@@ -130,6 +131,7 @@ const DASHBOARD_EDITOR_ALLOWED_PATHS = [
   "/visual/options",
   "/visual/panels",
   "/visual/questions",
+  "/admin/tickets",
   "/admin/configs/options",
   "/admin/configs/panels",
   "/admin/configs/questions"
@@ -227,7 +229,7 @@ function capabilitySetForTier(tier: DashboardAccessTier | null) {
   }
 
   if (tier === "editor" || tier === "admin") {
-    capabilities.push("config.write.visual", "admin.shell")
+    capabilities.push("config.write.visual", "admin.shell", "ticket.workbench")
   }
 
   if (tier === "admin") {
@@ -587,7 +589,10 @@ export function sanitizeViewerReturnTo(basePath: string, candidate: unknown, fal
 }
 
 function isEditorAllowedPath(basePath: string, candidate: string) {
-  return DASHBOARD_EDITOR_ALLOWED_PATHS.some((prefix) => candidate === joinBasePath(basePath, prefix) || candidate.startsWith(`${joinBasePath(basePath, prefix)}/`))
+  return DASHBOARD_EDITOR_ALLOWED_PATHS.some((prefix) => {
+    const target = joinBasePath(basePath, prefix)
+    return candidate === target || candidate.startsWith(`${target}/`) || candidate.startsWith(`${target}?`)
+  })
 }
 
 export function resolveAdminReturnTo(

@@ -479,6 +479,8 @@ export type ODLanguageManagerTranslations_Default = (
     "commands.unpin"|
     "commands.move"|
     "commands.moveId"|
+    "commands.escalate"|
+    "commands.escalateId"|
     "commands.rename"|
     "commands.renameName"|
     "commands.add"|
@@ -539,6 +541,7 @@ export type ODLanguageManagerTranslations_Default = (
     "helpMenu.pin"|
     "helpMenu.unpin"|
     "helpMenu.move"|
+    "helpMenu.escalate"|
     "helpMenu.rename"|
     "helpMenu.claim"|
     "helpMenu.unclaim"|

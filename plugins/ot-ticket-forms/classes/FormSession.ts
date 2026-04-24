@@ -25,6 +25,12 @@ import {
     hydrateModalQuestionsWithSavedAnswers
 } from "../service/edit-mode-runtime"
 import {
+    captureOTFormsModalQuestionAnswer,
+    cloneOTFormsCapturedAnswers,
+    isOTFormsLegacyPromptQuestion,
+    isOTFormsModalCapableQuestion
+} from "../service/answer-runtime"
+import {
     buildEphemeralStatusMessage,
     deliverLiveContinuePrompt,
     deliverLiveQuestionPrompt,
@@ -104,10 +110,7 @@ export class OTForms_FormSession {
     private async handleResponse(answers: OTFormsCapturedAnswer[]): Promise<void> {
         const previousQuestionNumber = this.currentQuestionNumber;
         const previousSection = this.currentSection;
-        const previousAnswers = this.answers.map((entry) => ({
-            question: { ...entry.question },
-            answer: entry.answer
-        }));
+        const previousAnswers = cloneOTFormsCapturedAnswers(this.answers);
         const advancedQuestionNumber = this.currentQuestionNumber + answers.length;
         const isTargetedEdit = this.isTargetedEdit();
         try {
@@ -148,7 +151,7 @@ export class OTForms_FormSession {
                 return;
             }
             const question = this.form.questions[this.currentQuestionNumber];
-            await this.handleResponse([{ question, answer: response }]);
+            await this.handleResponse([{ question, answer: response, answerData: null }]);
         });
     }
 
@@ -162,7 +165,7 @@ export class OTForms_FormSession {
             }
             const question = this.form.questions[this.currentQuestionNumber];
             const answer = response.getStringValues().join(", ");
-            await this.handleResponse([{ question, answer }]);
+            await this.handleResponse([{ question, answer, answerData: null }]);
         });
     }
 
@@ -171,12 +174,14 @@ export class OTForms_FormSession {
         answeredQuestions: { number: number; required: boolean; }[]
     ): Promise<void> {
         await this.withInteractionGuard(async () => {
-            const answers = answeredQuestions.map((q) => ({
-                question: this.form.questions[q.number - 1],
-                answer: q.required
-                    ? response.getTextField(q.number.toString(), true)
-                    : response.getTextField(q.number.toString(), false)
-            }));
+            const answers = answeredQuestions.map((q) => {
+                const questionIndex = this.form.getQuestionIndexByPosition(q.number);
+                const question = this.form.questions[questionIndex];
+                if (!isOTFormsModalCapableQuestion(question)) {
+                    throw new api.ODSystemError(`ot-ticket-forms: stale modal question ${q.number} is not modal-capable.`)
+                }
+                return captureOTFormsModalQuestionAnswer(question, response)
+            });
             await this.handleResponse(answers);
         });
     }
@@ -191,18 +196,11 @@ export class OTForms_FormSession {
 
     private async sendNextQuestion(): Promise<boolean> {
         const question = this.form.questions[this.currentQuestionNumber];
-        switch (question.type) {
-            case "short":
-            case "paragraph":
-                return this.sendModalQuestions();
-            case "dropdown":
-                return this.sendDropdownQuestion(question as OTForms_DropdownQuestion);
-            case "button":
-                return this.sendButtonQuestion(question as OTForms_ButtonQuestion);
-            default:
-                console.error("Unknown question type: ", question.type);
-                return false;
-        }
+        if (isOTFormsModalCapableQuestion(question)) return this.sendModalQuestions();
+        if (question.type == "dropdown") return this.sendDropdownQuestion(question as OTForms_DropdownQuestion);
+        if (question.type == "button") return this.sendButtonQuestion(question as OTForms_ButtonQuestion);
+        console.error("Unknown question type: ", question.type);
+        return false;
     }
 
     private async sendModalQuestions(): Promise<boolean> {
@@ -221,13 +219,13 @@ export class OTForms_FormSession {
 
         if (this.isTargetedEdit()) {
             const question = this.form.questions[this.currentQuestionNumber];
-            if (question && (question.type == "short" || question.type == "paragraph")) {
+            if (isOTFormsModalCapableQuestion(question)) {
                 modalQuestions.push(question as OTForms_ModalQuestion);
             }
         } else {
             while (count < 5 && this.currentQuestionNumber + count < this.form.questions.length) {
                 const question = this.form.questions[this.currentQuestionNumber + count];
-                if (!question || (question.type !== "short" && question.type !== "paragraph")) break;
+                if (!isOTFormsModalCapableQuestion(question)) break;
                 modalQuestions.push(question as OTForms_ModalQuestion);
                 count++;
             }
@@ -437,10 +435,7 @@ export class OTForms_FormSession {
         );
         if (!draft) return;
 
-        this.answers = draft.answers.map((entry) => ({
-            question: { ...entry.question },
-            answer: entry.answer
-        }));
+        this.answers = cloneOTFormsCapturedAnswers(draft.answers);
         this.currentQuestionNumber = resolveDraftResumeQuestionIndex(
             this.form.questions,
             draft.draftState,
@@ -508,9 +503,7 @@ export class OTForms_FormSession {
     private getAnsweredComponentQuestion(): OTForms_ButtonQuestion | OTForms_DropdownQuestion | null {
         const answeredQuestion = this.form.questions[this.currentQuestionNumber - 1];
         if (!answeredQuestion) return null;
-        if (answeredQuestion.type != "button" && answeredQuestion.type != "dropdown") {
-            return null;
-        }
+        if (!isOTFormsLegacyPromptQuestion(answeredQuestion)) return null;
         return answeredQuestion as OTForms_ButtonQuestion | OTForms_DropdownQuestion;
     }
 
@@ -582,7 +575,7 @@ export class OTForms_FormSession {
             return false;
         }
         const expectedQuestion = this.form.questions[this.currentQuestionNumber];
-        if (!expectedQuestion || (expectedQuestion.type != "button" && expectedQuestion.type != "dropdown")) {
+        if (!isOTFormsLegacyPromptQuestion(expectedQuestion)) {
             return false;
         }
 

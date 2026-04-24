@@ -65,6 +65,12 @@ export interface ODActionManagerIds_Default {
         result:{},
         workers:"opendiscord:unclaim-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
     },
+    "opendiscord:assign-ticket":{
+        source:"slash"|"text"|"ticket-message"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,assigneeUserId:string},
+        result:{},
+        workers:"opendiscord:assign-ticket"|"opendiscord:logs"
+    },
     "opendiscord:pin-ticket":{
         source:"slash"|"text"|"ticket-message"|"unpin-message"|"other",
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean},
@@ -88,6 +94,12 @@ export interface ODActionManagerIds_Default {
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,data:ODTicketOption},
         result:{},
         workers:"opendiscord:move-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
+    },
+    "opendiscord:escalate-ticket":{
+        source:"slash"|"text"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,data:ODTicketOption},
+        result:{},
+        workers:"opendiscord:escalate-ticket"|"opendiscord:logs"
     },
     "opendiscord:add-ticket-user":{
         source:"slash"|"text"|"other",

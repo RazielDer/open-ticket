@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,9 +12,21 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:unpin-ticket").workers.add([
         new api.ODWorker("opendiscord:unpin-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to unpin ticket! Open Ticket doesn't support threads!")
 
             await opendiscord.events.get("onTicketUnpin").emit([ticket,user,channel,reason])
+
+            if (channel.isThread()){
+                const priorityEmoji = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value).channelEmoji ?? ""
+                const newName = priorityEmoji+utilities.trimEmojis(channel.name)
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename private-thread ticket on unpin","warning")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    return cancel()
+                }
+            }
             
             //update ticket
             ticket.get("opendiscord:pinned").value = false
@@ -25,14 +38,16 @@ export const registerActions = async () => {
             const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
             const priorityEmoji = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value).channelEmoji ?? ""
 
-            const originalName = channel.name
-            const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channel.name)
-            try{
-                await utilities.timedAwait(channel.setName(newName),2500,(err) => {
-                    opendiscord.log("Failed to rename channel on ticket unpin","error")
-                })
-            }catch(err){
-                await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-unpin",{guild,channel,user,originalName,newName})).message)
+            if (!channel.isThread()){
+                const originalName = channel.name
+                const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channel.name)
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename channel on ticket unpin","error")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-unpin",{guild,channel,user,originalName,newName})).message)
+                }
             }
 
             //update ticket message

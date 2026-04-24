@@ -72,8 +72,8 @@ test("completed ticket form store persists and looks up snapshots by ticket chan
     assert.deepEqual(store.getCompletedTicketForm("123456789012345678", "whitelist-review-form"), {
         ...snapshot,
         answers: [
-            { position: 2, question: "Alderon ID(s)?", answer: "alderon-1, alderon-2" },
-            { position: 3, question: "Alderon in-game name(s)?", answer: "Raziel, AltRaziel" }
+            { position: 2, question: "Alderon ID(s)?", answer: "alderon-1, alderon-2", answerData: null },
+            { position: 3, question: "Alderon in-game name(s)?", answer: "Raziel, AltRaziel", answerData: null }
         ]
     })
     assert.equal(store.getCompletedTicketForm("123456789012345678", "missing-form"), null)

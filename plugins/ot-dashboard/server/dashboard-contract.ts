@@ -14,6 +14,7 @@ export const OPTION_CHANNEL_SUFFIXES = [
   "counter-fixed"
 ] as const
 export const ROLE_MODES = ["add", "remove", "add&remove"] as const
+export const SUPPORT_TEAM_ASSIGNMENT_STRATEGIES = ["manual", "round_robin"] as const
 
 export const PANEL_DESCRIBE_LAYOUTS = ["simple", "normal", "detailed"] as const
 export const PANEL_DROPDOWN_OPTION_TYPE = "ticket"

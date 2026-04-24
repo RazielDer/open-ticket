@@ -308,6 +308,28 @@
 
                 <section class="subsection-card option-ticket-subsection">
                   <div class="section-heading">
+                    <h4><%= t("options.workspace.supportRoutingTitle") %></h4>
+                  </div>
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.supportTeamId") %></span>
+                      <select class="select-input" id="routingSupportTeamId">
+                        <option value=""><%= t("options.fields.legacyRoleRouting") %></option>
+                        <% supportTeams.forEach((team) => { %>
+                          <option value="<%= team.id %>"><%= team.name %> (<%= team.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.escalationTargets") %></span>
+                      <textarea class="code-area compact" id="routingEscalationTargetIds" spellcheck="false"></textarea>
+                      <span class="field-help"><%= t("options.fields.escalationTargetsHelp") %></span>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
                     <h4><%= t("options.workspace.transcriptRoutingTitle") %></h4>
                   </div>
                   <div class="checkbox-grid">
@@ -461,6 +483,7 @@
 
       <textarea id="options-data" hidden><%= JSON.stringify(options) %></textarea>
       <textarea id="available-questions-data" hidden><%= JSON.stringify(availableQuestions) %></textarea>
+      <textarea id="support-teams-data" hidden><%= JSON.stringify(supportTeams) %></textarea>
       <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
       <textarea id="page-messages" hidden><%= messages %></textarea>
     </main>

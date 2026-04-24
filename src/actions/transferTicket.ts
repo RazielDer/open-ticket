@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,7 +12,15 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:transfer-ticket").workers.add([
         new api.ODWorker("opendiscord:transfer-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason,newCreator} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to transfer ticket! Open Ticket doesn't support threads!")
+            if (channel.isThread()){
+                try{
+                    await (channel as discord.PrivateThreadChannel).members.add(newCreator.id)
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    opendiscord.log("Unable to transfer private-thread ticket before state mutation.","warning",[{key:"channelid",value:channel.id,hidden:true},{key:"userid",value:newCreator.id,hidden:true}])
+                    return cancel()
+                }
+            }
 
             const oldCreator = await opendiscord.tickets.getTicketUser(ticket,"creator") ?? opendiscord.client.client.user
             await opendiscord.events.get("onTicketTransfer").emit([ticket,user,channel,oldCreator,newCreator,reason])
@@ -87,24 +96,28 @@ export const registerActions = async () => {
                     deny:[]
                 })
             })
-            try{
-                await channel.permissionOverwrites.set(permissions)
-            }catch{
-                opendiscord.log("Failed to reset channel permissions on ticket transfer!","error")
+            if (!channel.isThread()){
+                try{
+                    await channel.permissionOverwrites.set(permissions)
+                }catch{
+                    opendiscord.log("Failed to reset channel permissions on ticket transfer!","error")
+                }
             }
 
             //rename channel (and give error when crashed)
             const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
             const priorityEmoji = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value).channelEmoji ?? ""
             
-            const originalName = channel.name
-            const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channelPrefix+channelSuffix)
-            try{
-                await utilities.timedAwait(channel.setName(newName),2500,(err) => {
-                    opendiscord.log("Failed to rename channel on ticket transfer","error")
-                })
-            }catch(err){
-                await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-transfer",{guild,channel,user,originalName,newName:newName})).message)
+            if (!channel.isThread()){
+                const originalName = channel.name
+                const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channelPrefix+channelSuffix)
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename channel on ticket transfer","error")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-transfer",{guild,channel,user,originalName,newName:newName})).message)
+                }
             }
 
             //update ticket message

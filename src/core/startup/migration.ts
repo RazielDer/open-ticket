@@ -147,7 +147,39 @@ export const migrations = [
 
     //MIGRATE TO v4.1.4
     new utilities.ODVersionMigration(api.ODVersion.fromString("opendiscord:version","v4.1.4"),async () => {
+        const generalConfig = opendiscord.configs.get("opendiscord:general")
+        const optionConfig = opendiscord.configs.get("opendiscord:options")
         const ticketDatabase = opendiscord.databases.get("opendiscord:tickets")
+        const optionDatabase = opendiscord.databases.get("opendiscord:options")
+
+        if (!generalConfig.data.system.permissions.escalate) generalConfig.data.system.permissions.escalate = "admin"
+        await generalConfig.save()
+
+        for (const option of optionConfig.data){
+            if (option.type != "ticket") continue
+            if (!option.channel.transportMode) option.channel.transportMode = "channel_text"
+            if (typeof option.channel.threadParentChannel != "string") option.channel.threadParentChannel = ""
+            if (!option.routing || typeof option.routing != "object"){
+                option.routing = {
+                    supportTeamId:"",
+                    escalationTargetOptionIds:[]
+                }
+            }
+            if (typeof option.routing.supportTeamId != "string") option.routing.supportTeamId = ""
+            if (!Array.isArray(option.routing.escalationTargetOptionIds)) option.routing.escalationTargetOptionIds = []
+        }
+        await optionConfig.save()
+
+        for (const option of (await optionDatabase.getCategory("opendiscord:used-option") ?? [])){
+            const optionData = option.value
+            if (!optionData || !Array.isArray(optionData.data)) continue
+
+            if (!optionData.data.find((d) => d.id == "opendiscord:channel-transport-mode")) optionData.data.push({id:"opendiscord:channel-transport-mode",value:"channel_text"})
+            if (!optionData.data.find((d) => d.id == "opendiscord:channel-thread-parent")) optionData.data.push({id:"opendiscord:channel-thread-parent",value:""})
+            if (!optionData.data.find((d) => d.id == "opendiscord:routing-support-team")) optionData.data.push({id:"opendiscord:routing-support-team",value:""})
+            if (!optionData.data.find((d) => d.id == "opendiscord:routing-escalation-targets")) optionData.data.push({id:"opendiscord:routing-escalation-targets",value:[]})
+            optionDatabase.set("opendiscord:used-option",option.key,optionData)
+        }
 
         for (const ticket of (await ticketDatabase.getCategory("opendiscord:ticket") ?? [])){
             const ticketData = ticket.value

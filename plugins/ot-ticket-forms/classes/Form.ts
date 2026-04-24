@@ -8,6 +8,7 @@ import {
     type OTFormsService
 } from "../service/forms-service"
 import { OTFormsActiveSessionRegistry } from "../service/draft-runtime"
+import { calculateOTFormsQuestionSections } from "../service/answer-runtime"
 import {
     type OTFormsApplicantLifecycleState,
     buildInactiveStepRecoveryMessage,
@@ -64,26 +65,10 @@ export class OTForms_Form {
         this.activeSessionRegistry = new OTFormsActiveSessionRegistry();
         this.sectionNumbersByQuestionIndex = [];
 
-        // Calculate total sections
-        this.totalSections = 0;
-        let lastQuestionType: "short" | "paragraph" | "dropdown" | "button" | undefined;
-        let typeTextCount = 1;
-        questions.forEach((question, index) => {
-            if (question.type !== "short" && question.type !== "paragraph") {
-                // If it's not type text ("short" or "paragraph"), it counts as a section
-                this.totalSections++;
-            } else {
-                // If it's type text, it only counts as a section if the last question wasn't text
-                if (typeTextCount === 5 || (lastQuestionType !== "short" && lastQuestionType !== "paragraph")) {
-                    this.totalSections++;
-                    typeTextCount = 1;
-                } else {
-                    typeTextCount++;
-                }
-            }
-            lastQuestionType = question.type;
-            this.sectionNumbersByQuestionIndex[index] = this.totalSections;
-        });
+        // Consecutive modal-native questions share a modal section up to Discord's five input limit.
+        const sections = calculateOTFormsQuestionSections(questions);
+        this.totalSections = sections.totalSections;
+        this.sectionNumbersByQuestionIndex.push(...sections.sectionNumbersByQuestionIndex);
     }
 
     /* CREATE SESSION

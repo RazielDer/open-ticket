@@ -313,4 +313,62 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       sendArrayEditorError(res, error)
     }
   })
+
+  app.post(joinBasePath(basePath, "api/support-teams/save"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const result = configService.saveSupportTeam(req.body?.team || {}, Number(req.body?.editIndex))
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-save",
+        details: {
+          configId: "support-teams",
+          operation: "save",
+          editIndex: Number(req.body?.editIndex)
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/support-teams/delete/:index"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const result = configService.deleteArrayItem("support-teams", Number(req.params.index))
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-delete",
+        details: {
+          configId: "support-teams",
+          operation: "delete",
+          index: Number(req.params.index)
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/support-teams/reorder"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : []
+      const result = configService.reorderArrayItems("support-teams", orderedIds)
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-reorder",
+        details: {
+          configId: "support-teams",
+          operation: "reorder",
+          orderedCount: orderedIds.length
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
 }

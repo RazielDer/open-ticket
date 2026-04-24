@@ -1,5 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import path from "node:path"
 
 import {
     ODTICKET_PLATFORM_METADATA_IDS,
@@ -128,4 +130,16 @@ test("html transcript rendering accepts additive ticket.metadata without changin
     const html = renderTranscriptHtml(document)
     assert.match(html, /legacy-ticket/)
     assert.match(html, /hello/)
+})
+
+test("slice 008 transcript contracts accept guild text-based channel inputs and preserve transport metadata", () => {
+    const root = process.cwd()
+    const transcriptCore = fs.readFileSync(path.resolve(root, "src", "core", "api", "openticket", "transcript.ts"), "utf8")
+    const createTranscript = fs.readFileSync(path.resolve(root, "src", "actions", "createTranscript.ts"), "utf8")
+    const documentBuilder = fs.readFileSync(path.resolve(root, "plugins", "ot-html-transcripts", "build", "document-builder.ts"), "utf8")
+
+    assert.equal(transcriptCore.includes("channel:discord.GuildTextBasedChannel"), true)
+    assert.equal(createTranscript.includes("!channel.isTextBased() || channel.isDMBased()"), true)
+    assert.equal(documentBuilder.includes("channel: discord.GuildTextBasedChannel"), true)
+    assert.equal(documentBuilder.includes("metadata: api.readTicketPlatformMetadataFromTicket(ticket)"), true)
 })

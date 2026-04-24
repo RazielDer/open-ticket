@@ -1709,7 +1709,7 @@ test("authenticated admin home renders the beginner-first nav and keeps advanced
   assert.match(html, /aria-label="Primary navigation"/)
   assert.match(html, /href="\/dash\/admin"[^>]*>Home</)
   assert.doesNotMatch(html, /href="\/dash\/admin\/configs"[^>]*>Setup</)
-  assert.doesNotMatch(html, /href="\/dash\/admin\/tickets"[^>]*>/)
+  assert.match(html, /href="\/dash\/admin\/tickets"[^>]*>Tickets</)
   assert.match(html, /href="\/dash\/admin\/transcripts"[^>]*>Transcripts</)
   assert.match(html, /href="\/dash\/admin\/plugins"[^>]*>Add-ons</)
   assert.match(html, /href="\/dash\/admin\/advanced"[^>]*>Advanced</)
@@ -1729,15 +1729,15 @@ test("authenticated admin home renders the beginner-first nav and keeps advanced
   assert.doesNotMatch(html, /class="status-strip tone-/)
   assert.match(html, /\/dash\/admin\/configs/)
   assert.match(html, /\/dash\/admin\/plugins/)
-  assert.doesNotMatch(html, /\/dash\/admin\/tickets/)
+  assert.match(html, /\/dash\/admin\/tickets/)
 
-  const ticketsRedirectResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
-    headers: { cookie },
-    redirect: "manual"
+  const ticketsResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
+    headers: { cookie }
   })
-  await ticketsRedirectResponse.arrayBuffer()
-  assert.equal(ticketsRedirectResponse.status, 302)
-  assert.equal(ticketsRedirectResponse.headers.get("location"), "/dash/admin")
+  const ticketsHtml = await ticketsResponse.text()
+  assert.equal(ticketsResponse.status, 200)
+  assert.match(ticketsHtml, /Ticket workbench/)
+  assert.match(ticketsHtml, /Ticket inventory is unavailable/)
 
   const advancedResponse = await fetch(`${runtime.baseUrl}/dash/admin/advanced`, {
     headers: { cookie }

@@ -58,6 +58,39 @@ export interface LocalTranscriptAttachment {
     asset: LocalAssetRef | null
 }
 
+export interface LocalTranscriptFormAnswerFile {
+    name: string
+    url: string
+    contentType: string | false
+    size: number | false
+    displayKind: "image" | "video" | "audio" | "file"
+    asset: LocalAssetRef | null
+}
+
+export type LocalTranscriptFormAnswerData =
+    | { kind: "text"; value: string | false }
+    | { kind: "string_select"; selected: { value: string; label: string }[] }
+    | { kind: "user_select" | "role_select" | "channel_select" | "mentionable_select"; selected: { id: string; label: string; entityKind: "user" | "role" | "channel" }[] }
+    | { kind: "file_upload"; files: LocalTranscriptFormAnswerFile[] }
+
+export interface LocalTranscriptFormAnswerRecord {
+    position: number
+    question: string
+    answer: string | false
+    answerData: LocalTranscriptFormAnswerData | null
+}
+
+export interface LocalTranscriptFormRecord {
+    source: "ot-ticket-forms"
+    formId: string
+    formName: string | false
+    applicantDiscordUserId: string
+    draftState: "initial" | "partial" | "completed"
+    updatedAt: string
+    completedAt: string | false
+    answers: LocalTranscriptFormAnswerRecord[]
+}
+
 export interface LocalTranscriptReaction {
     amount: number
     emoji: string
@@ -111,6 +144,7 @@ export interface LocalTranscriptMessage {
     embeds: LocalTranscriptEmbed[]
     attachments: LocalTranscriptAttachment[]
     components: LocalTranscriptComponent[]
+    formRecord?: LocalTranscriptFormRecord | null
 }
 
 export interface LocalTranscriptParticipant {
@@ -138,7 +172,7 @@ export interface LocalTranscriptTicketMetadata {
 }
 
 export interface LocalTranscriptDocument {
-    version: "1.0"
+    version: "1.0" | "2.0"
     transcriptId: string
     generatedAt: string
     status: TranscriptStatus

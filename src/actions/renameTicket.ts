@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,7 +12,6 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:rename-ticket").workers.add([
         new api.ODWorker("opendiscord:rename-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason,data} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to rename ticket! Open Ticket doesn't support threads!")
 
             await opendiscord.events.get("onTicketRename").emit([ticket,user,channel,reason])
 
@@ -26,6 +26,10 @@ export const registerActions = async () => {
                     opendiscord.log("Failed to rename channel on ticket rename","error")
                 })
             }catch(err){
+                if (channel.isThread()){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    return cancel()
+                }
                 await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-rename",{guild,channel,user,originalName,newName:data})).message)
             }
 

@@ -18,12 +18,10 @@ import {
     rebindManagedRecordSnapshot,
     splitManagedRecordFields
 } from "../service/ticket-managed-record-runtime";
+import { cloneOTFormsCapturedAnswers } from "../service/answer-runtime";
 
 function cloneAnswers(answers: readonly OTFormsCapturedAnswer[]): OTFormsCapturedAnswer[] {
-    return answers.map((entry) => ({
-        question: { ...entry.question },
-        answer: entry.answer
-    }));
+    return cloneOTFormsCapturedAnswers(answers);
 }
 
 function resolveDraftKey(
@@ -375,7 +373,8 @@ export class OTForms_AnswersManager {
             answers: this._answers.map((entry) => ({
                 position: entry.question.position,
                 question: entry.question.question,
-                answer: entry.answer
+                answer: entry.answer,
+                answerData: entry.answerData ?? null
             }))
         });
     }

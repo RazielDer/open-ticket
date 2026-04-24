@@ -1,6 +1,6 @@
 import { api } from "#opendiscord";
 import discord from "discord.js";
-import { ODJsonConfig_DefaultForms, OTForms_Question, OTForms_ButtonQuestion, OTForms_DropdownQuestion, OTForms_ModalQuestion, OTForms_DropdownChoice, OTForms_ButtonChoice } from "./configDefaults";
+import { ODJsonConfig_DefaultForms, OTForms_Question, OTForms_ButtonQuestion, OTForms_DropdownQuestion, OTForms_ModalQuestion, OTForms_DropdownChoice, OTForms_ButtonChoice, OTFormsAnswerData } from "./configDefaults";
 import type { OTFormsCompletedTicketFormSnapshot, OTFormsService, OTFormsTicketDraftSnapshot } from "../service/forms-service";
 
 declare module "#opendiscord-types" {
@@ -81,7 +81,7 @@ declare module "#opendiscord-types" {
             type: "initial" | "partial" | "completed",
             userId: string,
             formColor: discord.ColorResolvable,
-            answers: { question: OTForms_Question, answer: string | null }[],
+            answers: { question: OTForms_Question, answer: string | null, answerData?: OTFormsAnswerData | null }[],
             currentPage: number,
             timestamp: number
         },

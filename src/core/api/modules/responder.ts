@@ -1006,16 +1006,115 @@ export class ODModalResponderInstanceValues {
         this.#interaction = interaction
     }
 
+    #getTypedField(name:string, type:discord.ComponentType, required:boolean, method:string): discord.ModalData|null {
+        const data = this.#interaction.fields.fields.get(name)
+        if (!data){
+            if (!required) return null
+            throw new ODSystemError("ODModalResponderInstanceValues:"+method+"() field not found!")
+        }
+        if (data.type != type) throw new ODSystemError("ODModalResponderInstanceValues:"+method+"() field type mismatch!")
+        return data
+    }
+
+    /**Get a submitted modal field by custom id without coercing its type. */
+    getField(name:string,required:true): discord.ModalData
+    getField(name:string,required:false): discord.ModalData|null
+    getField(name:string,required:boolean){
+        try {
+            const data = this.#interaction.fields.fields.get(name)
+            if (!data && required) throw new ODSystemError("ODModalResponderInstanceValues:getField() field not found!")
+            return data ?? null
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getField() field not found!")
+        }
+    }
+
     /**Get the value of a text field. */
     getTextField(name:string,required:true): string
     getTextField(name:string,required:false): string|null
     getTextField(name:string,required:boolean){
         try {
-            const data = this.#interaction.fields.getField(name,discord.ComponentType.TextInput)
-            if (!data && required) throw new ODSystemError("ODModalResponderInstanceValues:getTextField() field not found!")
-            return (data) ? data.value : null
+            const data = this.#getTypedField(name,discord.ComponentType.TextInput,required,"getTextField")
+            return (data) ? (data as discord.TextInputModalData).value : null
         }catch{
             throw new ODSystemError("ODModalResponderInstanceValues:getTextField() field not found!")
+        }
+    }
+
+    /**Get selected string-select values from a modal submit. */
+    getStringSelectValues(name:string,required:true): readonly string[]
+    getStringSelectValues(name:string,required:false): readonly string[]|null
+    getStringSelectValues(name:string,required:boolean){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.StringSelect,required,"getStringSelectValues")
+            return (data) ? (data as discord.SelectMenuModalData).values : null
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getStringSelectValues() field not found!")
+        }
+    }
+
+    /**Get selected users from a modal user-select. */
+    getSelectedUsers(name:string,required:true): discord.ReadonlyCollection<discord.Snowflake, discord.User>
+    getSelectedUsers(name:string,required:false): discord.ReadonlyCollection<discord.Snowflake, discord.User>|null
+    getSelectedUsers(name:string,required:boolean){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.UserSelect,required,"getSelectedUsers")
+            if (!data) return null
+            return this.#interaction.fields.getSelectedUsers(name,required)
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getSelectedUsers() field not found!")
+        }
+    }
+
+    /**Get selected roles from a modal role-select. */
+    getSelectedRoles(name:string,required:true): NonNullable<discord.SelectMenuModalData["roles"]>
+    getSelectedRoles(name:string,required:false): NonNullable<discord.SelectMenuModalData["roles"]>|null
+    getSelectedRoles(name:string,required:boolean){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.RoleSelect,required,"getSelectedRoles")
+            if (!data) return null
+            return this.#interaction.fields.getSelectedRoles(name,required)
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getSelectedRoles() field not found!")
+        }
+    }
+
+    /**Get selected channels from a modal channel-select. */
+    getSelectedChannels(name:string,required:true, channelTypes?:readonly discord.ChannelType[]): NonNullable<ReturnType<discord.ModalSubmitFields["getSelectedChannels"]>>
+    getSelectedChannels(name:string,required:false, channelTypes?:readonly discord.ChannelType[]): ReturnType<discord.ModalSubmitFields["getSelectedChannels"]>
+    getSelectedChannels(name:string,required:boolean, channelTypes?:readonly discord.ChannelType[]){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.ChannelSelect,required,"getSelectedChannels")
+            if (!data) return null
+            return this.#interaction.fields.getSelectedChannels(name,required,channelTypes)
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getSelectedChannels() field not found!")
+        }
+    }
+
+    /**Get selected mentionables from a modal mentionable-select. */
+    getSelectedMentionables(name:string,required:true): discord.ModalSelectedMentionables
+    getSelectedMentionables(name:string,required:false): discord.ModalSelectedMentionables|null
+    getSelectedMentionables(name:string,required:boolean){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.MentionableSelect,required,"getSelectedMentionables")
+            if (!data) return null
+            return this.#interaction.fields.getSelectedMentionables(name,required)
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getSelectedMentionables() field not found!")
+        }
+    }
+
+    /**Get uploaded files from a modal file-upload. */
+    getUploadedFiles(name:string,required:true): discord.ReadonlyCollection<discord.Snowflake, discord.Attachment>
+    getUploadedFiles(name:string,required:false): discord.ReadonlyCollection<discord.Snowflake, discord.Attachment>|null
+    getUploadedFiles(name:string,required:boolean){
+        try {
+            const data = this.#getTypedField(name,discord.ComponentType.FileUpload,required,"getUploadedFiles")
+            if (!data) return null
+            return this.#interaction.fields.getUploadedFiles(name,required)
+        }catch{
+            throw new ODSystemError("ODModalResponderInstanceValues:getUploadedFiles() field not found!")
         }
     }
 }

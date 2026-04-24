@@ -29,6 +29,7 @@ export const loadAllConfigs = async () => {
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:questions","questions.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultQuestionsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultOptionsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultPanelsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultSupportTeamsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultTranscriptsFormatter))
 }
 
@@ -126,6 +127,7 @@ export const defaultGeneralFormatter = new fjs.ObjectFormatter(null,true,[
             new fjs.PropertyFormatter("pin"),
             new fjs.PropertyFormatter("unpin"),
             new fjs.PropertyFormatter("move"),
+            new fjs.PropertyFormatter("escalate"),
             new fjs.PropertyFormatter("rename"),
             new fjs.PropertyFormatter("add"),
             new fjs.PropertyFormatter("remove"),
@@ -208,6 +210,8 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.ArrayFormatter("questions",false,new fjs.PropertyFormatter(null)),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("channel",true,[
+            new fjs.PropertyFormatter("transportMode"),
+            new fjs.PropertyFormatter("threadParentChannel"),
             new fjs.PropertyFormatter("prefix"),
             new fjs.PropertyFormatter("suffix"),
             new fjs.PropertyFormatter("category"),
@@ -218,6 +222,11 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
                 new fjs.PropertyFormatter("category"),
             ])),
             new fjs.PropertyFormatter("topic"),
+        ]),
+        new fjs.TextFormatter(""),
+        new fjs.ObjectFormatter("routing",true,[
+            new fjs.PropertyFormatter("supportTeamId"),
+            new fjs.ArrayFormatter("escalationTargetOptionIds",false,new fjs.PropertyFormatter(null)),
         ]),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("dmMessage",true,[
@@ -319,6 +328,13 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.ArrayFormatter("removeRolesOnAdd",false,new fjs.PropertyFormatter(null)),
         new fjs.PropertyFormatter("addOnMemberJoin"),
     ])}
+]))
+
+export const defaultSupportTeamsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("name"),
+    new fjs.ArrayFormatter("roleIds",false,new fjs.PropertyFormatter(null)),
+    new fjs.PropertyFormatter("assignmentStrategy"),
 ]))
 
 export const defaultPanelsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[

@@ -237,6 +237,21 @@ export class ODClientManager {
             return null
         }
     }
+    /**A simplified shortcut to get a guild text-based channel, including private ticket threads. */
+    async fetchGuildTextBasedChannel(guildId:string|discord.Guild, id:string): Promise<discord.GuildTextBasedChannel|null> {
+        if (!this.initiated) throw new ODSystemError("Client isn't initiated yet!")
+        if (!this.ready) throw new ODSystemError("Client isn't ready yet!")
+
+        try{
+            const guild = (guildId instanceof discord.Guild) ? guildId : await this.fetchGuild(guildId)
+            if (!guild) return null
+            const channel = await guild.channels.fetch(id)
+            if (!channel || !channel.isTextBased() || channel.isDMBased()) return null
+            return channel
+        }catch{
+            return null
+        }
+    }
     /**A simplified shortcut to get a `discord.CategoryChannel` :) */
     async fetchGuildCategoryChannel(guildId:string|discord.Guild, id:string): Promise<discord.CategoryChannel|null> {
         if (!this.initiated) throw new ODSystemError("Client isn't initiated yet!")
@@ -281,18 +296,18 @@ export class ODClientManager {
         }
     }
     /**A simplified shortcut to get a `discord.Message` :) */
-    async fetchGuildChannelMessage(guildId:string|discord.Guild, channelId:string|discord.TextChannel, id:string): Promise<discord.Message<true>|null>
-    async fetchGuildChannelMessage(channelId:discord.TextChannel, id:string): Promise<discord.Message<true>|null>
-    async fetchGuildChannelMessage(guildId:string|discord.Guild|discord.TextChannel, channelId:string|discord.TextChannel|string, id?:string): Promise<discord.Message<true>|null> {
+    async fetchGuildChannelMessage(guildId:string|discord.Guild, channelId:string|discord.GuildTextBasedChannel, id:string): Promise<discord.Message<true>|null>
+    async fetchGuildChannelMessage(channelId:discord.GuildTextBasedChannel, id:string): Promise<discord.Message<true>|null>
+    async fetchGuildChannelMessage(guildId:string|discord.Guild|discord.GuildTextBasedChannel, channelId:discord.GuildTextBasedChannel|string, id?:string): Promise<discord.Message<true>|null> {
         if (!this.initiated) throw new ODSystemError("Client isn't initiated yet!")
         if (!this.ready) throw new ODSystemError("Client isn't ready yet!")
 
         try{
-            if (guildId instanceof discord.TextChannel && typeof channelId == "string"){
+            if (typeof guildId != "string" && "isTextBased" in guildId && guildId.isTextBased() && typeof channelId == "string"){
                 const channel = guildId
                 return await channel.messages.fetch(channelId)
-            }else if (!(guildId instanceof discord.TextChannel) && id){
-                const channel = (channelId instanceof discord.TextChannel) ? channelId : await this.fetchGuildTextChannel(guildId,channelId)
+            }else if (!(typeof guildId != "string" && "isTextBased" in guildId && guildId.isTextBased()) && id){
+                const channel = (typeof channelId != "string") ? channelId : await this.fetchGuildTextBasedChannel(guildId,channelId)
                 if (!channel) return null
                 return await channel.messages.fetch(id)
             }else return null

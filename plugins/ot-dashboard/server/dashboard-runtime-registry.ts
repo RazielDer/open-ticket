@@ -3,12 +3,14 @@ import path from "path"
 
 import { getDashboardPluginAssetKind, type DashboardPluginAssetKind } from "./dashboard-plugin-registry"
 import { ODTICKET_PLATFORM_METADATA_DEFAULTS, ODTICKET_PLATFORM_METADATA_IDS } from "../../../src/core/api/openticket/ticket-platform"
+import type { DashboardTicketTransportMode } from "./ticket-workbench-types"
 
 const MANAGED_CONFIG_FILES = [
   { id: "general", fileName: "general.json" },
   { id: "options", fileName: "options.json" },
   { id: "panels", fileName: "panels.json" },
   { id: "questions", fileName: "questions.json" },
+  { id: "support-teams", fileName: "support-teams.json" },
   { id: "transcripts", fileName: "transcripts.json" }
 ] as const
 
@@ -130,7 +132,7 @@ export interface DashboardTicketRecord {
   id: string
   optionId: string | null
   creatorId: string | null
-  transportMode: string
+  transportMode: DashboardTicketTransportMode | null
   transportParentChannelId: string | null
   transportParentMessageId: string | null
   assignedTeamId: string | null
@@ -191,7 +193,7 @@ interface TicketState {
   id: string
   optionId: string | null
   creatorId: string | null
-  transportMode: string
+  transportMode: DashboardTicketTransportMode | null
   transportParentChannelId: string | null
   transportParentMessageId: string | null
   assignedTeamId: string | null
@@ -292,7 +294,7 @@ function extractTicketState(ticket: RuntimeTicket): TicketState | null {
     id,
     optionId: optionRaw ? String(optionRaw) : null,
     creatorId: stringOrNull(safeGetValue(ticket, "opendiscord:opened-by")),
-    transportMode: stringOrDefault(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportMode), ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode),
+    transportMode: ticketTransportModeOrNull(stringOrDefault(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportMode), ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode)),
     transportParentChannelId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentChannelId)),
     transportParentMessageId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentMessageId)),
     assignedTeamId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedTeamId)),
@@ -343,6 +345,10 @@ function stringOrDefault(value: unknown, fallback: string) {
   if (typeof value !== "string") return fallback
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : fallback
+}
+
+function ticketTransportModeOrNull(value: unknown): DashboardTicketTransportMode | null {
+  return value === "channel_text" || value === "private_thread" ? value : null
 }
 
 function stringArray(value: unknown) {

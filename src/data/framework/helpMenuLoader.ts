@@ -117,6 +117,14 @@ export const loadAllHelpMenuComponents = async () => {
             textOptions:[{name:"id",optional:false},{name:"reason",optional:true}],
             slashOptions:[{name:"id",optional:false},{name:"reason",optional:true}]
         }))
+        if (allowedCommands.includes("escalate")) ticketAdvanced.add(new api.ODHelpMenuCommandComponent("opendiscord:escalate",2,{
+            textName:prefix+"escalate",
+            textDescription:lang.getTranslation("helpMenu.escalate"),
+            slashName:"/escalate",
+            slashDescription:lang.getTranslation("helpMenu.escalate"),
+            textOptions:[{name:"id",optional:false},{name:"reason",optional:true}],
+            slashOptions:[{name:"id",optional:false},{name:"reason",optional:true}]
+        }))
         if (allowedCommands.includes("rename")) ticketAdvanced.add(new api.ODHelpMenuCommandComponent("opendiscord:rename",2,{
             textName:prefix+"rename",
             textDescription:lang.getTranslation("helpMenu.rename"),

@@ -224,7 +224,7 @@ export const loadDatabaseCleanersCode = async () => {
         for (const ticket of (await ticketDatabase.getAll())){
             if (!validTickets.includes(ticket.key)){
                 try{
-                    const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,ticket.key)
+                    const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,ticket.key)
                     if (channel) validTickets.push(channel.id)
                 }catch{}
             }
@@ -235,7 +235,7 @@ export const loadDatabaseCleanersCode = async () => {
             if (stat.category.startsWith("opendiscord:ticket_")){
                 if (!validTickets.includes(stat.key)){
                     try{
-                        const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,stat.key)
+                        const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,stat.key)
                         if (channel) validTickets.push(channel.id)
                     }catch{}
                 }
@@ -277,6 +277,23 @@ export const loadDatabaseCleanersCode = async () => {
                     if (stat.key == channel.id){
                         await statsDatabase.delete(stat.category,stat.key)
                     }
+                }
+            }
+        })
+
+        opendiscord.client.client.on("threadDelete",async (thread) => {
+            if (thread.guild.id != mainServer.id) return
+
+            for (const ticket of (await ticketDatabase.getAll())){
+                if (ticket.key == thread.id){
+                    await ticketDatabase.delete(ticket.category,ticket.key)
+                    opendiscord.tickets.remove(ticket.key)
+                }
+            }
+
+            for (const stat of (await statsDatabase.getAll())){
+                if (stat.category.startsWith("opendiscord:ticket_") && stat.key == thread.id){
+                    await statsDatabase.delete(stat.category,stat.key)
                 }
             }
         })
