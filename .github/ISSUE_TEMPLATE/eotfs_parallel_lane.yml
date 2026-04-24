@@ -1,0 +1,149 @@
+name: EoTFS parallel lane
+description: Plan a controller-released EoTFS worker lane for a multi-lane objective.
+title: "[eotfs-lane] <objective-key>/<lane-key>"
+labels:
+  - lane:worker
+  - needs:controller-review
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Parallel lane mode is disabled unless the active EoTFS wrapper controller objective or active slice records a lane manifest. GitHub issues coordinate work; they do not override the wrapper `workflow.yaml`.
+  - type: input
+    id: objective_id
+    attributes:
+      label: Objective ID
+      description: Active wrapper controller objective that released this lane.
+      placeholder: OBJ-WHOLE-STACK-...
+    validations:
+      required: true
+  - type: input
+    id: active_slice
+    attributes:
+      label: Active slice
+      description: Active slice path or identifier that records the lane manifest.
+      placeholder: SLICE-...
+    validations:
+      required: true
+  - type: input
+    id: lane_id
+    attributes:
+      label: Lane ID
+      description: Stable lane key used in branch names, evidence names, and PR metadata.
+      placeholder: dashboard-workbench
+    validations:
+      required: true
+  - type: dropdown
+    id: owner_machine
+    attributes:
+      label: Owner machine
+      description: Machine location for this lane. This is not an authority level.
+      options:
+        - home
+        - server
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: Person or agent responsible for this lane.
+      placeholder: RazielDer / Codex / agent name
+    validations:
+      required: true
+  - type: input
+    id: base_branch
+    attributes:
+      label: Base branch
+      description: Branch this lane targets.
+      placeholder: integrate/<objective-key>
+    validations:
+      required: true
+  - type: input
+    id: lane_branch
+    attributes:
+      label: Lane branch
+      description: Worker branch for this lane.
+      placeholder: lane/<objective-key>/<lane-key>
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_paths
+    attributes:
+      label: Allowed paths
+      description: Repo-relative paths or globs this lane may edit.
+      placeholder: |
+        plugins/ot-dashboard/**
+        plugins/ot-dashboard/test/**
+    validations:
+      required: true
+  - type: textarea
+    id: forbidden_paths
+    attributes:
+      label: Forbidden paths
+      description: Repo-relative paths or globs this lane must not edit.
+      placeholder: |
+        .env
+        .backup/**
+        database/*.sqlite
+        ../workflow.yaml
+    validations:
+      required: true
+  - type: textarea
+    id: hot_files
+    attributes:
+      label: Hot files or hotspot clusters
+      description: Any single-owner files or clusters involved in this lane.
+      placeholder: |
+        none
+        src/core/startup/migration.ts owned by controller
+    validations:
+      required: true
+  - type: textarea
+    id: required_checks
+    attributes:
+      label: Required checks
+      description: Exact commands this lane must run before marking ready.
+      placeholder: |
+        npm run build
+        node --test dist/plugins/ot-dashboard/test/*.test.js
+    validations:
+      required: true
+  - type: textarea
+    id: evidence_paths
+    attributes:
+      label: Evidence paths
+      description: Wrapper repo-relative evidence files this lane will create or update.
+      placeholder: evidence/<objective_id>/lane-<lane_id>-verification.md
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers
+      description: Known blockers, unanswered questions, or required controller actions.
+      placeholder: none
+    validations:
+      required: true
+  - type: checkboxes
+    id: production_boundary
+    attributes:
+      label: Production-boundary attestation
+      options:
+        - label: This lane will not restart scheduled tasks.
+          required: true
+        - label: This lane will not send Discord messages.
+          required: true
+        - label: This lane will not mutate production env files, production DSNs, secrets, runtime clones, or `_runtime`.
+          required: true
+        - label: This lane will stop if production promotion or live operations become necessary.
+          required: true
+  - type: checkboxes
+    id: authority_attestation
+    attributes:
+      label: Authority attestation
+      options:
+        - label: I understand this issue does not override the wrapper `workflow.yaml`, active slice, or workflow mirrors.
+          required: true
+        - label: I will stop and request controller review before touching paths outside the lane manifest.
+          required: true
