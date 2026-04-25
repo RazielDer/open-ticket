@@ -533,6 +533,67 @@ test("service listTicketAnalyticsHistory reads analytics-safe ticket metadata fr
     })
 })
 
+test("service listTicketAnalyticsHistory does not expire links or write events", async () => {
+    await withService("ticket-analytics-history-read-only", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-analytics-read-only")
+        const document = createFakeDocument("tr-analytics-read-only")
+        document.version = "2.0"
+        document.ticket.id = "ticket-analytics-read-only"
+        document.ticket.createdOn = Date.parse("2026-04-20T10:00:00.000Z")
+        document.ticket.createdBy = { id: "creator-1", name: "Creator", color: "#ffffff", avatar: null, bot: false, verifiedBot: false, system: false }
+        document.ticket.metadata = {
+            transportMode: "channel_text",
+            transportParentChannelId: null,
+            transportParentMessageId: null,
+            assignedTeamId: "triage",
+            assignedStaffUserId: "staff-1",
+            assignmentStrategy: "manual",
+            firstStaffResponseAt: Date.parse("2026-04-20T10:05:00.000Z"),
+            resolvedAt: null,
+            awaitingUserState: null,
+            awaitingUserSince: null,
+            closeRequestState: null,
+            closeRequestBy: null,
+            closeRequestAt: null,
+            integrationProfileId: null,
+            aiAssistProfileId: null
+        }
+        await writeArchiveFixture(archivePath, document)
+        await service.repository!.createTranscript({
+            id: "tr-analytics-read-only",
+            status: "active",
+            ticketId: "ticket-analytics-read-only",
+            channelId: "ticket-analytics-read-only",
+            creatorId: "creator-1",
+            archivePath,
+            totalBytes: 256,
+            searchText: "analytics read only",
+            createdAt: "2026-04-20T11:00:00.000Z",
+            updatedAt: "2026-04-20T11:00:00.000Z"
+        })
+        await service.repository!.createTranscriptLink({
+            id: "link-analytics-read-only",
+            transcriptId: "tr-analytics-read-only",
+            slug: "analytics-read-only-slug",
+            status: "active",
+            createdAt: "2026-03-20T00:00:00.000Z",
+            expiresAt: "2026-03-21T00:00:00.000Z"
+        })
+
+        const result = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            limit: 200
+        })
+        const links = await service.repository!.listTranscriptLinks("tr-analytics-read-only")
+        const events = await service.repository!.listTranscriptEvents("tr-analytics-read-only", {})
+
+        assert.equal(result.items.length, 1)
+        assert.equal(links.find((link) => link.id == "link-analytics-read-only")?.status, "active")
+        assert.equal(events.items.some((event) => event.type == "link-expired"), false)
+    })
+})
+
 test("successful builds log build-started then build-succeeded and resolve event history through admin targets", async () => {
     await withCustomService("build-events-success", createCompileDependencies(), async (service) => {
         const { ticket, channel, user } = createFakeCompileInputs("ticket-build-success", "channel-build-success")

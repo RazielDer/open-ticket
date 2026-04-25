@@ -303,7 +303,6 @@ export class TranscriptServiceCore {
             return empty(["Transcript analytics history is unavailable because the transcript service is not initialized."])
         }
 
-        await this.normalizeExpiredLinks("list")
         const limit = Math.max(1, Math.min(query.limit ?? 200, 500))
         const offset = normalizeAnalyticsCursor(query.cursor)
         const openedFrom = parseAnalyticsIsoMillis(query.openedFrom)
