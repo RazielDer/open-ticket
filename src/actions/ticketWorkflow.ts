@@ -19,6 +19,18 @@ export interface TicketWorkflowLockResult {
     reason: string | null
 }
 
+type CloseRequestApprovalVerificationFailureCode =
+    "permission-denied" |
+    "ticket-not-open" |
+    "ticket-busy" |
+    "close-request-missing" |
+    "close-before-message" |
+    "close-before-admin-message"
+
+type CloseRequestApprovalVerificationResult =
+    { ok: true, permsResult: any } |
+    { ok: false, code: CloseRequestApprovalVerificationFailureCode, message: string, permissionReason?: string | null }
+
 const WORKFLOW_ACTIONS = new Set<TicketWorkflowAction>([
     "request-close",
     "cancel-close-request",
@@ -172,17 +184,79 @@ export async function canShowRequestCloseButton(guild: discord.Guild, channel: d
     if (state.closeRequestState || state.awaitingUserState) return false
     const lock = await resolveTicketWorkflowLock(ticket,"request-close")
     if (lock.locked) return false
+    const directCloseAvailable = await resolveCreatorDirectCloseAvailability(guild,channel,ticket)
+    return directCloseAvailable === false
+}
 
+export async function resolveCreatorDirectCloseAvailability(guild: discord.Guild, channel: discord.GuildTextBasedChannel, ticket: api.ODTicket): Promise<boolean | null> {
     const creatorId = ticket.get("opendiscord:opened-by").value
-    if (!creatorId) return false
-    const creator = await opendiscord.client.fetchUser(creatorId)
-    if (!creator) return false
-    const member = await guild.members.fetch(creatorId).catch(() => null)
-    if (!member) return false
+    if (!creatorId) return null
+    try{
+        const creator = await opendiscord.client.fetchUser(creatorId)
+        if (!creator) return null
+        const member = await guild.members.fetch(creatorId).catch(() => null)
+        if (!member) return null
+        const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",creator,member,channel,guild)
+        if (!permsResult || typeof permsResult.hasPerms != "boolean") return null
+        return permsResult.hasPerms
+    }catch{
+        return null
+    }
+}
 
-    const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",creator,member,channel,guild)
-    if (!permsResult || typeof permsResult.hasPerms != "boolean") return false
-    return !permsResult.hasPerms
+export async function verifyTicketCloseRequestApproval(
+    guild: discord.Guild,
+    channel: discord.GuildTextBasedChannel,
+    user: discord.User,
+    member: discord.GuildMember | null | undefined,
+    ticket: api.ODTicket
+): Promise<CloseRequestApprovalVerificationResult> {
+    const checkedMember = member ?? await guild.members.fetch(user.id).catch(() => null)
+    const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",user,checkedMember,channel,guild)
+    if (!permsResult?.hasPerms){
+        return {
+            ok:false,
+            code:"permission-denied",
+            permissionReason:permsResult?.reason ?? null,
+            message:"You do not have permission to close this ticket."
+        }
+    }
+    if (ticket.get("opendiscord:closed").value || !ticket.get("opendiscord:open").value){
+        return {ok:false, code:"ticket-not-open", message:"Ticket is not open."}
+    }
+    if (ticket.get("opendiscord:busy").value){
+        return {ok:false, code:"ticket-busy", message:"Ticket is busy."}
+    }
+    if (getTicketWorkflowState(ticket).closeRequestState != "requested"){
+        return {ok:false, code:"close-request-missing", message:"No close request is pending."}
+    }
+    if (!permsResult.isAdmin && (!generalConfig.data.system.allowCloseBeforeMessage || !generalConfig.data.system.allowCloseBeforeAdminMessage)){
+        const analysis = await opendiscord.transcripts.collector.ticketUserMessagesAnalysis(ticket,guild,channel)
+        if (analysis && !generalConfig.data.system.allowCloseBeforeMessage && analysis.totalMessages < 1){
+            return {ok:false, code:"close-before-message", message:opendiscord.languages.getTranslation("errors.descriptions.closeBeforeMessage")}
+        }
+        if (analysis && !generalConfig.data.system.allowCloseBeforeAdminMessage && analysis.adminMessages < 1){
+            return {ok:false, code:"close-before-admin-message", message:opendiscord.languages.getTranslation("errors.descriptions.closeBeforeAdminMessage")}
+        }
+    }
+    return {ok:true, permsResult}
+}
+
+async function replyCloseRequestApprovalFailure(instance: api.ODButtonResponderInstance, failure: Exclude<CloseRequestApprovalVerificationResult,{ok:true}>, guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User) {
+    if (failure.code == "permission-denied"){
+        if (failure.permissionReason == "not-in-server") await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-not-in-guild").build("button",{channel,user}))
+        else await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-no-permissions").build("button",{guild,channel,user,permissions:["support"]}))
+        return
+    }
+    if (failure.code == "ticket-busy"){
+        await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-ticket-busy").build("button",{guild,channel,user}))
+        return
+    }
+    if (failure.code == "close-before-message" || failure.code == "close-before-admin-message"){
+        await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,layout:"simple",error:failure.message,customTitle:opendiscord.languages.getTranslation("errors.titles.noPermissions")}))
+        return
+    }
+    await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,error:failure.message,layout:"simple"}))
 }
 
 export async function requestTicketClose(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -195,6 +269,12 @@ export async function requestTicketClose(guild: discord.Guild, channel: discord.
     if (state.closeRequestState) throw new api.ODSystemError("A close request is already pending.")
     const lock = await resolveTicketWorkflowLock(ticket,"request-close")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
+    const directCloseAvailable = await resolveCreatorDirectCloseAvailability(guild,channel,ticket)
+    if (directCloseAvailable !== false){
+        throw new api.ODSystemError(directCloseAvailable === true
+            ? "Use the direct close action for this ticket."
+            : "Close request availability could not be verified.")
+    }
 
     ticket.get("opendiscord:close-request-state").value = "requested"
     ticket.get("opendiscord:close-request-by").value = user.id
@@ -212,9 +292,9 @@ export async function cancelTicketCloseRequest(guild: discord.Guild, channel: di
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
 }
 
-export async function approveTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
-    const state = getTicketWorkflowState(ticket)
-    if (state.closeRequestState != "requested") throw new api.ODSystemError("No close request is pending.")
+export async function approveTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null, member?: discord.GuildMember | null) {
+    const verification = await verifyTicketCloseRequestApproval(guild,channel,user,member,ticket)
+    if (!verification.ok) throw new api.ODSystemError(verification.message)
     const lock = await resolveTicketWorkflowLock(ticket,"approve-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
     await opendiscord.actions.get("opendiscord:close-ticket").run("close-request",{guild,channel,user,ticket,reason,sendMessage:true})
@@ -269,8 +349,28 @@ export async function clearAwaitingUserForRequesterActivity(input: {
     if (!state.awaitingUserState) return false
     if (!ticket.get("opendiscord:open").value || ticket.get("opendiscord:closed").value) return false
     if (!isTicketCurrentCreator(ticket,user.id)) return false
+    return clearAwaitingUserForAuthorizedActivity({
+        guild,
+        channel,
+        user,
+        ticket,
+        reason: input.reason ?? "Requester activity"
+    })
+}
+
+async function clearAwaitingUserForAuthorizedActivity(input: {
+    guild: discord.Guild
+    channel: discord.GuildTextBasedChannel
+    user: discord.User
+    ticket: api.ODTicket
+    reason: string | null
+}) {
+    const {guild,channel,user,ticket} = input
+    const state = getTicketWorkflowState(ticket)
+    if (!state.awaitingUserState) return false
+    if (!ticket.get("opendiscord:open").value || ticket.get("opendiscord:closed").value) return false
     resetTicketAwaitingUser(ticket)
-    await sendWorkflowMessage("opendiscord:awaiting-user-message","cleared",guild,channel,user,ticket,input.reason ?? "Requester activity")
+    await sendWorkflowMessage("opendiscord:awaiting-user-message","cleared",guild,channel,user,ticket,input.reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
     return true
 }
@@ -291,7 +391,7 @@ export async function clearAwaitingUserForApplicantMutation(
     if (!expectedUserId || expectedUserId != actorUserId) return false
     const user = await opendiscord.client.fetchUser(actorUserId)
     if (!user) return false
-    return clearAwaitingUserForRequesterActivity({
+    return clearAwaitingUserForAuthorizedActivity({
         guild: channel.guild,
         channel,
         user,
@@ -356,7 +456,7 @@ export const registerActions = async () => {
 
     opendiscord.actions.add(new api.ODAction("opendiscord:approve-close-request"))
     opendiscord.actions.get("opendiscord:approve-close-request").workers.add(new api.ODWorker("opendiscord:approve-close-request",0,async (instance,params) => {
-        await approveTicketCloseRequest(params.guild,params.channel,params.user,params.ticket,params.reason ?? null)
+        await approveTicketCloseRequest(params.guild,params.channel,params.user,params.ticket,params.reason ?? null,params.member ?? null)
     }))
 
     opendiscord.actions.add(new api.ODAction("opendiscord:dismiss-close-request"))
@@ -390,39 +490,16 @@ export const registerVerifyBars = async () => {
             instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-ticket-unknown").build("button",{guild,channel,user}))
             return cancel()
         }
-        const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",user,member,channel,guild)
-        if (!permsResult.hasPerms){
-            await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-no-permissions").build("button",{guild,channel,user,permissions:["support"]}))
+        const verification = await verifyTicketCloseRequestApproval(guild,channel,user,member,ticket)
+        if (!verification.ok){
+            await replyCloseRequestApprovalFailure(instance,verification,guild,channel,user)
             return cancel()
-        }
-        if (ticket.get("opendiscord:closed").value || !ticket.get("opendiscord:open").value){
-            await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,error:"Ticket is not open.",layout:"simple"}))
-            return cancel()
-        }
-        if (ticket.get("opendiscord:busy").value){
-            await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error-ticket-busy").build("button",{guild,channel,user}))
-            return cancel()
-        }
-        if (getTicketWorkflowState(ticket).closeRequestState != "requested"){
-            await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,error:"No close request is pending.",layout:"simple"}))
-            return cancel()
-        }
-        if (!permsResult.isAdmin && (!generalConfig.data.system.allowCloseBeforeMessage || !generalConfig.data.system.allowCloseBeforeAdminMessage)){
-            const analysis = await opendiscord.transcripts.collector.ticketUserMessagesAnalysis(ticket,guild,channel)
-            if (analysis && !generalConfig.data.system.allowCloseBeforeMessage && analysis.totalMessages < 1){
-                await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,layout:"simple",error:opendiscord.languages.getTranslation("errors.descriptions.closeBeforeMessage"),customTitle:opendiscord.languages.getTranslation("errors.titles.noPermissions")}))
-                return cancel()
-            }
-            if (analysis && !generalConfig.data.system.allowCloseBeforeAdminMessage && analysis.adminMessages < 1){
-                await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,layout:"simple",error:opendiscord.languages.getTranslation("errors.descriptions.closeBeforeAdminMessage"),customTitle:opendiscord.languages.getTranslation("errors.titles.noPermissions")}))
-                return cancel()
-            }
         }
         if (params.data == "reason"){
             instance.modal(await opendiscord.builders.modals.getSafe("opendiscord:close-ticket-reason").build("close-request",{guild,channel,user,ticket}))
         }else{
             await instance.defer("update",false)
-            await approveTicketCloseRequest(guild,channel,user,ticket,null)
+            await approveTicketCloseRequest(guild,channel,user,ticket,null,member)
             await instance.update(await opendiscord.builders.messages.getSafe("opendiscord:close-request-message").build("approved" as any,{guild,channel,user,ticket,reason:null}))
         }
     }))

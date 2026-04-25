@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { approveTicketCloseRequest } from "../actions/ticketWorkflow.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -121,6 +122,9 @@ export const registerModalResponders = async () => {
                 await instance.defer("update",false)
                 await opendiscord.actions.get("opendiscord:close-ticket").run(originalSource,{guild,channel,user,ticket,reason,sendMessage:false})
                 await instance.update(await opendiscord.builders.messages.getSafe("opendiscord:close-message").build("other",{guild,channel,user,ticket,reason}))
+            }else if (originalSource == "close-request"){
+                await instance.defer("update",false)
+                await approveTicketCloseRequest(guild,channel,user,ticket,reason,instance.member)
             }else{
                 await instance.defer("update",false)
                 await opendiscord.actions.get("opendiscord:close-ticket").run(originalSource,{guild,channel,user,ticket,reason,sendMessage:true})

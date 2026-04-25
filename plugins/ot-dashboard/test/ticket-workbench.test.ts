@@ -964,6 +964,7 @@ test("runtime ticket action bridge executes SLICE-012 workflow action branches",
     "opendiscord:dismiss-close-request"
   ])
   assert.equal(closeRequestFixture.actionRuns[0].params.reason, "approve-close-request reason")
+  assert.equal(closeRequestFixture.actionRuns[0].params.member?.id, "admin-user")
 
   const setAwaitingFixture = registerRuntimeActionFixture({ runtimeOptions: workflowOptions })
   const setResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
@@ -1328,6 +1329,49 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.match(workflowSource, /superseded by the workspace SLICE-010 controller contract/)
   assert.match(controllerSource, /SLICE-010` supersedes that local retirement contract/)
+})
+
+test("SLICE-012 workflow source guards stale close requests and dashboard approvals", () => {
+  const root = path.resolve(process.cwd())
+  const workflowSource = fs.readFileSync(path.join(root, "src", "actions", "ticketWorkflow.ts"), "utf8")
+  const runtimeBridgeSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "runtime-bridge.ts"), "utf8")
+  const closeCommandSource = fs.readFileSync(path.join(root, "src", "commands", "close.ts"), "utf8")
+
+  const visibilityStart = workflowSource.indexOf("export async function canShowRequestCloseButton")
+  const requestStart = workflowSource.indexOf("export async function requestTicketClose")
+  const requestEnd = workflowSource.indexOf("export async function cancelTicketCloseRequest")
+  const approvalStart = workflowSource.indexOf("export async function approveTicketCloseRequest")
+  const approvalEnd = workflowSource.indexOf("export async function dismissTicketCloseRequest")
+  const verificationStart = workflowSource.indexOf("export async function verifyTicketCloseRequestApproval")
+  const verificationEnd = workflowSource.indexOf("async function replyCloseRequestApprovalFailure")
+  const modalBranchStart = closeCommandSource.indexOf('originalSource == "close-request"')
+  const modalBranchEnd = closeCommandSource.indexOf("}else{", modalBranchStart)
+
+  assert.notEqual(visibilityStart, -1)
+  assert.notEqual(requestStart, -1)
+  assert.notEqual(requestEnd, -1)
+  assert.notEqual(approvalStart, -1)
+  assert.notEqual(approvalEnd, -1)
+  assert.notEqual(verificationStart, -1)
+  assert.notEqual(verificationEnd, -1)
+  assert.notEqual(modalBranchStart, -1)
+  assert.notEqual(modalBranchEnd, -1)
+
+  const visibilityFunction = workflowSource.slice(visibilityStart, requestStart)
+  const requestFunction = workflowSource.slice(requestStart, requestEnd)
+  const approvalFunction = workflowSource.slice(approvalStart, approvalEnd)
+  const verificationFunction = workflowSource.slice(verificationStart, verificationEnd)
+  const closeRequestModalBranch = closeCommandSource.slice(modalBranchStart, modalBranchEnd)
+
+  assert.match(visibilityFunction, /resolveCreatorDirectCloseAvailability/)
+  assert.match(visibilityFunction, /directCloseAvailable === false/)
+  assert.match(requestFunction, /resolveCreatorDirectCloseAvailability/)
+  assert.match(requestFunction, /directCloseAvailable !== false/)
+  assert.match(approvalFunction, /verifyTicketCloseRequestApproval/)
+  assert.match(verificationFunction, /ticketUserMessagesAnalysis/)
+  assert.match(runtimeBridgeSource, /member: context\.member/)
+  assert.match(closeRequestModalBranch, /approveTicketCloseRequest/)
+  assert.doesNotMatch(closeRequestModalBranch, /close-ticket/)
 })
 
 test("ticket returnTo sanitizer accepts only ticket-workbench admin-host targets", () => {

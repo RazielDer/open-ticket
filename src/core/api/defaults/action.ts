@@ -157,7 +157,7 @@ export interface ODActionManagerIds_Default {
     },
     "opendiscord:approve-close-request":{
         source:"button"|"dashboard"|"other",
-        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,member?:discord.GuildMember|null},
         result:{},
         workers:"opendiscord:approve-close-request"
     },

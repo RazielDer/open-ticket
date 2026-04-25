@@ -896,6 +896,7 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         guild: context.guild,
         channel: context.channel,
         user: context.user,
+        member: context.member,
         ticket: context.ticket,
         reason
       })
