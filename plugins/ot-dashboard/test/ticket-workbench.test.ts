@@ -1335,6 +1335,7 @@ test("SLICE-012 workflow source guards stale close requests and dashboard approv
   const root = path.resolve(process.cwd())
   const workflowSource = fs.readFileSync(path.join(root, "src", "actions", "ticketWorkflow.ts"), "utf8")
   const messagesSource = fs.readFileSync(path.join(root, "src", "builders", "messages.ts"), "utf8")
+  const embedsSource = fs.readFileSync(path.join(root, "src", "builders", "embeds.ts"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(root, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
   const runtimeBridgeSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "runtime-bridge.ts"), "utf8")
   const closeCommandSource = fs.readFileSync(path.join(root, "src", "commands", "close.ts"), "utf8")
@@ -1352,6 +1353,8 @@ test("SLICE-012 workflow source guards stale close requests and dashboard approv
   const modalBranchEnd = closeCommandSource.indexOf("}else{", modalBranchStart)
   const cancelButtonStart = messagesSource.indexOf('if (workflowState.closeRequestState == "requested")')
   const cancelButtonEnd = messagesSource.indexOf('}else if (await canShowRequestCloseButton', cancelButtonStart)
+  const approveVerifybarStart = workflowSource.indexOf("approveCloseRequestVerifybar.success.add")
+  const approveVerifybarEnd = workflowSource.indexOf("approveCloseRequestVerifybar.failure.add", approveVerifybarStart)
 
   assert.notEqual(visibilityStart, -1)
   assert.notEqual(requestStart, -1)
@@ -1366,6 +1369,8 @@ test("SLICE-012 workflow source guards stale close requests and dashboard approv
   assert.notEqual(modalBranchEnd, -1)
   assert.notEqual(cancelButtonStart, -1)
   assert.notEqual(cancelButtonEnd, -1)
+  assert.notEqual(approveVerifybarStart, -1)
+  assert.notEqual(approveVerifybarEnd, -1)
 
   const visibilityFunction = workflowSource.slice(visibilityStart, requestStart)
   const requestFunction = workflowSource.slice(requestStart, requestEnd)
@@ -1374,6 +1379,7 @@ test("SLICE-012 workflow source guards stale close requests and dashboard approv
   const verificationFunction = workflowSource.slice(verificationStart, verificationEnd)
   const closeRequestModalBranch = closeCommandSource.slice(modalBranchStart, modalBranchEnd)
   const cancelButtonBranch = messagesSource.slice(cancelButtonStart, cancelButtonEnd)
+  const approveVerifybarBranch = workflowSource.slice(approveVerifybarStart, approveVerifybarEnd)
 
   assert.match(visibilityFunction, /resolveCreatorDirectCloseAvailability/)
   assert.match(visibilityFunction, /directCloseAvailable === false/)
@@ -1391,6 +1397,12 @@ test("SLICE-012 workflow source guards stale close requests and dashboard approv
   assert.match(runtimeBridgeSource, /member: context\.member/)
   assert.match(closeRequestModalBranch, /approveTicketCloseRequest/)
   assert.doesNotMatch(closeRequestModalBranch, /close-ticket/)
+  assert.match(approveVerifybarBranch, /approveTicketCloseRequest\(guild,channel,user,ticket,null,member,false\)/)
+  assert.match(approveVerifybarBranch, /opendiscord:close-message"\)\.build\("close-request"/)
+  assert.doesNotMatch(approveVerifybarBranch, /opendiscord:close-request-message"\)\.build\("approved"/)
+  assert.doesNotMatch(approveVerifybarBranch, /"approved" as any/)
+  assert.doesNotMatch(embedsSource, /source == "approved"/)
+  assert.doesNotMatch(embedsSource, /Close request approved/)
 })
 
 test("ticket returnTo sanitizer accepts only ticket-workbench admin-host targets", () => {

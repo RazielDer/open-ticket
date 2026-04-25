@@ -294,12 +294,12 @@ export async function cancelTicketCloseRequest(guild: discord.Guild, channel: di
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
 }
 
-export async function approveTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null, member?: discord.GuildMember | null) {
+export async function approveTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null, member?: discord.GuildMember | null, sendCloseMessage = true) {
     const verification = await verifyTicketCloseRequestApproval(guild,channel,user,member,ticket)
     if (!verification.ok) throw new api.ODSystemError(verification.message)
     const lock = await resolveTicketWorkflowLock(ticket,"approve-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
-    await opendiscord.actions.get("opendiscord:close-ticket").run("close-request",{guild,channel,user,ticket,reason,sendMessage:true})
+    await opendiscord.actions.get("opendiscord:close-ticket").run("close-request",{guild,channel,user,ticket,reason,sendMessage:sendCloseMessage})
 }
 
 export async function dismissTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -501,8 +501,8 @@ export const registerVerifyBars = async () => {
             instance.modal(await opendiscord.builders.modals.getSafe("opendiscord:close-ticket-reason").build("close-request",{guild,channel,user,ticket}))
         }else{
             await instance.defer("update",false)
-            await approveTicketCloseRequest(guild,channel,user,ticket,null,member)
-            await instance.update(await opendiscord.builders.messages.getSafe("opendiscord:close-request-message").build("approved" as any,{guild,channel,user,ticket,reason:null}))
+            await approveTicketCloseRequest(guild,channel,user,ticket,null,member,false)
+            await instance.update(await opendiscord.builders.messages.getSafe("opendiscord:close-message").build("close-request",{guild,channel,user,ticket,reason:null}))
         }
     }))
     approveCloseRequestVerifybar.failure.add(new api.ODWorker("opendiscord:back-to-close-request",0,async (instance,params,source,cancel) => {

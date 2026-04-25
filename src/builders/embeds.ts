@@ -687,9 +687,6 @@ const ticketEmbeds = () => {
             }else if (source == "dismissed"){
                 instance.setTitle("Close request dismissed")
                 instance.setDescription("Staff dismissed the pending close request.")
-            }else if (source == "approved"){
-                instance.setTitle("Close request approved")
-                instance.setDescription("Staff approved the pending close request.")
             }else{
                 instance.setTitle("Close request")
                 instance.setDescription("Close-request workflow changed.")
