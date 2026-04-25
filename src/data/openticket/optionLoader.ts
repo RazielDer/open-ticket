@@ -80,6 +80,13 @@ export const loadTicketOption = (option:api.ODJsonConfig_DefaultOptionTicketType
 
         new api.ODOptionData("opendiscord:routing-support-team",option.routing?.supportTeamId ?? ""),
         new api.ODOptionData("opendiscord:routing-escalation-targets",option.routing?.escalationTargetOptionIds ?? []),
+
+        new api.ODOptionData("opendiscord:workflow-close-request-enabled",option.workflow?.closeRequest?.enabled ?? false),
+        new api.ODOptionData("opendiscord:workflow-awaiting-user-enabled",option.workflow?.awaitingUser?.enabled ?? false),
+        new api.ODOptionData("opendiscord:workflow-awaiting-user-reminder-enabled",option.workflow?.awaitingUser?.reminderEnabled ?? false),
+        new api.ODOptionData("opendiscord:workflow-awaiting-user-reminder-hours",option.workflow?.awaitingUser?.reminderHours ?? 24),
+        new api.ODOptionData("opendiscord:workflow-awaiting-user-autoclose-enabled",option.workflow?.awaitingUser?.autoCloseEnabled ?? false),
+        new api.ODOptionData("opendiscord:workflow-awaiting-user-autoclose-hours",option.workflow?.awaitingUser?.autoCloseHours ?? 72),
         
         new api.ODOptionData("opendiscord:dm-message-enabled",option.dmMessage.enabled),
         new api.ODOptionData("opendiscord:dm-message-text",option.dmMessage.text),

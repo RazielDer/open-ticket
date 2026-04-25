@@ -13,6 +13,7 @@ import {
     OT_FORMS_PLUGIN_SERVICE_ID,
     type OTFormsService
 } from "../service/forms-service"
+import { clearAwaitingUserForApplicantMutation } from "../../../src/actions/ticketWorkflow.js"
 import {
     applyDraftResponses,
     OTFormsInteractionGate,
@@ -122,6 +123,7 @@ export class OTForms_FormSession {
                     this.answers = mergedAnswers;
                     this.currentQuestionNumber = advancedQuestionNumber;
                     await this.updateAnswersMessage();
+                    await this.clearAwaitingUserForApplicantMutation();
                 },
                 continueSession: async () => {
                     this.currentQuestionNumber = advancedQuestionNumber;
@@ -377,6 +379,17 @@ export class OTForms_FormSession {
         this.answersManager.type = type;
         await this.answersManager.render();
         await this.answersManager.editMessage();
+    }
+
+    private async clearAwaitingUserForApplicantMutation(): Promise<void> {
+        const ticketContext = this.form.getCompletedTicketFormContext();
+        if (!ticketContext) return;
+        await clearAwaitingUserForApplicantMutation(
+            ticketContext.ticketChannelId,
+            this.user.id,
+            ticketContext.applicantDiscordUserId,
+            this.form.answerTarget
+        ).catch(() => null);
     }
 
     private async finalize(): Promise<boolean> {

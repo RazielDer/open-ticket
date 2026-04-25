@@ -85,6 +85,9 @@ const BRIDGE_POLL_LOOP_INTERVAL_MS = 10_000
 const APPLICANT_START_FORM_BUTTON_PREFIX = "ot-ticket-forms:sb_"
 const WHITELIST_PRESENTATION_STACK_VERSION = 2
 const DISCORD_SNOWFLAKE_RE = /^\d{17,20}$/
+type BridgeDashboardLockedAction =
+    "claim"|"unclaim"|"assign"|"escalate"|"close"|"reopen"|"refresh"|
+    "approve-close-request"|"dismiss-close-request"|"set-awaiting-user"|"clear-awaiting-user"
 
 class OTEotfsBridgeConfig extends api.ODJsonConfig {
     declare data: BridgeConfigData
@@ -129,14 +132,14 @@ class OTEotfsBridgeService extends api.ODManagerData {
         providerId: string
         title: string
         message: string
-        lockedActions: ("claim"|"unclaim"|"assign"|"escalate"|"close"|"reopen"|"refresh")[]
+        lockedActions: BridgeDashboardLockedAction[]
     } | null> {
         const state = bridgeTicketStateStore.get(ticketId)
         if (!state || !state.bridgeCaseId) return null
 
         const lifecycleState = this.resolveApplicantLifecycleState(ticketId)
-        const lockedActions: ("claim"|"unclaim"|"assign"|"escalate"|"close"|"reopen"|"refresh")[] = lifecycleState == "submitted" || lifecycleState == "locked"
-            ? ["escalate","close","reopen"]
+        const lockedActions: BridgeDashboardLockedAction[] = lifecycleState == "submitted" || lifecycleState == "locked"
+            ? ["escalate","close","reopen","approve-close-request","dismiss-close-request","set-awaiting-user","clear-awaiting-user"]
             : []
         if (lockedActions.length < 1) return null
 

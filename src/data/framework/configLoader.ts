@@ -229,6 +229,19 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
             new fjs.ArrayFormatter("escalationTargetOptionIds",false,new fjs.PropertyFormatter(null)),
         ]),
         new fjs.TextFormatter(""),
+        new fjs.ObjectFormatter("workflow",true,[
+            new fjs.ObjectFormatter("closeRequest",true,[
+                new fjs.PropertyFormatter("enabled"),
+            ]),
+            new fjs.ObjectFormatter("awaitingUser",true,[
+                new fjs.PropertyFormatter("enabled"),
+                new fjs.PropertyFormatter("reminderEnabled"),
+                new fjs.PropertyFormatter("reminderHours"),
+                new fjs.PropertyFormatter("autoCloseEnabled"),
+                new fjs.PropertyFormatter("autoCloseHours"),
+            ]),
+        ]),
+        new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("dmMessage",true,[
             new fjs.PropertyFormatter("enabled"),
             new fjs.PropertyFormatter("text"),

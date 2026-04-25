@@ -4,6 +4,7 @@
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
 import { PRIVATE_THREAD_ACCESS_WARNING, getTicketUserParticipantIds, removePrivateThreadMembers } from "./ticketTransport.js"
+import { resetTicketWorkflowState } from "./ticketWorkflow.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -38,6 +39,7 @@ export const registerActions = async () => {
             ticket.get("opendiscord:reopened").value = false
             ticket.get("opendiscord:reopened-by").value = null
             ticket.get("opendiscord:reopened-on").value = null
+            resetTicketWorkflowState(ticket)
 
             if (source == "autoclose") ticket.get("opendiscord:autoclosed").value = true
             ticket.get("opendiscord:open").value = false

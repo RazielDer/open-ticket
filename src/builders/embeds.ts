@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { getTicketWorkflowPolicy, getTicketWorkflowState, resolveTicketWorkflowLock } from "../actions/ticketWorkflow.js"
 import nodepath from "path"
 
 const embeds = opendiscord.builders.embeds
@@ -611,6 +612,26 @@ const ticketEmbeds = () => {
                 instance.setFields(embedOptions.fields)
             }
 
+            const workflowState = getTicketWorkflowState(ticket)
+            const workflowPolicy = getTicketWorkflowPolicy(ticket)
+            const workflowLines: string[] = []
+            if (workflowState.closeRequestState == "requested"){
+                workflowLines.push("Close request: pending"+(workflowState.closeRequestBy ? " from "+discord.userMention(workflowState.closeRequestBy) : ""))
+            }
+            if (workflowState.awaitingUserState){
+                workflowLines.push("Awaiting user: "+(workflowState.awaitingUserState == "reminded" ? "reminded" : "waiting"))
+            }
+            const workflowLock = await resolveTicketWorkflowLock(ticket)
+            if (workflowLock.locked) workflowLines.push("Workflow locked: "+(workflowLock.reason ?? "provider controlled"))
+            if (workflowLines.length < 1 && (workflowPolicy.closeRequest.enabled || workflowPolicy.awaitingUser.enabled)){
+                workflowLines.push("Ready")
+            }
+            if (workflowLines.length > 0) instance.addFields({
+                name:"Workflow",
+                value:workflowLines.join("\n"),
+                inline:false
+            })
+
             if (ticket.get("opendiscord:closed").value && ticket.get("opendiscord:autodelete-enabled").value) instance.setFooter("⏱️ "+lang.getTranslationWithParams("actions.descriptions.ticketMessageAutodelete",[ticket.get("opendiscord:autodelete-days").value.toString()]))
             else if (!ticket.get("opendiscord:closed").value && ticket.get("opendiscord:autoclose-enabled").value) instance.setFooter("⏱️ "+lang.getTranslationWithParams("actions.descriptions.ticketMessageAutoclose",[ticket.get("opendiscord:autoclose-hours").value.toString()]))
             
@@ -647,6 +668,63 @@ const ticketEmbeds = () => {
             instance.setTitle(utilities.emojiTitle("🔓",lang.getTranslation("actions.titles.reopen")))
             instance.setDescription(lang.getTranslation("actions.descriptions.reopen"))
             if (reason || generalConfig.data.system.alwaysShowReason) instance.addFields({name:lang.getTranslation("params.uppercase.reason")+":",value:"```"+(reason ?? "/")+"```"})
+        })
+    )
+
+    //CLOSE REQUEST MESSAGE
+    embeds.add(new api.ODEmbed("opendiscord:close-request-message"))
+    embeds.get("opendiscord:close-request-message").workers.add(
+        new api.ODWorker("opendiscord:close-request-message",0,async (instance,params,source) => {
+            const {user,ticket,reason} = params
+            instance.setAuthor(user.displayName,user.displayAvatarURL())
+            instance.setColor(generalConfig.data.mainColor)
+            if (source == "requested"){
+                instance.setTitle("Close requested")
+                instance.setDescription("The current ticket creator requested closure. Staff can approve or dismiss this request.")
+            }else if (source == "cancelled"){
+                instance.setTitle("Close request cancelled")
+                instance.setDescription("The current ticket creator cancelled the pending close request.")
+            }else if (source == "dismissed"){
+                instance.setTitle("Close request dismissed")
+                instance.setDescription("Staff dismissed the pending close request.")
+            }else if (source == "approved"){
+                instance.setTitle("Close request approved")
+                instance.setDescription("Staff approved the pending close request.")
+            }else{
+                instance.setTitle("Close request")
+                instance.setDescription("Close-request workflow changed.")
+            }
+            const state = getTicketWorkflowState(ticket)
+            if (state.closeRequestBy) instance.addFields({name:"Requested by:",value:discord.userMention(state.closeRequestBy),inline:true})
+            if (state.closeRequestAt) instance.addFields({name:"Requested at:",value:"<t:"+Math.floor(state.closeRequestAt/1000)+":f>",inline:true})
+            if (reason || generalConfig.data.system.alwaysShowReason) instance.addFields({name:lang.getTranslation("params.uppercase.reason")+":",value:"```"+(reason ?? "/")+"```",inline:false})
+        })
+    )
+
+    //AWAITING USER MESSAGE
+    embeds.add(new api.ODEmbed("opendiscord:awaiting-user-message"))
+    embeds.get("opendiscord:awaiting-user-message").workers.add(
+        new api.ODWorker("opendiscord:awaiting-user-message",0,async (instance,params,source) => {
+            const {user,ticket,reason} = params
+            const creatorId = ticket.get("opendiscord:opened-by").value
+            instance.setAuthor(user.displayName,user.displayAvatarURL())
+            instance.setColor(generalConfig.data.mainColor)
+            if (source == "set"){
+                instance.setTitle("Awaiting user")
+                instance.setDescription((creatorId ? discord.userMention(creatorId)+" " : "")+"This ticket is waiting on the current creator.")
+            }else if (source == "reminder"){
+                instance.setTitle("Awaiting user reminder")
+                instance.setDescription((creatorId ? discord.userMention(creatorId)+" " : "")+"Staff is still waiting on your response.")
+            }else if (source == "cleared"){
+                instance.setTitle("Awaiting user cleared")
+                instance.setDescription("Requester activity cleared awaiting-user state.")
+            }else{
+                instance.setTitle("Awaiting user")
+                instance.setDescription("Awaiting-user workflow changed.")
+            }
+            const state = getTicketWorkflowState(ticket)
+            if (state.awaitingUserSince) instance.addFields({name:"Waiting since:",value:"<t:"+Math.floor(state.awaitingUserSince/1000)+":f>",inline:true})
+            if (reason || generalConfig.data.system.alwaysShowReason) instance.addFields({name:lang.getTranslation("params.uppercase.reason")+":",value:"```"+(reason ?? "/")+"```",inline:false})
         })
     )
 

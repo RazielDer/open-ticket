@@ -1,5 +1,6 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as discord from "discord.js"
+import { clearAwaitingUserForRequesterActivity, runAwaitingUserWorkflowScan } from "../../actions/ticketWorkflow.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const globalDatabase = opendiscord.databases.get("opendiscord:global")
@@ -403,6 +404,7 @@ const loadAutoCode = () => {
     opendiscord.code.add(new api.ODCode("opendiscord:autoclose-timeout",3,() => {
         setInterval(async () => {
             let count = 0
+            const workflowScan = await runAwaitingUserWorkflowScan()
             for (const ticket of opendiscord.tickets.getAll()){
                 const channel = await opendiscord.tickets.getTicketChannel(ticket)
                 if (!channel) return
@@ -425,9 +427,30 @@ const loadAutoCode = () => {
             }
             opendiscord.debug.debug("Finished autoclose timeout cycle!",[
                 {key:"interval",value:opendiscord.defaults.getDefault("autocloseCheckInterval").toString()},
-                {key:"closed",value:count.toString()}
+                {key:"closed",value:count.toString()},
+                {key:"awaiting-reminders",value:workflowScan.reminders.toString()},
+                {key:"awaiting-closed",value:workflowScan.closed.toString()}
             ])
         },opendiscord.defaults.getDefault("autocloseCheckInterval"))
+    }))
+
+    //AWAITING USER ACTIVITY CLEAR
+    opendiscord.code.add(new api.ODCode("opendiscord:awaiting-user-activity-clear",2.5,() => {
+        opendiscord.client.client.on("messageCreate",async (message) => {
+            if (message.author.bot || !message.inGuild()) return
+            if (!message.channel || message.channel.isDMBased()) return
+            const ticket = opendiscord.tickets.get(message.channel.id)
+            if (!ticket) return
+            await clearAwaitingUserForRequesterActivity({
+                guild:message.guild,
+                channel:message.channel as discord.GuildTextBasedChannel,
+                user:message.author,
+                ticket,
+                reason:"Requester message"
+            }).catch((err) => {
+                opendiscord.debugfile.writeErrorMessage(new api.ODError(err,"uncaughtException"))
+            })
+        })
     }))
 
     //AUTOCLOSE LEAVE

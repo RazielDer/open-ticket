@@ -4,6 +4,7 @@
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
 import { PRIVATE_THREAD_ACCESS_WARNING, addPrivateThreadMembers, getTicketUserParticipantIds } from "./ticketTransport.js"
+import { resetTicketWorkflowState } from "./ticketWorkflow.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -31,6 +32,7 @@ export const registerActions = async () => {
             ticket.get("opendiscord:reopened").value = true
             ticket.get("opendiscord:reopened-by").value = user.id
             ticket.get("opendiscord:reopened-on").value = new Date().getTime()
+            resetTicketWorkflowState(ticket)
             
             ticket.get("opendiscord:closed").value = false
             ticket.get("opendiscord:closed-by").value = null

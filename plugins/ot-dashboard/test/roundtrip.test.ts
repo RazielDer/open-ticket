@@ -458,6 +458,90 @@ test("ticket option transcript routing roundtrips through the config service and
   }
 })
 
+test("ticket option workflow roundtrips, strips from non-ticket options, and validates timer ordering", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    service.saveOption({
+      id: "option-1",
+      name: "Whitelist Application Ticket",
+      description: "Open this ticket.",
+      type: "ticket",
+      button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: {
+          enabled: true,
+          reminderEnabled: true,
+          reminderHours: 12,
+          autoCloseEnabled: true,
+          autoCloseHours: 36
+        }
+      }
+    }, 0)
+
+    let options = service.readManagedJson<any[]>("options")
+    assert.deepEqual(options[0].workflow, {
+      closeRequest: { enabled: true },
+      awaitingUser: {
+        enabled: true,
+        reminderEnabled: true,
+        reminderHours: 12,
+        autoCloseEnabled: true,
+        autoCloseHours: 36
+      }
+    })
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        workflow: {
+          closeRequest: { enabled: true },
+          awaitingUser: {
+            enabled: true,
+            reminderEnabled: true,
+            reminderHours: 24,
+            autoCloseEnabled: true,
+            autoCloseHours: 24
+          }
+        }
+      }, 0)
+    }, /autoCloseHours/)
+
+    service.saveOption({
+      id: "role-1",
+      type: "role",
+      button: { emoji: "", label: "Role option", color: "blue" },
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: { enabled: true }
+      }
+    }, 1)
+
+    service.saveOption({
+      id: "website-1",
+      name: "Website option",
+      description: "Open docs.",
+      type: "website",
+      button: { emoji: "🌐", label: "Website option" },
+      url: "https://example.com/docs",
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: { enabled: true }
+      }
+    }, -1)
+
+    options = service.readManagedJson<any[]>("options")
+    assert.equal("workflow" in options[1], false)
+    assert.equal("workflow" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test("transcript HTML style normalization ignores preview-only helpers and keeps the persisted shape unchanged", () => {
   const root = createFixtureRoot()
   const service = createConfigService(root)

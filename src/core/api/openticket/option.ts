@@ -162,6 +162,13 @@ export interface ODTicketOptionIds {
 
     "opendiscord:routing-support-team":ODOptionData<string>,
     "opendiscord:routing-escalation-targets":ODOptionData<string[]>,
+
+    "opendiscord:workflow-close-request-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-reminder-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-reminder-hours":ODOptionData<number>,
+    "opendiscord:workflow-awaiting-user-autoclose-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-autoclose-hours":ODOptionData<number>,
     
     "opendiscord:dm-message-enabled":ODOptionData<boolean>,
     "opendiscord:dm-message-text":ODOptionData<string>,

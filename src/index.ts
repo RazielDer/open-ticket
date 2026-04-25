@@ -675,6 +675,7 @@ const main = async () => {
         await (await import("./commands/topic.js")).registerCommandResponders()
         await (await import("./commands/priority.js")).registerCommandResponders()
         await (await import("./commands/transfer.js")).registerCommandResponders()
+        await (await import("./commands/awaiting.js")).registerCommandResponders()
     }
     await opendiscord.events.get("onCommandResponderLoad").emit([opendiscord.responders.commands,opendiscord.responders,opendiscord.actions])
     await opendiscord.events.get("afterCommandRespondersLoaded").emit([opendiscord.responders.commands,opendiscord.responders,opendiscord.actions])
@@ -695,6 +696,7 @@ const main = async () => {
         await (await import("./commands/unpin.js")).registerButtonResponders()
         await (await import("./commands/role.js")).registerButtonResponders()
         await (await import("./commands/clear.js")).registerButtonResponders()
+        await (await import("./commands/awaiting.js")).registerButtonResponders()
     }
     await opendiscord.events.get("onButtonResponderLoad").emit([opendiscord.responders.buttons,opendiscord.responders,opendiscord.actions])
     await opendiscord.events.get("afterButtonRespondersLoaded").emit([opendiscord.responders.buttons,opendiscord.responders,opendiscord.actions])
@@ -766,6 +768,7 @@ const main = async () => {
         await (await import("./actions/updateTicketTopic.js")).registerActions()
         await (await import("./actions/updateTicketPriority.js")).registerActions()
         await (await import("./actions/transferTicket.js")).registerActions()
+        await (await import("./actions/ticketWorkflow.js")).registerActions()
     }
     await opendiscord.events.get("onActionLoad").emit([opendiscord.actions])
     await opendiscord.events.get("afterActionsLoaded").emit([opendiscord.actions])
@@ -780,6 +783,7 @@ const main = async () => {
         await (await import("./actions/unclaimTicket.js")).registerVerifyBars()
         await (await import("./actions/pinTicket.js")).registerVerifyBars()
         await (await import("./actions/unpinTicket.js")).registerVerifyBars()
+        await (await import("./actions/ticketWorkflow.js")).registerVerifyBars()
     }
     await opendiscord.events.get("onVerifyBarLoad").emit([opendiscord.verifybars])
     await opendiscord.events.get("afterVerifyBarsLoaded").emit([opendiscord.verifybars])

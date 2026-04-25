@@ -639,6 +639,18 @@ function normalizeTicketOption(option: any) {
     routing: {
       supportTeamId: "",
       escalationTargetOptionIds: []
+    },
+    workflow: {
+      closeRequest: {
+        enabled: false
+      },
+      awaitingUser: {
+        enabled: false,
+        reminderEnabled: false,
+        reminderHours: 24,
+        autoCloseEnabled: false,
+        autoCloseHours: 72
+      }
     }
   }
 
@@ -684,6 +696,25 @@ function normalizeTicketOption(option: any) {
   normalized.slowMode.slowModeSeconds = ensureNumber(normalized.slowMode.slowModeSeconds, defaults.slowMode.slowModeSeconds)
   normalized.transcripts = normalizeTicketOptionTranscriptRoutingConfig(normalized.transcripts)
   normalized.routing = normalizeTicketOptionRoutingConfig(normalized.routing)
+  assertPlainObject(normalized.workflow, "Ticket workflow")
+  assertPlainObject(normalized.workflow.closeRequest, "Ticket close request workflow")
+  assertPlainObject(normalized.workflow.awaitingUser, "Ticket awaiting-user workflow")
+  normalized.workflow.closeRequest.enabled = ensureBoolean(normalized.workflow.closeRequest.enabled)
+  normalized.workflow.awaitingUser.enabled = ensureBoolean(normalized.workflow.awaitingUser.enabled)
+  normalized.workflow.awaitingUser.reminderEnabled = ensureBoolean(normalized.workflow.awaitingUser.reminderEnabled)
+  normalized.workflow.awaitingUser.reminderHours = ensureNumber(normalized.workflow.awaitingUser.reminderHours, defaults.workflow.awaitingUser.reminderHours)
+  normalized.workflow.awaitingUser.autoCloseEnabled = ensureBoolean(normalized.workflow.awaitingUser.autoCloseEnabled)
+  normalized.workflow.awaitingUser.autoCloseHours = ensureNumber(normalized.workflow.awaitingUser.autoCloseHours, defaults.workflow.awaitingUser.autoCloseHours)
+  if (normalized.workflow.awaitingUser.reminderHours <= 0 || normalized.workflow.awaitingUser.autoCloseHours <= 0) {
+    throw new Error("Ticket workflow reminder and timeout hours must be positive.")
+  }
+  if (
+    normalized.workflow.awaitingUser.reminderEnabled
+    && normalized.workflow.awaitingUser.autoCloseEnabled
+    && normalized.workflow.awaitingUser.autoCloseHours <= normalized.workflow.awaitingUser.reminderHours
+  ) {
+    throw new Error("Ticket workflow autoCloseHours must be greater than reminderHours when both settings are enabled.")
+  }
 
   return normalized
 }
@@ -707,6 +738,7 @@ function normalizeRoleOption(option: any) {
   normalized.addOnMemberJoin = ensureBoolean(normalized.addOnMemberJoin)
   delete normalized.transcripts
   delete normalized.routing
+  delete normalized.workflow
 
   return normalized
 }
@@ -723,6 +755,7 @@ function normalizeWebsiteOption(option: any) {
   normalized.url = ensureString(normalized.url, "")
   delete normalized.transcripts
   delete normalized.routing
+  delete normalized.workflow
 
   return normalized
 }

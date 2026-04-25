@@ -54,6 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
     transcriptRoutingHelper: document.getElementById("transcriptRoutingHelper"),
     routingSupportTeamId: document.getElementById("routingSupportTeamId"),
     routingEscalationTargetIds: document.getElementById("routingEscalationTargetIds"),
+    workflowCloseRequestEnabled: document.getElementById("workflowCloseRequestEnabled"),
+    workflowAwaitingUserEnabled: document.getElementById("workflowAwaitingUserEnabled"),
+    workflowAwaitingUserReminderEnabled: document.getElementById("workflowAwaitingUserReminderEnabled"),
+    workflowAwaitingUserReminderHours: document.getElementById("workflowAwaitingUserReminderHours"),
+    workflowAwaitingUserAutocloseEnabled: document.getElementById("workflowAwaitingUserAutocloseEnabled"),
+    workflowAwaitingUserAutocloseHours: document.getElementById("workflowAwaitingUserAutocloseHours"),
     slowModeEnabled: document.getElementById("slowModeEnabled"),
     slowModeSeconds: document.getElementById("slowModeSeconds"),
     dmMessageJson: document.getElementById("dmMessageJson"),
@@ -142,6 +148,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       useGlobalDefault: true,
       channels: []
+    };
+  }
+
+  function buildDefaultWorkflow() {
+    return {
+      closeRequest: {
+        enabled: false
+      },
+      awaitingUser: {
+        enabled: false,
+        reminderEnabled: false,
+        reminderHours: 24,
+        autoCloseEnabled: false,
+        autoCloseHours: 72
+      }
     };
   }
 
@@ -320,6 +341,12 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.transcriptChannels.value = ui.stringifyList(buildDefaultTranscriptRouting().channels);
     fields.routingSupportTeamId.value = "";
     fields.routingEscalationTargetIds.value = "[]";
+    fields.workflowCloseRequestEnabled.checked = false;
+    fields.workflowAwaitingUserEnabled.checked = false;
+    fields.workflowAwaitingUserReminderEnabled.checked = false;
+    fields.workflowAwaitingUserReminderHours.value = 24;
+    fields.workflowAwaitingUserAutocloseEnabled.checked = false;
+    fields.workflowAwaitingUserAutocloseHours.value = 72;
     fields.slowModeSeconds.value = 20;
     fields.dmMessageJson.value = ui.stringifyJson(buildDefaultDmMessage());
     fields.ticketMessageJson.value = ui.stringifyJson(buildDefaultTicketMessage());
@@ -366,6 +393,12 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.transcriptChannels.value = ui.stringifyList(option.transcripts?.channels || []);
     fields.routingSupportTeamId.value = option.routing?.supportTeamId || "";
     fields.routingEscalationTargetIds.value = ui.stringifyList(option.routing?.escalationTargetOptionIds || []);
+    fields.workflowCloseRequestEnabled.checked = Boolean(option.workflow?.closeRequest?.enabled);
+    fields.workflowAwaitingUserEnabled.checked = Boolean(option.workflow?.awaitingUser?.enabled);
+    fields.workflowAwaitingUserReminderEnabled.checked = Boolean(option.workflow?.awaitingUser?.reminderEnabled);
+    fields.workflowAwaitingUserReminderHours.value = option.workflow?.awaitingUser?.reminderHours ?? 24;
+    fields.workflowAwaitingUserAutocloseEnabled.checked = Boolean(option.workflow?.awaitingUser?.autoCloseEnabled);
+    fields.workflowAwaitingUserAutocloseHours.value = option.workflow?.awaitingUser?.autoCloseHours ?? 72;
     fields.slowModeEnabled.checked = Boolean(option.slowMode?.enabled);
     fields.slowModeSeconds.value = option.slowMode?.slowModeSeconds ?? 20;
     fields.dmMessageJson.value = ui.stringifyJson(option.dmMessage || buildDefaultDmMessage());
@@ -461,6 +494,25 @@ document.addEventListener("DOMContentLoaded", () => {
         supportTeamId: routingSupportTeamId,
         escalationTargetOptionIds: ui.parseList(fields.routingEscalationTargetIds.value)
       };
+      option.workflow = {
+        closeRequest: {
+          enabled: fields.workflowCloseRequestEnabled.checked
+        },
+        awaitingUser: {
+          enabled: fields.workflowAwaitingUserEnabled.checked,
+          reminderEnabled: fields.workflowAwaitingUserReminderEnabled.checked,
+          reminderHours: Number(fields.workflowAwaitingUserReminderHours.value || 24),
+          autoCloseEnabled: fields.workflowAwaitingUserAutocloseEnabled.checked,
+          autoCloseHours: Number(fields.workflowAwaitingUserAutocloseHours.value || 72)
+        }
+      };
+      if (
+        option.workflow.awaitingUser.reminderEnabled
+        && option.workflow.awaitingUser.autoCloseEnabled
+        && option.workflow.awaitingUser.autoCloseHours <= option.workflow.awaitingUser.reminderHours
+      ) {
+        throw new Error(messages["options.flash.validationWorkflowHours"] || "Awaiting-user timeout hours must be greater than reminder hours.");
+      }
       option.slowMode = {
         enabled: fields.slowModeEnabled.checked,
         slowModeSeconds: Number(fields.slowModeSeconds.value || 20)

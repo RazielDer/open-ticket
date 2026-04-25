@@ -301,5 +301,21 @@ export const loadAllHelpMenuComponents = async () => {
             textOptions:[{name:"priority",optional:false},{name:"reason",optional:true}],
             slashOptions:[{name:"priority",optional:false},{name:"reason",optional:true}]
         }))
+        if (allowedCommands.includes("close")) advanced.add(new api.ODHelpMenuCommandComponent("opendiscord:awaiting-set",-1,{
+            textName:prefix+"awaiting set",
+            textDescription:"Mark the current ticket as awaiting the current creator.",
+            slashName:"/awaiting set",
+            slashDescription:"Mark the current ticket as awaiting the current creator.",
+            textOptions:[{name:"reason",optional:true}],
+            slashOptions:[{name:"reason",optional:true}]
+        }))
+        if (allowedCommands.includes("close")) advanced.add(new api.ODHelpMenuCommandComponent("opendiscord:awaiting-clear",-2,{
+            textName:prefix+"awaiting clear",
+            textDescription:"Clear awaiting-user state on the current ticket.",
+            slashName:"/awaiting clear",
+            slashDescription:"Clear awaiting-user state on the current ticket.",
+            textOptions:[{name:"reason",optional:true}],
+            slashOptions:[{name:"reason",optional:true}]
+        }))
     }
 }

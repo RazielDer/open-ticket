@@ -664,6 +664,43 @@ export const loadAllSlashCommands = async () => {
             }
         ]
     }))
+
+    //AWAITING USER
+    if (allowedCommands.includes("close")) commands.add(new api.ODSlashCommand("opendiscord:awaiting",{
+        type:act.ChatInput,
+        name:"awaiting",
+        description:"Mark or clear a ticket as awaiting the current creator.",
+        contexts:[discord.InteractionContextType.Guild],
+        integrationTypes:[discord.ApplicationIntegrationType.GuildInstall],
+        options:[
+            {
+                name:"set",
+                description:"Mark the current ticket as awaiting the current creator.",
+                type:acot.Subcommand,
+                options:[
+                    {
+                        name:"reason",
+                        description:lang.getTranslation("commands.reason"),
+                        type:acot.String,
+                        required:false
+                    }
+                ]
+            },
+            {
+                name:"clear",
+                description:"Clear awaiting-user state on the current ticket.",
+                type:acot.Subcommand,
+                options:[
+                    {
+                        name:"reason",
+                        description:lang.getTranslation("commands.reason"),
+                        type:acot.String,
+                        required:false
+                    }
+                ]
+            }
+        ]
+    }))
 }
 
 export const loadAllTextCommands = async () => {
@@ -1253,6 +1290,37 @@ export const loadAllTextCommands = async () => {
                 type:"user",
                 required:true
             },
+            {
+                name:"reason",
+                type:"string",
+                required:false,
+                allowSpaces:true
+            }
+        ]
+    }))
+
+    if (allowedCommands.includes("close")) commands.add(new api.ODTextCommand("opendiscord:awaiting-set",{
+        name:"awaiting set",
+        prefix,
+        dmPermission:false,
+        guildPermission:true,
+        allowBots:false,
+        options:[
+            {
+                name:"reason",
+                type:"string",
+                required:false,
+                allowSpaces:true
+            }
+        ]
+    }))
+    if (allowedCommands.includes("close")) commands.add(new api.ODTextCommand("opendiscord:awaiting-clear",{
+        name:"awaiting clear",
+        prefix,
+        dmPermission:false,
+        guildPermission:true,
+        allowBots:false,
+        options:[
             {
                 name:"reason",
                 type:"string",

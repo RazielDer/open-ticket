@@ -91,6 +91,8 @@
         <div class="plugin-fact-list">
           <div><strong><%= t("tickets.detail.facts.currentCreator") %>:</strong> <%= ticketDetail.detail.creatorLabel || t("common.unavailable") %></div>
           <div><strong><%= t("tickets.detail.facts.originalApplicant") %>:</strong> <%= ticketDetail.detail.originalApplicantLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.closeRequest") %>:</strong> <%= ticketDetail.detail.ticket.closeRequestState || t("tickets.detail.noWorkflowState") %></div>
+          <div><strong><%= t("tickets.detail.facts.awaitingUser") %>:</strong> <%= ticketDetail.detail.ticket.awaitingUserState || t("tickets.detail.noWorkflowState") %></div>
         </div>
         <% if (ticketDetail.detail.creatorTransferWarning) { %>
           <div class="inline-alert warning"><%= ticketDetail.detail.creatorTransferWarning %></div>

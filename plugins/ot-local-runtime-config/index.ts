@@ -126,6 +126,18 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         enableUserLeave:false,
         disableOnClaim:false
     },
+    workflow:{
+        closeRequest:{
+            enabled:false
+        },
+        awaitingUser:{
+            enabled:false,
+            reminderEnabled:false,
+            reminderHours:24,
+            autoCloseEnabled:false,
+            autoCloseHours:72
+        }
+    },
     cooldown:{
         enabled:false,
         cooldownMinutes:10

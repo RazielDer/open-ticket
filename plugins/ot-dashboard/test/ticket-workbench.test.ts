@@ -161,14 +161,23 @@ function runtimeDataSource(entries: Record<string, unknown>) {
   }
 }
 
-function runtimeOption(id: string, name: string, teamId: string | null, transportMode = "channel_text", threadParentChannel: string | null = null) {
+function runtimeOption(
+  id: string,
+  name: string,
+  teamId: string | null,
+  transportMode = "channel_text",
+  threadParentChannel: string | null = null,
+  workflow: { closeRequestEnabled?: boolean; awaitingUserEnabled?: boolean } = {}
+) {
   return {
     id: { value: id },
     name: { value: name },
     ...runtimeDataSource({
       "opendiscord:routing-support-team": teamId,
       "opendiscord:channel-transport-mode": transportMode,
-      "opendiscord:channel-thread-parent": threadParentChannel
+      "opendiscord:channel-thread-parent": threadParentChannel,
+      "opendiscord:workflow-close-request-enabled": Boolean(workflow.closeRequestEnabled),
+      "opendiscord:workflow-awaiting-user-enabled": Boolean(workflow.awaitingUserEnabled)
     })
   }
 }
@@ -465,6 +474,10 @@ async function startServer(options: {
           "remove-participant": { enabled: true, reason: null },
           "set-priority": { enabled: true, reason: null },
           "set-topic": { enabled: true, reason: null },
+          "approve-close-request": { enabled: false, reason: "No close request is pending." },
+          "dismiss-close-request": { enabled: false, reason: "No close request is pending." },
+          "set-awaiting-user": { enabled: true, reason: null },
+          "clear-awaiting-user": { enabled: false, reason: "This ticket is not awaiting user response." },
           close: { enabled: false, reason: "Locked by provider." },
           reopen: { enabled: false, reason: "Ticket is not closed." },
           refresh: { enabled: true, reason: null }
@@ -921,6 +934,62 @@ test("runtime ticket action bridge executes SLICE-010A Open Ticket action branch
   assert.equal(fixture.actionRuns[3].params.data.id, "staff-1")
   assert.equal(fixture.actionRuns[4].params.newPriority.rawName, "urgent")
   assert.equal(fixture.actionRuns[5].params.newTopic, "Updated dashboard topic")
+})
+
+test("runtime ticket action bridge executes SLICE-012 workflow action branches", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  const workflowOptions = [
+    runtimeOption("intake", "Intake", "triage", "channel_text", null, { closeRequestEnabled: true, awaitingUserEnabled: true }),
+    runtimeOption("triage-followup", "Triage follow-up", "triage", "channel_text", null, { closeRequestEnabled: true, awaitingUserEnabled: true })
+  ]
+  const closeRequestFixture = registerRuntimeActionFixture({
+    runtimeOptions: workflowOptions,
+    ticketOverrides: {
+      [ODTICKET_PLATFORM_METADATA_IDS.closeRequestState]: "requested"
+    }
+  })
+
+  for (const action of ["approve-close-request", "dismiss-close-request"] as const) {
+    const result = await defaultDashboardRuntimeBridge.runTicketAction?.({
+      ticketId: "ticket-1",
+      action,
+      actorUserId: "admin-user",
+      reason: `${action} reason`
+    })
+    assert.equal(result?.ok, true, `${action} should succeed`)
+  }
+
+  assert.deepEqual(closeRequestFixture.actionRuns.map((run) => run.id), [
+    "opendiscord:approve-close-request",
+    "opendiscord:dismiss-close-request"
+  ])
+  assert.equal(closeRequestFixture.actionRuns[0].params.reason, "approve-close-request reason")
+
+  const setAwaitingFixture = registerRuntimeActionFixture({ runtimeOptions: workflowOptions })
+  const setResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "set-awaiting-user",
+    actorUserId: "admin-user",
+    reason: "waiting on requester"
+  })
+  assert.equal(setResult?.ok, true)
+
+  const clearAwaitingFixture = registerRuntimeActionFixture({
+    runtimeOptions: workflowOptions,
+    ticketOverrides: {
+      [ODTICKET_PLATFORM_METADATA_IDS.awaitingUserState]: "waiting"
+    }
+  })
+  const clearResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "clear-awaiting-user",
+    actorUserId: "admin-user",
+    reason: "requester replied"
+  })
+  assert.equal(clearResult?.ok, true)
+
+  assert.deepEqual(setAwaitingFixture.actionRuns.map((run) => run.id), ["opendiscord:set-awaiting-user"])
+  assert.deepEqual(clearAwaitingFixture.actionRuns.map((run) => run.id), ["opendiscord:clear-awaiting-user"])
 })
 
 test("ticket workbench renders degraded read and write states instead of redirecting away", async (t) => {

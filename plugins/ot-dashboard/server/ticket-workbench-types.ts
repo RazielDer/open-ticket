@@ -11,6 +11,10 @@ export const DASHBOARD_TICKET_ACTION_IDS = [
   "remove-participant",
   "set-priority",
   "set-topic",
+  "approve-close-request",
+  "dismiss-close-request",
+  "set-awaiting-user",
+  "clear-awaiting-user",
   "close",
   "reopen",
   "refresh"

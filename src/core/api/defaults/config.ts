@@ -443,6 +443,28 @@ export interface ODJsonConfig_DefaultOptionRoutingType {
     escalationTargetOptionIds:string[]
 }
 
+/**## ODJsonConfig_DefaultOptionWorkflowType `interface`
+ * Close-request and awaiting-user workflow settings for a ticket option.
+ */
+export interface ODJsonConfig_DefaultOptionWorkflowType {
+    closeRequest:{
+        /**Allow the current ticket creator to request closure when direct close is not already available. */
+        enabled:boolean
+    },
+    awaitingUser:{
+        /**Allow staff to mark this ticket as waiting on the current ticket creator. */
+        enabled:boolean,
+        /**Send one reminder during each waiting cycle. */
+        reminderEnabled:boolean,
+        /**Hours after awaiting-user starts before the reminder is sent. */
+        reminderHours:number,
+        /**Close the ticket after the configured waiting duration. */
+        autoCloseEnabled:boolean,
+        /**Hours after awaiting-user starts before the ticket is closed. */
+        autoCloseHours:number
+    }
+}
+
 /**## ODJsonConfig_DefaultOptionTicketType `interface`
  * This interface is an object which has all ticket properties for options in the `options.json` config!
  */
@@ -461,6 +483,8 @@ export interface ODJsonConfig_DefaultOptionTicketType extends ODJsonConfig_Defau
     channel:ODJsonConfig_DefaultOptionTicketChannelType,
     /**All settings related to support-team ownership and escalation targets. */
     routing:ODJsonConfig_DefaultOptionRoutingType,
+    /**All settings related to creator close-request and awaiting-user workflow. */
+    workflow:ODJsonConfig_DefaultOptionWorkflowType,
     /**All settings related to the message sent in DM to the creator when the ticket is created. */
     dmMessage:{
         /**Enable this message. */

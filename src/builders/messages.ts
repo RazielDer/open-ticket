@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { canShowRequestCloseButton, getTicketWorkflowState } from "../actions/ticketWorkflow.js"
 
 const messages = opendiscord.builders.messages
 const buttons = opendiscord.builders.buttons
@@ -99,6 +100,32 @@ const verifyBarMessages = () => {
                 if (generalConfig.data.system.enableTicketActionWithReason) instance.addComponent(await buttons.getSafe("opendiscord:verifybar-success").build("verifybar",{guild,channel,user,verifybar,customData:"reason",customEmoji:"✏️",customLabel:lang.getTranslation("actions.buttons.withReason"),customColor:"blue"}))
                 if (generalConfig.data.system.enableDeleteWithoutTranscript) instance.addComponent(await buttons.getSafe("opendiscord:verifybar-success").build("verifybar",{guild,channel,user,verifybar,customData:"no-transcript",customEmoji:"📄",customLabel:lang.getTranslation("actions.buttons.withoutTranscript"),customColor:"red"}))
             }
+        })
+    )
+
+    //VERIFYBAR CLOSE REQUEST MESSAGE
+    messages.add(new api.ODMessage("opendiscord:verifybar-close-request-message"))
+    messages.get("opendiscord:verifybar-close-request-message").workers.add(
+        new api.ODWorker("opendiscord:verifybar-close-request-message",0,async (instance,params,source) => {
+            const {guild,channel,user,verifybar} = params
+            if (!guild){
+                instance.setContent("ODError: Not In Guild => `opendiscord:verifybar-close-request-message`")
+                return
+            }
+            if (channel.isDMBased()){
+                instance.setContent("ODError: Not In Guild Channel => `opendiscord:verifybar-close-request-message`")
+                return
+            }
+            const guildChannel = channel as discord.GuildTextBasedChannel
+            const ticket = opendiscord.tickets.get(guildChannel.id)
+            if (!ticket){
+                instance.setContent("ODError: Unknown Ticket => `opendiscord:verifybar-close-request-message`")
+                return
+            }
+            instance.addEmbed(await embeds.getSafe("opendiscord:close-request-message").build("requested",{guild,channel:guildChannel,user,ticket,reason:null}))
+            instance.addComponent(await buttons.getSafe("opendiscord:verifybar-success").build("verifybar",{guild,channel:guildChannel,user,verifybar}))
+            instance.addComponent(await buttons.getSafe("opendiscord:verifybar-failure").build("verifybar",{guild,channel:guildChannel,user,verifybar}))
+            if (generalConfig.data.system.enableTicketActionWithReason) instance.addComponent(await buttons.getSafe("opendiscord:verifybar-success").build("verifybar",{guild,channel:guildChannel,user,verifybar,customData:"reason",customEmoji:"✏️",customLabel:lang.getTranslation("actions.buttons.withReason"),customColor:"blue"}))
         })
     )
 
@@ -715,6 +742,14 @@ const ticketMessages = () => {
                     instance.addComponent(await buttons.getSafe("opendiscord:close-ticket").build("ticket-message",{guild,channel,user,ticket}))
                 }
             }
+            const workflowState = getTicketWorkflowState(ticket)
+            if (!ticket.get("opendiscord:closed").value){
+                if (workflowState.closeRequestState == "requested"){
+                    instance.addComponent(await buttons.getSafe("opendiscord:cancel-close-request").build("ticket-message",{guild,channel,user,ticket}))
+                }else if (await canShowRequestCloseButton(guild,channel as discord.GuildTextBasedChannel,ticket)){
+                    instance.addComponent(await buttons.getSafe("opendiscord:request-close").build("ticket-message",{guild,channel,user,ticket}))
+                }
+            }
             //enable ticket deletion
             if (generalConfig.data.system.enableTicketDeleteButtons) instance.addComponent(await buttons.getSafe("opendiscord:delete-ticket").build("ticket-message",{guild,channel,user,ticket}))
         }),
@@ -750,6 +785,28 @@ const ticketMessages = () => {
             instance.addEmbed(await embeds.getSafe("opendiscord:reopen-message").build(source,{guild,channel,user,ticket,reason}))
             if (generalConfig.data.system.enableTicketCloseButtons) instance.addComponent(await buttons.getSafe("opendiscord:close-ticket").build("reopen-message",{guild,channel,user,ticket}))
             if (generalConfig.data.system.enableTicketDeleteButtons) instance.addComponent(await buttons.getSafe("opendiscord:delete-ticket").build("reopen-message",{guild,channel,user,ticket}))
+        })
+    )
+
+    //CLOSE REQUEST
+    messages.add(new api.ODMessage("opendiscord:close-request-message"))
+    messages.get("opendiscord:close-request-message").workers.add(
+        new api.ODWorker("opendiscord:close-request-message",0,async (instance,params,source) => {
+            const {guild,channel,user,ticket,reason} = params
+            instance.addEmbed(await embeds.getSafe("opendiscord:close-request-message").build(source as any,{guild,channel,user,ticket,reason}))
+            if (source == "requested"){
+                instance.addComponent(await buttons.getSafe("opendiscord:approve-close-request").build("close-request-message",{guild,channel,user,ticket}))
+                instance.addComponent(await buttons.getSafe("opendiscord:dismiss-close-request").build("close-request-message",{guild,channel,user,ticket}))
+            }
+        })
+    )
+
+    //AWAITING USER
+    messages.add(new api.ODMessage("opendiscord:awaiting-user-message"))
+    messages.get("opendiscord:awaiting-user-message").workers.add(
+        new api.ODWorker("opendiscord:awaiting-user-message",0,async (instance,params,source) => {
+            const {guild,channel,user,ticket,reason} = params
+            instance.addEmbed(await embeds.getSafe("opendiscord:awaiting-user-message").build(source as any,{guild,channel,user,ticket,reason}))
         })
     )
 

@@ -443,6 +443,32 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
             {key:"escalationTargetOptionIds",checker:new api.ODCheckerCustomStructure_UniqueIdArray("opendiscord:ticket-routing-escalation-targets","openticket","option-ids","option-escalation-targets",{allowDoubles:false,cliDisplayPropertyName:"target option",cliDisplayName:"Escalation Targets",cliDisplayDescription:"Ticket option IDs this option can escalate into."},{cliDisplayName:"Escalation Target",cliDisplayDescription:"An existing ticket option ID."})},
         ],cliDisplayName:"Routing",cliDisplayDescription:"Manage support-team ownership and route-aware escalation targets."})},
 
+        //WORKFLOW
+        {key:"workflow",optional:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow",{children:[
+            {key:"closeRequest",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow-close-request",{children:[
+                {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-close-request-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Close Requests",cliDisplayDescription:"Allow current ticket creators to request closure when direct close is not available."})},
+            ],cliDisplayName:"Close Request",cliDisplayDescription:"Configure creator-initiated close requests."})},
+            {key:"awaitingUser",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow-awaiting-user",{children:[
+                {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Awaiting User",cliDisplayDescription:"Allow staff to mark this ticket as waiting on the current creator."})},
+                {key:"reminderEnabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-reminder-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Reminder",cliDisplayDescription:"Send one reminder during each waiting cycle."})},
+                {key:"reminderHours",checker:new api.ODCheckerNumberStructure("opendiscord:ticket-workflow-awaiting-user-reminder-hours",{zeroAllowed:false,negativeAllowed:false,floatAllowed:true,min:1,max:8544,cliInitDefaultValue:24,cliDisplayName:"Reminder Hours",cliDisplayDescription:"The amount of hours before sending the awaiting-user reminder."})},
+                {key:"autoCloseEnabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-autoclose-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Timeout Close",cliDisplayDescription:"Close the ticket if the current creator does not respond in time."})},
+                {key:"autoCloseHours",checker:new api.ODCheckerNumberStructure("opendiscord:ticket-workflow-awaiting-user-autoclose-hours",{zeroAllowed:false,negativeAllowed:false,floatAllowed:true,min:1,max:8544,cliInitDefaultValue:72,cliDisplayName:"Timeout Close Hours",cliDisplayDescription:"The amount of hours before awaiting-user timeout closes the ticket."})},
+            ],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+                const lt = checker.locationTraceDeref(locationTrace)
+                if (!value || typeof value != "object") return false
+                const reminderEnabled = value["reminderEnabled"] === true
+                const autoCloseEnabled = value["autoCloseEnabled"] === true
+                const reminderHours = Number(value["reminderHours"])
+                const autoCloseHours = Number(value["autoCloseHours"])
+                if (reminderEnabled && autoCloseEnabled && Number.isFinite(reminderHours) && Number.isFinite(autoCloseHours) && autoCloseHours <= reminderHours){
+                    checker.createMessage("opendiscord:ticket-workflow-awaiting-user-autoclose-after-reminder","error","Awaiting-user autoCloseHours must be greater than reminderHours when both reminder and timeout close are enabled.",lt,null,["autoCloseHours","reminderHours"],locationId,locationDocs)
+                    return false
+                }
+                return true
+            },cliDisplayName:"Awaiting User",cliDisplayDescription:"Configure staff-controlled waiting, reminders, and timeout closeout."})},
+        ],cliDisplayName:"Workflow",cliDisplayDescription:"Manage creator close requests and awaiting-user state for this ticket option."})},
+
         //DM MESSAGE
         {key:"dmMessage",checker:new api.ODCheckerEnabledObjectStructure("opendiscord:ticket-dm-message",{property:"enabled",enabledValue:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-dm-message",{children:[
             {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-message-enabled",{cliDisplayName:"Enabled",cliDisplayDescription:"Enable/disable the DM message on ticket creation."})},

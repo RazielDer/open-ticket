@@ -36,7 +36,7 @@ export interface ODActionManagerIds_Default {
         workers:"opendiscord:create-ticket"|"opendiscord:send-ticket-message"|"opendiscord:discord-logs"|"opendiscord:logs"
     },
     "opendiscord:close-ticket":{
-        source:"slash"|"text"|"ticket-message"|"reopen-message"|"autoclose"|"other",
+        source:"slash"|"text"|"ticket-message"|"reopen-message"|"autoclose"|"close-request"|"awaiting-user-timeout"|"other",
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,allowCategoryChange?:boolean},
         result:{},
         workers:"opendiscord:close-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
@@ -142,6 +142,42 @@ export interface ODActionManagerIds_Default {
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,newCreator:discord.User,reason:string|null,sendMessage:boolean},
         result:{},
         workers:"opendiscord:transfer-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
+    },
+    "opendiscord:request-close":{
+        source:"button"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:request-close"
+    },
+    "opendiscord:cancel-close-request":{
+        source:"button"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:cancel-close-request"
+    },
+    "opendiscord:approve-close-request":{
+        source:"button"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:approve-close-request"
+    },
+    "opendiscord:dismiss-close-request":{
+        source:"button"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:dismiss-close-request"
+    },
+    "opendiscord:set-awaiting-user":{
+        source:"slash"|"text"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:set-awaiting-user"
+    },
+    "opendiscord:clear-awaiting-user":{
+        source:"slash"|"text"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:clear-awaiting-user"
     },
 }
 

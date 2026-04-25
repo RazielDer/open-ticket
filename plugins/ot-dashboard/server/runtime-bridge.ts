@@ -117,7 +117,12 @@ const ticketAvailabilityReasons = {
   noEligibleNewCreators: "tickets.detail.availability.noEligibleNewCreators",
   noEligibleAddUsers: "tickets.detail.availability.noEligibleAddUsers",
   noParticipantsToRemove: "tickets.detail.availability.noParticipantsToRemove",
-  noPriorityChoices: "tickets.detail.availability.noPriorityChoices"
+  noPriorityChoices: "tickets.detail.availability.noPriorityChoices",
+  workflowDisabled: "tickets.detail.availability.workflowDisabled",
+  closeRequestPending: "tickets.detail.availability.closeRequestPending",
+  closeRequestMissing: "tickets.detail.availability.closeRequestMissing",
+  awaitingUserActive: "tickets.detail.availability.awaitingUserActive",
+  awaitingUserMissing: "tickets.detail.availability.awaitingUserMissing"
 } as const
 
 const ticketActionResults = {
@@ -150,6 +155,10 @@ const ticketActionResults = {
   prioritySuccess: "tickets.detail.actionResults.prioritySuccess",
   topicMissing: "tickets.detail.actionResults.topicMissing",
   topicSuccess: "tickets.detail.actionResults.topicSuccess",
+  approveCloseRequestSuccess: "tickets.detail.actionResults.approveCloseRequestSuccess",
+  dismissCloseRequestSuccess: "tickets.detail.actionResults.dismissCloseRequestSuccess",
+  setAwaitingUserSuccess: "tickets.detail.actionResults.setAwaitingUserSuccess",
+  clearAwaitingUserSuccess: "tickets.detail.actionResults.clearAwaitingUserSuccess",
   genericSuccess: "tickets.detail.actionResults.genericSuccess",
   genericFailure: "tickets.detail.actionResults.genericFailure"
 } as const
@@ -249,6 +258,23 @@ function runtimeOptionTransportMode(option: any) {
 
 function runtimeOptionThreadParentChannelId(option: any) {
   return normalizeString(runtimeDataValue(option, "opendiscord:channel-thread-parent") || option?.channel?.threadParentChannel) || null
+}
+
+function runtimeBoolean(value: unknown) {
+  return value === true || value === "true"
+}
+
+function runtimeOptionWorkflowPolicy(option: any) {
+  return {
+    closeRequestEnabled: runtimeBoolean(
+      runtimeDataValue(option, "opendiscord:workflow-close-request-enabled")
+        ?? option?.workflow?.closeRequest?.enabled
+    ),
+    awaitingUserEnabled: runtimeBoolean(
+      runtimeDataValue(option, "opendiscord:workflow-awaiting-user-enabled")
+        ?? option?.workflow?.awaitingUser?.enabled
+    )
+  }
 }
 
 function runtimePanelForOption(runtime: any, optionId: string | null) {
@@ -508,6 +534,13 @@ function invalidTicketStateReason(ticket: DashboardTicketRecord, action: Dashboa
   if (action === "assign" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
   if (action === "escalate" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
   if (["move", "transfer", "add-participant", "remove-participant", "set-priority", "set-topic"].includes(action) && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if ((action === "approve-close-request" || action === "dismiss-close-request") && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if ((action === "approve-close-request" || action === "dismiss-close-request") && ticket.closeRequestState !== "requested") return ticketAvailabilityReasons.closeRequestMissing
+  if (action === "set-awaiting-user" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if (action === "set-awaiting-user" && ticket.closeRequestState === "requested") return ticketAvailabilityReasons.closeRequestPending
+  if (action === "set-awaiting-user" && ticket.awaitingUserState) return ticketAvailabilityReasons.awaitingUserActive
+  if (action === "clear-awaiting-user" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if (action === "clear-awaiting-user" && !ticket.awaitingUserState) return ticketAvailabilityReasons.awaitingUserMissing
   if (action === "close" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketAlreadyClosed
   if (action === "reopen" && !ticket.closed) return ticketAvailabilityReasons.ticketNotClosed
   return null
@@ -530,6 +563,7 @@ function routeConstraintReason(input: {
   participantChoices: DashboardTicketParticipantChoice[]
   priorityChoices: DashboardTicketPriorityChoice[]
   currentCreatorId: string | null
+  workflowPolicy: ReturnType<typeof runtimeOptionWorkflowPolicy>
 }) {
   if (input.action === "assign") {
     if (!input.owningTeamId) return ticketAvailabilityReasons.noOwningSupportTeam
@@ -553,6 +587,12 @@ function routeConstraintReason(input: {
   if (input.action === "set-priority" && input.priorityChoices.length < 1) {
     return ticketAvailabilityReasons.noPriorityChoices
   }
+  if ((input.action === "approve-close-request" || input.action === "dismiss-close-request") && !input.workflowPolicy.closeRequestEnabled) {
+    return ticketAvailabilityReasons.workflowDisabled
+  }
+  if (input.action === "set-awaiting-user" && !input.workflowPolicy.awaitingUserEnabled) {
+    return ticketAvailabilityReasons.workflowDisabled
+  }
   return null
 }
 
@@ -570,6 +610,7 @@ async function buildRuntimeActionAvailability(input: {
   participantChoices: DashboardTicketParticipantChoice[]
   priorityChoices: DashboardTicketPriorityChoice[]
   currentCreatorId: string | null
+  workflowPolicy: ReturnType<typeof runtimeOptionWorkflowPolicy>
 }) {
   const locked = new Set(input.providerLock?.lockedActions || [])
   const availability: Record<DashboardTicketActionId, DashboardTicketActionAvailability> = {} as Record<DashboardTicketActionId, DashboardTicketActionAvailability>
@@ -615,7 +656,8 @@ async function buildRuntimeActionAvailability(input: {
       transferCandidates: input.transferCandidates,
       participantChoices: input.participantChoices,
       priorityChoices: input.priorityChoices,
-      currentCreatorId: input.currentCreatorId
+      currentCreatorId: input.currentCreatorId,
+      workflowPolicy: input.workflowPolicy
     })
     if (routeReason) {
       availability[action] = disabledAvailability(routeReason)
@@ -652,6 +694,7 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const runtime = runtimeBridge.getRuntimeSource?.() as any
   const runtimeTicket = getRuntimeTicket(runtime, ticket.id)
   const option = runtimeTicket?.option || runtimeOptionById(runtime, ticket.optionId || "")
+  const workflowPolicy = runtimeOptionWorkflowPolicy(option)
   const panel = runtimePanelForOption(runtime, ticket.optionId)
   const panelId = normalizeString(panel?.id) || null
   const owningTeamId = ticket.assignedTeamId || runtimeOptionSupportTeamId(option) || null
@@ -693,7 +736,8 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     transferCandidates,
     participantChoices,
     priorityChoices,
-    currentCreatorId: ticket.creatorId
+    currentCreatorId: ticket.creatorId,
+    workflowPolicy
   })
 
   return {
@@ -773,6 +817,12 @@ function actionPermissionKey(action: DashboardTicketActionId) {
   if (action === "remove-participant") return "remove"
   if (action === "set-priority") return "priority"
   if (action === "set-topic") return "topic"
+  if (
+    action === "approve-close-request"
+    || action === "dismiss-close-request"
+    || action === "set-awaiting-user"
+    || action === "clear-awaiting-user"
+  ) return "close"
   return action
 }
 
@@ -830,6 +880,28 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
 
   try {
     const reason = normalizeString(input.reason) || null
+    if (
+      action === "approve-close-request"
+      || action === "dismiss-close-request"
+      || action === "set-awaiting-user"
+      || action === "clear-awaiting-user"
+    ) {
+      const resultKeys = {
+        "approve-close-request": ticketActionResults.approveCloseRequestSuccess,
+        "dismiss-close-request": ticketActionResults.dismissCloseRequestSuccess,
+        "set-awaiting-user": ticketActionResults.setAwaitingUserSuccess,
+        "clear-awaiting-user": ticketActionResults.clearAwaitingUserSuccess
+      } as const
+      await context.runtime.actions.get(`opendiscord:${action}`).run("dashboard", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason
+      })
+      return ticketActionSuccess(resultKeys[action], ticketId)
+    }
+
     if (action === "assign") {
       const assigneeUserId = normalizeString(input.assigneeUserId)
       if (!assigneeUserId) {

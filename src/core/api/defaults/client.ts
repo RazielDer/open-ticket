@@ -54,6 +54,7 @@ export interface ODSlashCommandManagerIds_Default {
     "opendiscord:topic":ODSlashCommand,
     "opendiscord:priority":ODSlashCommand,
     "opendiscord:transfer":ODSlashCommand,
+    "opendiscord:awaiting":ODSlashCommand,
 }
 
 /**## ODSlashCommandManager_Default `default_class`
@@ -129,6 +130,8 @@ export interface ODTextCommandManagerIds_Default {
     "opendiscord:priority-set":ODTextCommand,
     "opendiscord:priority-get":ODTextCommand,
     "opendiscord:transfer":ODTextCommand,
+    "opendiscord:awaiting-set":ODTextCommand,
+    "opendiscord:awaiting-clear":ODTextCommand,
 }
 
 /**## ODTextCommandManager_Default `default_class`

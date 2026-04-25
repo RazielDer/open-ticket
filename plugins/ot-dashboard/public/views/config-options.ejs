@@ -282,6 +282,38 @@
 
                 <section class="subsection-card option-ticket-subsection">
                   <div class="section-heading">
+                    <h4><%= t("options.workspace.workflowTitle") %></h4>
+                  </div>
+                  <div class="form-grid three-up option-ticket-workflow-grid">
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowCloseRequestEnabled">
+                      <span><%= t("options.fields.workflowCloseRequestEnabled") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserEnabled") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserReminderEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserReminderEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.workflowAwaitingUserReminderHours") %></span>
+                      <input class="text-input" id="workflowAwaitingUserReminderHours" type="number">
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserAutocloseEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserAutocloseEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.workflowAwaitingUserAutocloseHours") %></span>
+                      <input class="text-input" id="workflowAwaitingUserAutocloseHours" type="number">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
                     <h4><%= t("options.workspace.questionPickerTitle") %></h4>
                   </div>
                   <% if (availableQuestions.length) { %>

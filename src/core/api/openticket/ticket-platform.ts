@@ -234,6 +234,14 @@ function normalizeTicketPlatformField<Key extends TicketPlatformMetadataKey>(key
         return normalizeNumericField(value) as ODTicketPlatformMetadata[Key]
     }
 
+    if (key == "awaitingUserState") {
+        return (value == "waiting" || value == "reminded" ? value : null) as ODTicketPlatformMetadata[Key]
+    }
+
+    if (key == "closeRequestState") {
+        return (value == "requested" ? value : null) as ODTicketPlatformMetadata[Key]
+    }
+
     return normalizeStringField(value) as ODTicketPlatformMetadata[Key]
 }
 

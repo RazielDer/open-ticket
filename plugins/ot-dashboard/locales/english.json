@@ -744,6 +744,8 @@
       "ticketChannelBody": "Set the ticket naming and category routing.",
       "ticketAutomationTitle": "Automation and limits",
       "ticketAutomationBody": "Keep inactivity, limits, and cooldown controls together.",
+      "workflowTitle": "Close request and awaiting user",
+      "workflowBody": "Configure creator close requests and staff-controlled awaiting-user reminders.",
       "questionPickerTitle": "Question assignment",
       "questionPickerBody": "Use the structured picker so coverage stays visible while you edit.",
       "questionPickerEmptyTitle": "No reusable questions yet",
@@ -789,6 +791,12 @@
       "transcriptChannelsHelp": "Enter comma-separated, newline-separated, or JSON-array channel IDs. Leaving this empty while inheritance is off disables transcript channel posting for this option.",
       "transcriptRoutingInheritedHelp": "This option inherits the default transcript channel from the Transcripts workspace when channel delivery is enabled there.",
       "transcriptRoutingOverrideHelp": "This option sends transcript-ready posts only to the explicit channel IDs listed here, even if the global transcript channel toggle is off.",
+      "workflowCloseRequestEnabled": "Enable creator close requests",
+      "workflowAwaitingUserEnabled": "Enable awaiting-user state",
+      "workflowAwaitingUserReminderEnabled": "Send awaiting-user reminder",
+      "workflowAwaitingUserReminderHours": "Reminder hours",
+      "workflowAwaitingUserAutocloseEnabled": "Enable awaiting-user timeout close",
+      "workflowAwaitingUserAutocloseHours": "Timeout close hours",
       "claimedCategory": "Claimed category mappings",
       "claimedCategoryHelp": "Use a JSON array of {\"user\",\"category\"} objects.",
       "channelTopic": "Channel topic",
@@ -836,7 +844,8 @@
       "validationChannelSuffix": "Choose a valid channel suffix.",
       "validationRoleMode": "Choose a valid role mode.",
       "validationMessageJson": "Advanced message settings must be valid JSON objects.",
-      "validationRoutingTargets": "Choose an existing support team and valid escalation target option IDs."
+      "validationRoutingTargets": "Choose an existing support team and valid escalation target option IDs.",
+      "validationWorkflowHours": "Awaiting-user timeout hours must be greater than reminder hours."
     }
   },
   "supportTeams": {
@@ -1102,6 +1111,7 @@
       "noTeam": "No team",
       "unassigned": "Unassigned",
       "noTopicRecorded": "No topic recorded.",
+      "noWorkflowState": "None",
       "noParentChannelRecorded": "No parent channel recorded.",
       "states": {
         "open": "Open",
@@ -1126,6 +1136,8 @@
         "parentMessage": "Parent message",
         "priority": "Priority",
         "topic": "Topic",
+        "closeRequest": "Close request",
+        "awaitingUser": "Awaiting user",
         "participants": "Participants"
       },
       "actions": {
@@ -1186,6 +1198,22 @@
           "title": "Set topic",
           "body": "Update the stored ticket topic using the transport-aware Open Ticket action."
         },
+        "approve_close_request": {
+          "title": "Approve close request",
+          "body": "Close this ticket through the pending requester close request."
+        },
+        "dismiss_close_request": {
+          "title": "Dismiss close request",
+          "body": "Clear the pending close request without closing this ticket."
+        },
+        "set_awaiting_user": {
+          "title": "Set awaiting user",
+          "body": "Mark this ticket as waiting for requester activity."
+        },
+        "clear_awaiting_user": {
+          "title": "Clear awaiting user",
+          "body": "Clear the waiting marker after requester or staff follow-up."
+        },
         "close": {
           "title": "Close ticket",
           "body": "Close the ticket through the Open Ticket runtime action path."
@@ -1233,6 +1261,10 @@
         "prioritySuccess": "Ticket priority updated.",
         "topicMissing": "Enter a ticket topic before updating this ticket.",
         "topicSuccess": "Ticket topic updated.",
+        "approveCloseRequestSuccess": "Close request approved.",
+        "dismissCloseRequestSuccess": "Close request dismissed.",
+        "setAwaitingUserSuccess": "Ticket marked awaiting user.",
+        "clearAwaitingUserSuccess": "Awaiting-user state cleared.",
         "genericSuccess": "Ticket action completed.",
         "genericFailure": "Ticket action failed."
       },
@@ -1260,7 +1292,12 @@
         "noEligibleNewCreators": "No eligible new creator users are available.",
         "noEligibleAddUsers": "No eligible users are available to add.",
         "noParticipantsToRemove": "No user participants are available to remove.",
-        "noPriorityChoices": "No priority choices are available."
+        "noPriorityChoices": "No priority choices are available.",
+        "workflowDisabled": "This ticket workflow is disabled for the ticket option.",
+        "closeRequestPending": "A close request is already pending.",
+        "closeRequestMissing": "No close request is pending.",
+        "awaitingUserActive": "This ticket is already awaiting user response.",
+        "awaitingUserMissing": "This ticket is not awaiting user response."
       },
       "deferredActions": {
         "pinUnpinRename": "Pin, unpin, and freeform rename remain Discord-only actions in this packet."

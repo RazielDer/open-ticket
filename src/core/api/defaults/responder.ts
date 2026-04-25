@@ -48,6 +48,7 @@ export interface ODCommandResponderManagerIds_Default {
     "opendiscord:topic":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:topic"|"opendiscord:logs"},
     "opendiscord:priority":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:priority"|"opendiscord:logs"},
     "opendiscord:transfer":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:transfer"|"opendiscord:logs"},
+    "opendiscord:awaiting":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:awaiting"|"opendiscord:logs"},
 
     "opendiscord:autoclose":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:autoclose"|"opendiscord:logs"},
     "opendiscord:autodelete":{source:"slash"|"text",params:{},workers:"opendiscord:permissions"|"opendiscord:autodelete"|"opendiscord:logs"},
@@ -114,6 +115,10 @@ export interface ODButtonResponderManagerIds_Default {
     "opendiscord:close-ticket":{source:"button",params:{},workers:"opendiscord:close-ticket"},
     "opendiscord:reopen-ticket":{source:"button",params:{},workers:"opendiscord:reopen-ticket"},
     "opendiscord:delete-ticket":{source:"button",params:{},workers:"opendiscord:delete-ticket"},
+    "opendiscord:request-close":{source:"button",params:{},workers:"opendiscord:request-close"},
+    "opendiscord:cancel-close-request":{source:"button",params:{},workers:"opendiscord:cancel-close-request"},
+    "opendiscord:approve-close-request":{source:"button",params:{},workers:"opendiscord:approve-close-request"},
+    "opendiscord:dismiss-close-request":{source:"button",params:{},workers:"opendiscord:dismiss-close-request"},
 
     "opendiscord:transcript-error-retry":{source:"button",params:{},workers:"opendiscord:permissions"|"opendiscord:delete-ticket"|"opendiscord:logs"},
     "opendiscord:transcript-error-continue":{source:"button",params:{},workers:"opendiscord:permissions"|"opendiscord:delete-ticket"|"opendiscord:logs"},

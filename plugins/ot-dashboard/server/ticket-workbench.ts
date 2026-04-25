@@ -540,6 +540,11 @@ export function buildFallbackTicketDetail(input: {
   const providerLock = input.providerLock || null
   const locked = new Set(providerLock?.lockedActions || [])
   const assignRouteTeamId = input.ticket.assignedTeamId || currentRouteTeamId
+  const optionWorkflow = (option as any)?.workflow
+  const workflowPolicy = {
+    closeRequestEnabled: Boolean(optionWorkflow?.closeRequest?.enabled),
+    awaitingUserEnabled: Boolean(optionWorkflow?.awaitingUser?.enabled)
+  }
   const actions: Record<DashboardTicketActionId, DashboardTicketActionAvailability> = {
     claim: availability(Boolean(input.ticket.open && !input.ticket.claimed && !locked.has("claim")), locked.has("claim") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketAlreadyClaimedOrNotOpen"),
     unclaim: availability(Boolean(input.ticket.open && input.ticket.claimed && !locked.has("unclaim")), locked.has("unclaim") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotCurrentlyClaimed"),
@@ -551,6 +556,46 @@ export function buildFallbackTicketDetail(input: {
     "remove-participant": availability(false, locked.has("remove-participant") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimeParticipantsUnavailable"),
     "set-priority": availability(false, locked.has("set-priority") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.runtimePrioritiesUnavailable"),
     "set-topic": availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("set-topic")), locked.has("set-topic") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotOpen"),
+    "approve-close-request": availability(
+      Boolean(input.ticket.open && !input.ticket.closed && input.ticket.closeRequestState === "requested" && workflowPolicy.closeRequestEnabled && !locked.has("approve-close-request")),
+      locked.has("approve-close-request")
+        ? "tickets.detail.availability.lockedByProvider"
+        : !workflowPolicy.closeRequestEnabled
+          ? "tickets.detail.availability.workflowDisabled"
+          : input.ticket.closeRequestState === "requested"
+            ? "tickets.detail.availability.ticketNotOpen"
+            : "tickets.detail.availability.closeRequestMissing"
+    ),
+    "dismiss-close-request": availability(
+      Boolean(input.ticket.open && !input.ticket.closed && input.ticket.closeRequestState === "requested" && workflowPolicy.closeRequestEnabled && !locked.has("dismiss-close-request")),
+      locked.has("dismiss-close-request")
+        ? "tickets.detail.availability.lockedByProvider"
+        : !workflowPolicy.closeRequestEnabled
+          ? "tickets.detail.availability.workflowDisabled"
+          : input.ticket.closeRequestState === "requested"
+            ? "tickets.detail.availability.ticketNotOpen"
+            : "tickets.detail.availability.closeRequestMissing"
+    ),
+    "set-awaiting-user": availability(
+      Boolean(input.ticket.open && !input.ticket.closed && !input.ticket.closeRequestState && !input.ticket.awaitingUserState && workflowPolicy.awaitingUserEnabled && !locked.has("set-awaiting-user")),
+      locked.has("set-awaiting-user")
+        ? "tickets.detail.availability.lockedByProvider"
+        : !workflowPolicy.awaitingUserEnabled
+          ? "tickets.detail.availability.workflowDisabled"
+          : input.ticket.closeRequestState === "requested"
+            ? "tickets.detail.availability.closeRequestPending"
+            : input.ticket.awaitingUserState
+              ? "tickets.detail.availability.awaitingUserActive"
+              : "tickets.detail.availability.ticketNotOpen"
+    ),
+    "clear-awaiting-user": availability(
+      Boolean(input.ticket.open && !input.ticket.closed && input.ticket.awaitingUserState && !locked.has("clear-awaiting-user")),
+      locked.has("clear-awaiting-user")
+        ? "tickets.detail.availability.lockedByProvider"
+        : input.ticket.awaitingUserState
+          ? "tickets.detail.availability.ticketNotOpen"
+          : "tickets.detail.availability.awaitingUserMissing"
+    ),
     close: availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("close")), locked.has("close") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketAlreadyClosed"),
     reopen: availability(Boolean(input.ticket.closed && !locked.has("reopen")), locked.has("reopen") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotClosed"),
     refresh: availability(!locked.has("refresh"), locked.has("refresh") ? "tickets.detail.availability.lockedByProvider" : null)
@@ -608,6 +653,14 @@ function actionCopy(t: TicketWorkbenchTranslator, action: DashboardTicketActionI
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "set-topic":
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: false }
+    case "approve-close-request":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "danger" as const, needsReason: true }
+    case "dismiss-close-request":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
+    case "set-awaiting-user":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
+    case "clear-awaiting-user":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "close":
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "danger" as const, needsReason: true }
     case "reopen":
@@ -623,7 +676,11 @@ const ADVANCED_TICKET_ACTIONS = new Set<DashboardTicketActionId>([
   "add-participant",
   "remove-participant",
   "set-priority",
-  "set-topic"
+  "set-topic",
+  "approve-close-request",
+  "dismiss-close-request",
+  "set-awaiting-user",
+  "clear-awaiting-user"
 ])
 
 function actionChoices(t: TicketWorkbenchTranslator, detail: DashboardTicketDetailRecord, action: DashboardTicketActionId) {
@@ -711,6 +768,8 @@ export function buildTicketWorkbenchDetailModel(input: {
         { label: t("tickets.detail.facts.transport"), value: transportLabel(detail.ticket.transportMode) },
         { label: t("tickets.detail.facts.priority"), value: detail.priorityLabel || t("common.unavailable") },
         { label: t("tickets.detail.facts.topic"), value: detail.topic || t("tickets.detail.noTopicRecorded") },
+        { label: t("tickets.detail.facts.closeRequest"), value: detail.ticket.closeRequestState || t("tickets.detail.noWorkflowState") },
+        { label: t("tickets.detail.facts.awaitingUser"), value: detail.ticket.awaitingUserState || t("tickets.detail.noWorkflowState") },
         { label: t("tickets.detail.facts.participants"), value: String(detail.ticket.participantCount) }
       ]
     : []

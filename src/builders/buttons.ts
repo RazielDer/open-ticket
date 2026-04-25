@@ -212,6 +212,54 @@ const ticketButtons = () => {
         })
     )
 
+    //REQUEST CLOSE
+    buttons.add(new api.ODButton("opendiscord:request-close"))
+    buttons.get("opendiscord:request-close").workers.add(
+        new api.ODWorker("opendiscord:request-close",0,async (instance,params,source) => {
+            instance.setMode("button")
+            instance.setCustomId("od:request-close")
+            instance.setColor("gray")
+            instance.setEmoji("🔒")
+            instance.setLabel("Request Close")
+        })
+    )
+
+    //CANCEL CLOSE REQUEST
+    buttons.add(new api.ODButton("opendiscord:cancel-close-request"))
+    buttons.get("opendiscord:cancel-close-request").workers.add(
+        new api.ODWorker("opendiscord:cancel-close-request",0,async (instance,params,source) => {
+            instance.setMode("button")
+            instance.setCustomId("od:cancel-close-request")
+            instance.setColor("gray")
+            instance.setEmoji("↩️")
+            instance.setLabel("Cancel Close Request")
+        })
+    )
+
+    //APPROVE CLOSE REQUEST
+    buttons.add(new api.ODButton("opendiscord:approve-close-request"))
+    buttons.get("opendiscord:approve-close-request").workers.add(
+        new api.ODWorker("opendiscord:approve-close-request",0,async (instance,params,source) => {
+            instance.setMode("button")
+            instance.setCustomId("od:approve-close-request")
+            instance.setColor("green")
+            instance.setEmoji("✅")
+            instance.setLabel("Approve Close")
+        })
+    )
+
+    //DISMISS CLOSE REQUEST
+    buttons.add(new api.ODButton("opendiscord:dismiss-close-request"))
+    buttons.get("opendiscord:dismiss-close-request").workers.add(
+        new api.ODWorker("opendiscord:dismiss-close-request",0,async (instance,params,source) => {
+            instance.setMode("button")
+            instance.setCustomId("od:dismiss-close-request")
+            instance.setColor("red")
+            instance.setEmoji("✖")
+            instance.setLabel("Dismiss Request")
+        })
+    )
+
     //DELETE TICKET
     buttons.add(new api.ODButton("opendiscord:delete-ticket"))
     buttons.get("opendiscord:delete-ticket").workers.add(
