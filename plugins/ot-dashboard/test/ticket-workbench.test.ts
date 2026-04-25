@@ -160,13 +160,14 @@ function runtimeDataSource(entries: Record<string, unknown>) {
   }
 }
 
-function runtimeOption(id: string, name: string, teamId: string | null, transportMode = "channel_text") {
+function runtimeOption(id: string, name: string, teamId: string | null, transportMode = "channel_text", threadParentChannel: string | null = null) {
   return {
     id: { value: id },
     name: { value: name },
     ...runtimeDataSource({
       "opendiscord:routing-support-team": teamId,
-      "opendiscord:channel-transport-mode": transportMode
+      "opendiscord:channel-transport-mode": transportMode,
+      "opendiscord:channel-thread-parent": threadParentChannel
     })
   }
 }
@@ -198,11 +199,18 @@ function runtimeTicket(option: any, overrides: Record<string, unknown> = {}) {
 function registerRuntimeActionFixture(options: {
   includeOptionManager?: boolean
   actionRuns?: Array<{ id: string; params: any }>
+  ticketOverrides?: Record<string, unknown>
+  runtimeOptions?: any[]
+  formsDrafts?: any[]
 } = {}) {
   clearDashboardRuntimeRegistry()
-  const intake = runtimeOption("intake", "Intake", "triage")
-  const followup = runtimeOption("triage-followup", "Triage follow-up", "triage")
-  const ticketRecord = runtimeTicket(intake)
+  const runtimeOptions = options.runtimeOptions || [
+    runtimeOption("intake", "Intake", "triage"),
+    runtimeOption("triage-followup", "Triage follow-up", "triage")
+  ]
+  const intake = runtimeOptions[0]
+  const followup = runtimeOptions[1]
+  const ticketRecord = runtimeTicket(intake, options.ticketOverrides)
   const members = new Map([
     ["admin-user", runtimeMember("admin-user", ["role-admin"])],
     ["creator-1", runtimeMember("creator-1")],
@@ -226,11 +234,17 @@ function registerRuntimeActionFixture(options: {
       get(id: string) {
         const configs: Record<string, unknown> = {
           "opendiscord:general": { serverId: "guild-1", system: { permissions: {} } },
-          "opendiscord:options": [
-            { id: "intake", name: "Intake", type: "ticket", channel: { transportMode: "channel_text" }, routing: { supportTeamId: "triage" } },
-            { id: "triage-followup", name: "Triage follow-up", type: "ticket", channel: { transportMode: "channel_text" }, routing: { supportTeamId: "triage" } }
-          ],
-          "opendiscord:panels": [{ id: "front-desk", name: "Front desk", options: ["intake", "triage-followup"] }],
+          "opendiscord:options": runtimeOptions.map((option) => ({
+            id: option.id.value,
+            name: option.name.value,
+            type: "ticket",
+            channel: {
+              transportMode: option.get("opendiscord:channel-transport-mode").value,
+              threadParentChannel: option.get("opendiscord:channel-thread-parent").value || ""
+            },
+            routing: { supportTeamId: option.get("opendiscord:routing-support-team").value }
+          })),
+          "opendiscord:panels": [{ id: "front-desk", name: "Front desk", options: runtimeOptions.map((option) => option.id.value) }],
           "opendiscord:support-teams": [{ id: "triage", name: "Triage", roleIds: ["role-editor"], assignmentStrategy: "manual" }]
         }
         return Object.prototype.hasOwnProperty.call(configs, id) ? { data: configs[id] } : null
@@ -281,13 +295,28 @@ function registerRuntimeActionFixture(options: {
       }
     }
   }
+  if (options.formsDrafts) {
+    runtime.plugins = {
+      classes: {
+        get(id: string) {
+          return id === "ot-ticket-forms:service"
+            ? {
+                async listTicketDrafts() {
+                  return options.formsDrafts
+                }
+              }
+            : null
+        }
+      }
+    }
+  }
   if (options.includeOptionManager !== false) {
     runtime.options = {
       get(id: string) {
-        return id === "intake" ? intake : id === "triage-followup" ? followup : null
+        return runtimeOptions.find((option) => option.id.value === id) || null
       },
       getAll() {
-        return [intake, followup]
+        return runtimeOptions
       }
     }
   }
@@ -801,6 +830,62 @@ test("runtime ticket move stays disabled when only config fallback options are a
     detail?.actionAvailability.move.reason,
     "tickets.detail.availability.noSameOwnerMoveTargets"
   )
+})
+
+test("runtime ticket detail resolves original applicant from managed-record draft state", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  registerRuntimeActionFixture({
+    ticketOverrides: { "opendiscord:previous-creators": ["metadata-applicant"] },
+    formsDrafts: [
+      {
+        ticketChannelId: "ticket-1",
+        formId: "whitelist",
+        answerTarget: "ticket_managed_record",
+        applicantDiscordUserId: "draft-applicant"
+      }
+    ]
+  })
+
+  const detail = await defaultDashboardRuntimeBridge.getTicketDetail?.("ticket-1", "admin-user")
+  assert.equal(detail?.originalApplicantUserId, "draft-applicant")
+  assert.equal(detail?.creatorTransferWarning, "tickets.detail.warnings.creatorTransfer")
+})
+
+test("runtime ticket move targets preserve private-thread parent-channel constraints", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  registerRuntimeActionFixture({
+    runtimeOptions: [
+      runtimeOption("intake", "Intake", "triage", "private_thread", "parent-1"),
+      runtimeOption("triage-followup", "Triage follow-up", "triage", "private_thread", "parent-1"),
+      runtimeOption("triage-other-parent", "Triage other parent", "triage", "private_thread", "parent-2")
+    ],
+    ticketOverrides: {
+      [ODTICKET_PLATFORM_METADATA_IDS.transportMode]: "private_thread",
+      [ODTICKET_PLATFORM_METADATA_IDS.transportParentChannelId]: "parent-1"
+    }
+  })
+
+  const detail = await defaultDashboardRuntimeBridge.getTicketDetail?.("ticket-1", "admin-user")
+  assert.deepEqual(detail?.moveTargets.map((choice) => choice.optionId), ["triage-followup"])
+  assert.equal(detail?.actionAvailability.move.enabled, true)
+})
+
+test("runtime ticket action bridge refuses to remove the current creator as a participant", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  const fixture = registerRuntimeActionFixture()
+
+  const result = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "remove-participant",
+    actorUserId: "admin-user",
+    participantUserId: "creator-1",
+    reason: "remove creator"
+  })
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.status, "warning")
+  assert.equal(result?.message, "tickets.detail.actionResults.participantCreatorRemoveDenied")
+  assert.equal(fixture.actionRuns.length, 0)
 })
 
 test("runtime ticket action bridge executes SLICE-010A Open Ticket action branches", async (t) => {

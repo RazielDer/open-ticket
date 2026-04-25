@@ -247,6 +247,10 @@ function runtimeOptionTransportMode(option: any) {
   return normalizeTransport(runtimeDataValue(option, "opendiscord:channel-transport-mode") || option?.channel?.transportMode)
 }
 
+function runtimeOptionThreadParentChannelId(option: any) {
+  return normalizeString(runtimeDataValue(option, "opendiscord:channel-thread-parent") || option?.channel?.threadParentChannel) || null
+}
+
 function runtimePanelForOption(runtime: any, optionId: string | null) {
   if (!optionId) return null
   return runtimeConfigArray(runtime, "panels").find((panel) => normalizeStringArray(panel?.options).includes(optionId)) || null
@@ -323,7 +327,13 @@ function buildEscalationTargetChoices(runtime: any, option: any, ticketTransport
   return targets
 }
 
-function buildMoveTargetChoices(runtime: any, currentOptionId: string | null, currentTeamId: string | null, ticketTransport: DashboardTicketTransportMode): DashboardTicketMoveTargetChoice[] {
+function buildMoveTargetChoices(
+  runtime: any,
+  currentOptionId: string | null,
+  currentTeamId: string | null,
+  ticketTransport: DashboardTicketTransportMode,
+  ticketParentChannelId: string | null
+): DashboardTicketMoveTargetChoice[] {
   const targets: DashboardTicketMoveTargetChoice[] = []
   if (typeof runtime?.options?.getAll !== "function" || typeof runtime?.options?.get !== "function") {
     return targets
@@ -335,6 +345,7 @@ function buildMoveTargetChoices(runtime: any, currentOptionId: string | null, cu
     if (normalizeString(option?.type) && normalizeString(option?.type) !== "ticket") continue
     const targetTransport = runtimeOptionTransportMode(option)
     if (targetTransport !== ticketTransport) continue
+    if (ticketTransport === "private_thread" && runtimeOptionThreadParentChannelId(option) !== ticketParentChannelId) continue
     const targetTeamId = runtimeOptionSupportTeamId(option) || null
     if ((currentTeamId || null) !== (targetTeamId || null)) continue
     const panel = runtimePanelForOption(runtime, optionId)
@@ -363,6 +374,26 @@ function runtimeTicketParticipants(runtimeTicket: any): Array<{ type: string; id
 function resolveOriginalApplicantUserId(runtimeTicket: any, currentCreatorId: string | null) {
   const previousCreators = normalizeStringArray(runtimeDataValue(runtimeTicket, "opendiscord:previous-creators"))
   return previousCreators[0] || currentCreatorId || null
+}
+
+async function resolveManagedRecordApplicantUserId(runtime: any, ticketId: string) {
+  const formsService = runtime?.plugins?.classes?.get?.("ot-ticket-forms:service")
+  if (!formsService || typeof formsService.listTicketDrafts !== "function") {
+    return null
+  }
+
+  try {
+    const drafts = await formsService.listTicketDrafts()
+    if (!Array.isArray(drafts)) return null
+    const draft = drafts.find((candidate) => (
+      normalizeString(candidate?.ticketChannelId) === ticketId
+      && normalizeString(candidate?.applicantDiscordUserId)
+      && candidate?.answerTarget === "ticket_managed_record"
+    ))
+    return normalizeString(draft?.applicantDiscordUserId) || null
+  } catch {
+    return null
+  }
 }
 
 async function buildTransferCandidateChoices(runtime: any, guild: any, currentCreatorId: string | null): Promise<DashboardTicketTransferCandidateChoice[]> {
@@ -633,7 +664,7 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const providerLock = await resolveProviderLock(runtimeBridge, ticket.id)
   const assignableStaff = await buildAssignableStaffChoices(runtimeBridge, runtime, guild, owningTeamId)
   const escalationTargets = buildEscalationTargetChoices(runtime, option, ticketTransport)
-  const moveTargets = buildMoveTargetChoices(runtime, ticket.optionId, owningTeamId, ticketTransport)
+  const moveTargets = buildMoveTargetChoices(runtime, ticket.optionId, owningTeamId, ticketTransport, ticket.transportParentChannelId)
   const transferCandidates = await buildTransferCandidateChoices(runtime, guild, ticket.creatorId)
   const participantChoices = await buildParticipantChoices(runtime, guild, runtimeTicket, ticket.creatorId)
   const priorityLevelValue = runtimeDataValue(runtimeTicket, "opendiscord:priority")
@@ -641,7 +672,8 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const currentPriority = priorityLevel !== null ? runtime?.priorities?.getFromPriorityLevel?.(priorityLevel) : null
   const priorityChoices = buildPriorityChoices(runtime, priorityLevel)
   const topic = normalizeString(runtimeDataValue(runtimeTicket, "opendiscord:topic")) || null
-  const originalApplicantUserId = resolveOriginalApplicantUserId(runtimeTicket, ticket.creatorId)
+  const originalApplicantUserId = await resolveManagedRecordApplicantUserId(runtime, ticket.id)
+    || resolveOriginalApplicantUserId(runtimeTicket, ticket.creatorId)
   const originalApplicantLabel = originalApplicantUserId === ticket.creatorId
     ? unknownUserLabel(originalApplicantUserId)
     : unknownUserLabel(originalApplicantUserId)
