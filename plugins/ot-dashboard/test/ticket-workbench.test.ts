@@ -7,7 +7,7 @@ import type { AddressInfo } from "net"
 import type { Socket } from "net"
 
 import { createDashboardApp } from "../server/create-app"
-import { buildDashboardAnalyticsModel, medianDurationMs, p95DurationMs } from "../server/analytics"
+import { buildDashboardAnalyticsModel, medianDurationMs, p95DurationMs, parseDashboardAnalyticsRequest } from "../server/analytics"
 import type { DashboardConfig } from "../server/dashboard-config"
 import {
   defaultDashboardRuntimeBridge,
@@ -1074,6 +1074,29 @@ test("analytics model normalizes UTC windows, computes SLA metrics, groups backl
   assert.equal(model.summaryCards[5].value, "2h")
   assert.equal(model.backlogByTeam.find((row) => row.key === "triage")?.count, 1)
   assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 2)
+})
+
+test("analytics request parser honors preset windows and fails invalid custom ranges closed", () => {
+  const now = Date.parse("2026-04-25T12:00:00.000Z")
+  const sevenDay = parseDashboardAnalyticsRequest({ window: "7d" }, { now })
+  assert.equal(sevenDay.window, "7d")
+  assert.equal(sevenDay.openedFromMs, Date.parse("2026-04-18T12:00:00.000Z"))
+  assert.equal(sevenDay.openedToMs, now)
+
+  const thirtyDay = parseDashboardAnalyticsRequest({ window: "30d" }, { now })
+  assert.equal(thirtyDay.window, "30d")
+  assert.equal(thirtyDay.openedFromMs, Date.parse("2026-03-26T12:00:00.000Z"))
+  assert.equal(thirtyDay.openedToMs, now)
+
+  const ninetyDay = parseDashboardAnalyticsRequest({ window: "90d" }, { now })
+  assert.equal(ninetyDay.window, "90d")
+  assert.equal(ninetyDay.openedFromMs, Date.parse("2026-01-25T12:00:00.000Z"))
+  assert.equal(ninetyDay.openedToMs, now)
+
+  const invalidCustom = parseDashboardAnalyticsRequest({ window: "custom", from: "2026-04-30", to: "2026-04-01" }, { now })
+  assert.equal(invalidCustom.window, "30d")
+  assert.equal(invalidCustom.openedFromMs, Date.parse("2026-03-26T12:00:00.000Z"))
+  assert.equal(invalidCustom.openedToMs, now)
 })
 
 test("analytics duration helpers use fixed median and nearest-rank p95 math", () => {

@@ -138,10 +138,11 @@ function buildWindowRange(query: Record<string, unknown>, now: number) {
     }
   }
 
+  const window = requestedWindow === "custom" ? DEFAULT_WINDOW : requestedWindow
   const end = now
-  const start = end - WINDOW_DAYS[DEFAULT_WINDOW] * 86_400_000
+  const start = end - WINDOW_DAYS[window] * 86_400_000
   return {
-    window: DEFAULT_WINDOW,
+    window,
     from: yyyyMmDd(start),
     to: yyyyMmDd(end),
     openedFromMs: start,
