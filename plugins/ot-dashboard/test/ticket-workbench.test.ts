@@ -1076,6 +1076,71 @@ test("analytics model normalizes UTC windows, computes SLA metrics, groups backl
   assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 2)
 })
 
+test("analytics model keeps live ticket identity authoritative before applying archive filters", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({
+        id: "live-reassigned",
+        openedOn: Date.parse("2026-04-20T09:00:00.000Z"),
+        assignedTeamId: "lead",
+        assignedStaffUserId: "staff-live"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20", teamId: "triage", transport: "channel_text" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    transcriptService: {
+      async listTicketAnalyticsHistory() {
+        return {
+          total: 2,
+          warnings: [],
+          nextCursor: null,
+          truncated: false,
+          items: [
+            {
+              ticketId: "live-reassigned",
+              transcriptId: "tr-live-reassigned",
+              creatorId: "creator-stale",
+              openedAt: Date.parse("2026-04-20T09:00:00.000Z"),
+              closedAt: null,
+              resolvedAt: null,
+              firstStaffResponseAt: null,
+              assignedTeamId: "triage",
+              assignedStaffUserId: "staff-archive",
+              transportMode: "channel_text",
+              transcriptStatus: "active"
+            },
+            {
+              ticketId: "archive-visible",
+              transcriptId: "tr-archive-visible",
+              creatorId: "creator-visible",
+              openedAt: Date.parse("2026-04-20T12:00:00.000Z"),
+              closedAt: Date.parse("2026-04-20T12:40:00.000Z"),
+              resolvedAt: Date.parse("2026-04-20T12:40:00.000Z"),
+              firstStaffResponseAt: Date.parse("2026-04-20T12:10:00.000Z"),
+              assignedTeamId: "triage",
+              assignedStaffUserId: "staff-visible",
+              transportMode: "channel_text",
+              transcriptStatus: "active"
+            }
+          ]
+        }
+      }
+    }
+  })
+
+  assert.equal(model.summaryCards[0].value, "1")
+  assert.equal(model.summaryCards[1].value, "0")
+  assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 1)
+  assert.equal(model.cohortByTeam.find((row) => row.key === "lead"), undefined)
+})
+
 test("analytics model preserves live backlog when transcript history reads fail", async (t) => {
   const runtime = await startServer({
     tickets: [

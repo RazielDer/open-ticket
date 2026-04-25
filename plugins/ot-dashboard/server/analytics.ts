@@ -455,8 +455,9 @@ export async function buildDashboardAnalyticsModel(input: {
   const teamLabel = (teamId: string) => teamLabels.get(teamId) || (teamId === "unknown" ? t("analytics.labels.unknownTeam") : t("analytics.labels.missingTeam", { id: teamId }))
   const assigneeLabel = (assigneeId: string) => assigneeId === "unknown" ? t("analytics.labels.unassigned") : assigneeId
   const request = parseDashboardAnalyticsRequest(input.query, { now: input.now, teamLabel, t })
-  const liveRecords = input.runtimeBridge.listTickets()
-    .map(liveTicketToAnalytics)
+  const allLiveRecords = input.runtimeBridge.listTickets().map(liveTicketToAnalytics)
+  const liveTicketIds = new Set(allLiveRecords.map((record) => record.ticketId).filter((ticketId): ticketId is string => Boolean(ticketId)))
+  const liveRecords = allLiveRecords
     .filter((record) => matchesFilters(record, request))
   const backlogRecords = liveRecords.filter((record) => record.open)
   const history = await fetchHistoryRecords({ request, transcriptService: input.transcriptService })
@@ -465,6 +466,9 @@ export async function buildDashboardAnalyticsModel(input: {
     deduped.set(record.ticketId || `live:${record.transcriptId || record.creatorId || deduped.size}`, record)
   }
   for (const record of history.records.map(archivedTicketToAnalytics).filter((item) => matchesFilters(item, request) && isInWindow(item, request))) {
+    if (record.ticketId && liveTicketIds.has(record.ticketId)) {
+      continue
+    }
     const key = record.ticketId || `archive:${record.transcriptId}`
     if (!record.ticketId || !deduped.has(record.ticketId)) {
       deduped.set(key, record)
