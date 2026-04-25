@@ -495,6 +495,38 @@ export interface ListTranscriptsResult {
     items: TranscriptRecord[]
 }
 
+export interface TicketAnalyticsHistoryQuery {
+    openedFrom?: string
+    openedTo?: string
+    teamId?: string | null
+    assigneeId?: string | null
+    transportMode?: "channel_text" | "private_thread" | null
+    cursor?: string | null
+    limit?: number
+}
+
+export interface TicketAnalyticsHistoryRecord {
+    ticketId: string | null
+    transcriptId: string
+    creatorId: string | null
+    openedAt: number | null
+    closedAt: number | null
+    resolvedAt: number | null
+    firstStaffResponseAt: number | null
+    assignedTeamId: string | null
+    assignedStaffUserId: string | null
+    transportMode: "channel_text" | "private_thread" | null
+    transcriptStatus: TranscriptStatus
+}
+
+export interface TicketAnalyticsHistoryResult {
+    total: number
+    items: TicketAnalyticsHistoryRecord[]
+    warnings: string[]
+    nextCursor: string | null
+    truncated: boolean
+}
+
 export interface ActionResult {
     ok: boolean
     action: TranscriptAdminAction

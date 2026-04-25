@@ -33,6 +33,8 @@ import type {
     ListTranscriptEventsResult,
     ListTranscriptsQuery,
     ListTranscriptsResult,
+    TicketAnalyticsHistoryQuery,
+    TicketAnalyticsHistoryResult,
     TranscriptDetail,
     TranscriptRecord,
     TranscriptRetentionExecutionResult,
@@ -139,6 +141,19 @@ export class OTHtmlTranscriptService extends api.ODManagerData {
 
     async listTranscripts(query: ListTranscriptsQuery): Promise<ListTranscriptsResult> {
         return await this.core.listTranscripts(query)
+    }
+
+    async listTicketAnalyticsHistory(query: TicketAnalyticsHistoryQuery): Promise<TicketAnalyticsHistoryResult> {
+        if (!this.core.isHealthy()) {
+            return {
+                total: 0,
+                items: [],
+                warnings: ["Transcript analytics history is unavailable while the transcript service is unhealthy."],
+                nextCursor: null,
+                truncated: false
+            }
+        }
+        return await this.core.listTicketAnalyticsHistory(query)
     }
 
     async listOperationalTranscripts(query: TranscriptOperationalListQuery): Promise<TranscriptOperationalListResult> {

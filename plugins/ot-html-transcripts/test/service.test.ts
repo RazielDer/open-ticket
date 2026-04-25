@@ -471,6 +471,68 @@ test("service getTranscriptDetail exposes public urls, links, participants, asse
     })
 })
 
+test("service listTicketAnalyticsHistory reads analytics-safe ticket metadata from document archives", async () => {
+    await withService("ticket-analytics-history", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-analytics")
+        await fs.promises.mkdir(archivePath, { recursive: true })
+        const document = createFakeDocument("tr-analytics")
+        document.version = "2.0"
+        document.ticket.id = "ticket-analytics"
+        document.ticket.createdOn = Date.parse("2026-04-20T10:00:00.000Z")
+        document.ticket.closedOn = Date.parse("2026-04-20T12:00:00.000Z")
+        document.ticket.createdBy = { id: "creator-1", name: "Creator", color: "#ffffff", avatar: null, bot: false, verifiedBot: false, system: false }
+        document.ticket.metadata = {
+            transportMode: "private_thread",
+            transportParentChannelId: "parent-1",
+            transportParentMessageId: null,
+            assignedTeamId: "triage",
+            assignedStaffUserId: "staff-1",
+            assignmentStrategy: "manual",
+            firstStaffResponseAt: Date.parse("2026-04-20T10:15:00.000Z"),
+            resolvedAt: Date.parse("2026-04-20T12:00:00.000Z"),
+            awaitingUserState: null,
+            awaitingUserSince: null,
+            closeRequestState: null,
+            closeRequestBy: null,
+            closeRequestAt: null,
+            integrationProfileId: null,
+            aiAssistProfileId: null
+        }
+        await fs.promises.writeFile(path.join(archivePath, "document.json"), JSON.stringify(document, null, 2), "utf8")
+        await fs.promises.writeFile(path.join(archivePath, "index.html"), "<html></html>", "utf8")
+        await service.createTranscript({
+            id: "tr-analytics",
+            status: "active",
+            ticketId: "ticket-analytics",
+            channelId: "ticket-analytics",
+            creatorId: "creator-1",
+            archivePath,
+            createdAt: "2026-04-20T12:01:00.000Z"
+        })
+
+        const result = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            teamId: "triage",
+            assigneeId: "staff-1",
+            transportMode: "private_thread",
+            limit: 200
+        })
+
+        assert.equal(result.items.length, 1)
+        assert.equal(result.items[0].ticketId, "ticket-analytics")
+        assert.equal(result.items[0].transcriptId, "tr-analytics")
+        assert.equal(result.items[0].creatorId, "creator-1")
+        assert.equal(result.items[0].assignedTeamId, "triage")
+        assert.equal(result.items[0].assignedStaffUserId, "staff-1")
+        assert.equal(result.items[0].transportMode, "private_thread")
+        assert.equal(result.items[0].firstStaffResponseAt, Date.parse("2026-04-20T10:15:00.000Z"))
+        assert.equal(result.items[0].resolvedAt, Date.parse("2026-04-20T12:00:00.000Z"))
+        assert.equal(result.nextCursor, null)
+        assert.equal(result.truncated, false)
+    })
+})
+
 test("successful builds log build-started then build-succeeded and resolve event history through admin targets", async () => {
     await withCustomService("build-events-success", createCompileDependencies(), async (service) => {
         const { ticket, channel, user } = createFakeCompileInputs("ticket-build-success", "channel-build-success")

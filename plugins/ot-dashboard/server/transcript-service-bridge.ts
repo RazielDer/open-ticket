@@ -232,6 +232,38 @@ export interface DashboardListTranscriptsResult {
   items: DashboardTranscriptRecord[]
 }
 
+export interface DashboardTicketAnalyticsHistoryQuery {
+  openedFrom?: string
+  openedTo?: string
+  teamId?: string | null
+  assigneeId?: string | null
+  transportMode?: "channel_text" | "private_thread" | null
+  cursor?: string | null
+  limit?: number
+}
+
+export interface DashboardTicketAnalyticsHistoryRecord {
+  ticketId: string | null
+  transcriptId: string
+  creatorId: string | null
+  openedAt: number | null
+  closedAt: number | null
+  resolvedAt: number | null
+  firstStaffResponseAt: number | null
+  assignedTeamId: string | null
+  assignedStaffUserId: string | null
+  transportMode: "channel_text" | "private_thread" | null
+  transcriptStatus: DashboardTranscriptStatus
+}
+
+export interface DashboardTicketAnalyticsHistoryResult {
+  total: number
+  items: DashboardTicketAnalyticsHistoryRecord[]
+  warnings: string[]
+  nextCursor: string | null
+  truncated: boolean
+}
+
 export interface DashboardTranscriptOperationalRecord extends DashboardTranscriptRecord {
   integrityHealth: DashboardTranscriptIntegrityHealth
   repairable: boolean
@@ -414,6 +446,7 @@ export interface DashboardTranscriptService {
   getSummary: () => Promise<DashboardTranscriptSummary>
   resolveTranscript: (target: string) => Promise<DashboardTranscriptRecord | null>
   listTranscripts: (query: DashboardListTranscriptsQuery) => Promise<DashboardListTranscriptsResult>
+  listTicketAnalyticsHistory?: (query: DashboardTicketAnalyticsHistoryQuery) => Promise<DashboardTicketAnalyticsHistoryResult>
   getTranscriptDetail: (target: string) => Promise<DashboardTranscriptDetail | null>
   getAccessPolicy?: () => Promise<DashboardTranscriptAccessPolicy>
   listTranscriptStylePresets?: () => Promise<DashboardTranscriptStylePreset[]>
@@ -476,6 +509,10 @@ export interface DashboardTranscriptViewerService {
 export interface DashboardTranscriptStylePreviewService {
   listTranscriptStylePresets: NonNullable<DashboardTranscriptService["listTranscriptStylePresets"]>
   renderTranscriptStylePreview: NonNullable<DashboardTranscriptService["renderTranscriptStylePreview"]>
+}
+
+export interface DashboardTranscriptTicketAnalyticsHistoryService {
+  listTicketAnalyticsHistory: NonNullable<DashboardTranscriptService["listTicketAnalyticsHistory"]>
 }
 
 export interface DashboardTranscriptIntegration {
@@ -554,6 +591,12 @@ export function supportsTranscriptStylePreview(value: unknown): value is Dashboa
     "listTranscriptStylePresets",
     "renderTranscriptStylePreview"
   ].every((key) => typeof candidate[key] === "function")
+}
+
+export function supportsTranscriptTicketAnalyticsHistory(value: unknown): value is DashboardTranscriptService & DashboardTranscriptTicketAnalyticsHistoryService {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.listTicketAnalyticsHistory === "function"
 }
 
 function getMissingServiceMessage(plugin: DashboardPluginDetail | null) {

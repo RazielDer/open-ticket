@@ -175,6 +175,11 @@ export interface ListRetentionCandidatesInput {
     deletedDays: number
 }
 
+export interface ListTranscriptAnalyticsCandidatesInput {
+    limit?: number
+    offset?: number
+}
+
 interface TranscriptCandidateFilters {
     search?: string
     status?: TranscriptStatus
@@ -473,6 +478,35 @@ CREATE INDEX IF NOT EXISTS transcript_events_created_at_index ON transcript_even
         )
 
         return rows.map((row) => this.mapTranscriptRow(row))
+    }
+
+    async listTranscriptAnalyticsCandidates(query: ListTranscriptAnalyticsCandidatesInput): Promise<ListTranscriptsResult> {
+        const limit = Math.max(1, Math.min(query.limit ?? 200, 500))
+        const offset = Math.max(0, query.offset ?? 0)
+
+        const totalRow = await this.database.get<{ total: number }>(
+            `SELECT COUNT(*) as total
+             FROM transcripts t
+             WHERE t.archive_path IS NOT NULL`
+        )
+
+        const rows = await this.database.all<TranscriptRow>(
+            `SELECT
+                t.*,
+                active_link.slug as active_slug
+             FROM transcripts t
+             LEFT JOIN transcript_links active_link
+               ON active_link.transcript_id = t.id AND active_link.status = 'active'
+             WHERE t.archive_path IS NOT NULL
+             ORDER BY t.created_at DESC, t.id DESC
+             LIMIT ? OFFSET ?`,
+            [limit, offset]
+        )
+
+        return {
+            total: totalRow?.total ?? 0,
+            items: rows.map((row) => this.mapTranscriptRow(row))
+        }
     }
 
     async listAllTranscripts(): Promise<TranscriptRecord[]> {

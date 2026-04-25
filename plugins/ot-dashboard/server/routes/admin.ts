@@ -2,6 +2,7 @@ import fs from "node:fs"
 import type express from "express"
 
 import { buildDashboardAuditActor, createAdminGuard, sanitizeReturnTo } from "../auth"
+import { buildDashboardAnalyticsModel } from "../analytics"
 import type { DashboardAppContext } from "../create-app"
 import {
   getDashboardSecurityWarnings,
@@ -48,6 +49,7 @@ import {
   resolveTranscriptIntegration,
   supportsTranscriptOperationsReads,
   supportsTranscriptOperationsWrites,
+  supportsTranscriptTicketAnalyticsHistory,
   type DashboardListTranscriptEventsResult,
   type DashboardListTranscriptsResult,
   type DashboardTranscriptIntegrityReport,
@@ -975,6 +977,37 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       actionCards: buildActionCards(context, snapshot),
       contentView: "sections/runtime"
     }))
+  })
+
+  app.get(joinBasePath(basePath, "admin/analytics"), adminGuard.page("analytics.view"), async (req, res, next) => {
+    try {
+      const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
+      const transcriptService = transcriptIntegration.state === "ready" && supportsTranscriptTicketAnalyticsHistory(transcriptIntegration.service)
+        ? transcriptIntegration.service
+        : null
+      const model = await buildDashboardAnalyticsModel({
+        basePath,
+        query: req.query as Record<string, unknown>,
+        configService,
+        runtimeBridge,
+        transcriptService,
+        t: i18n.t
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "analytics", {
+        pageTitle: `${i18n.t("analytics.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("analytics.page.eyebrow"),
+        pageHeadline: i18n.t("analytics.page.headline"),
+        pageSubtitle: i18n.t("analytics.page.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        pageClass: "page-analytics-workspace",
+        contentView: "sections/analytics",
+        analytics: model
+      }))
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), (req, res) => {

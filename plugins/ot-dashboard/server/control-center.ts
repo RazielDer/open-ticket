@@ -119,6 +119,7 @@ export function buildAdminNav(context: DashboardAppContext, activeKey: string) {
   const items = [
     { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "admin.shell" },
     { key: "tickets", label: i18n.t("nav.tickets"), href: joinBasePath(basePath, "admin/tickets"), requiredCapability: "ticket.workbench" },
+    { key: "analytics", label: i18n.t("nav.analytics"), href: joinBasePath(basePath, "admin/analytics"), requiredCapability: "analytics.view" },
     { key: "transcripts", label: i18n.t("nav.transcripts"), href: joinBasePath(basePath, "admin/transcripts"), requiredCapability: "transcript.view.global" },
     { key: "addons", label: i18n.t("nav.addOns"), href: joinBasePath(basePath, "admin/plugins"), requiredCapability: "plugin.manage" },
     { key: "advanced", label: i18n.t("nav.advanced"), href: joinBasePath(basePath, "admin/advanced"), requiredCapability: "config.write.security" }

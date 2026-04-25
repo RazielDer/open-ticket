@@ -40,6 +40,7 @@
     "home": "Home",
     "setup": "Setup",
     "tickets": "Tickets",
+    "analytics": "Analytics",
     "transcripts": "Transcripts",
     "addOns": "Add-ons",
     "advanced": "Advanced"
@@ -1263,6 +1264,84 @@
       },
       "deferredActions": {
         "pinUnpinRename": "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
+      }
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "labels": {
+      "unknownTeam": "Unknown team",
+      "missingTeam": "Missing team ({id})",
+      "unassigned": "Unassigned",
+      "unknownTransport": "Unknown transport"
+    },
+    "summary": {
+      "opened": "Tickets opened in window",
+      "openedDetail": "Tickets opened in the selected UTC window",
+      "historyUnavailableDetail": "Unavailable until transcript analytics history is available",
+      "backlog": "Current backlog",
+      "backlogDetail": "Open live runtime tickets",
+      "medianFirstResponse": "Median first response",
+      "p95FirstResponse": "P95 first response",
+      "medianResolution": "Median resolution",
+      "p95Resolution": "P95 resolution"
+    },
+    "page": {
+      "eyebrow": "Ticket analytics",
+      "headline": "Analytics",
+      "subtitle": "Measure live backlog and SLA performance from runtime tickets and archived transcript metadata.",
+      "workspaceTitle": "Analytics workspace",
+      "workspaceBody": "Backlog uses current live tickets. Cohort and SLA metrics use transcript-backed ticket metadata when the history reader is available.",
+      "degradedBadge": "Degraded history",
+      "historyUnavailable": "Transcript analytics history is unavailable, so cohort and SLA metrics are unavailable.",
+      "lowSample": "Low sample",
+      "lowSampleDetail": "Low sample: {count}",
+      "sampleCount": "{count} sample(s)",
+      "missingData": "{count} missing data",
+      "noValidSamples": "No valid samples",
+      "emptyBacklog": "No matching open tickets.",
+      "emptyCohort": "No tickets opened in this window.",
+      "filtersTitle": "Analytics filters",
+      "filtersBody": "Use UTC windows and optional route filters without mutating ticket state.",
+      "activeFilterCount": "{count} active",
+      "activeFiltersTitle": "Active filters",
+      "backlogByTeam": "Current backlog by team",
+      "backlogByAssignee": "Current backlog by assignee",
+      "backlogByTransport": "Current backlog by transport",
+      "cohortByTeam": "Opened-ticket cohort by team",
+      "cohortByTransport": "Opened-ticket cohort by transport",
+      "windows": {
+        "7d": "Last 7 days",
+        "30d": "Last 30 days",
+        "90d": "Last 90 days",
+        "custom": "Custom"
+      },
+      "transport": {
+        "all": "All transports",
+        "channel_text": "Channel text",
+        "private_thread": "Private thread"
+      },
+      "filters": {
+        "windowLabel": "Window",
+        "fromLabel": "From",
+        "toLabel": "To",
+        "transportLabel": "Transport",
+        "teamLabel": "Team",
+        "teamPlaceholder": "Support team ID",
+        "assigneeLabel": "Assignee",
+        "assigneePlaceholder": "Discord user ID",
+        "applyAction": "Apply filters",
+        "clearAction": "Clear filters"
+      },
+      "table": {
+        "group": "Group",
+        "open": "Open",
+        "opened": "Opened",
+        "detail": "Detail",
+        "firstResponse": "Median first response",
+        "missingFirstResponse": "Missing first response",
+        "resolution": "Median resolution",
+        "missingResolution": "Missing resolution"
       }
     }
   },

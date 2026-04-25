@@ -50,6 +50,9 @@ import type {
     ListTranscriptsQuery,
     ListTranscriptsResult,
     OTHtmlTranscriptsConfigData,
+    TicketAnalyticsHistoryQuery,
+    TicketAnalyticsHistoryRecord,
+    TicketAnalyticsHistoryResult,
     TranscriptDetail,
     TranscriptLinkRecord,
     TranscriptParticipantRecord,
@@ -108,6 +111,36 @@ const VIEWER_NOT_READY_MESSAGE = "Transcript archive is not ready."
 const PREVIEW_UNAVAILABLE_MESSAGE = "Transcript style preview is unavailable while the transcript service is unhealthy or missing the preview renderer."
 const OPERATIONAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MAX_VIEWER_ACCESS_FRESHNESS_MS = 60_000
+
+function normalizeAnalyticsCursor(value: unknown) {
+    if (typeof value != "string" || value.trim().length == 0) return 0
+    const parsed = Number(value)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+}
+
+function parseAnalyticsIsoMillis(value: unknown) {
+    if (typeof value != "string" || value.trim().length == 0) return null
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeNullableAnalyticsString(value: unknown) {
+    return typeof value == "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+function normalizeAnalyticsTransport(value: unknown): "channel_text" | "private_thread" | null {
+    if (value == "channel_text") return "channel_text"
+    if (value == "private_thread") return "private_thread"
+    return null
+}
+
+function numberOrNull(value: unknown) {
+    return typeof value == "number" && Number.isFinite(value) ? value : null
+}
+
+function stringOrNull(value: unknown) {
+    return typeof value == "string" && value.trim().length > 0 ? value.trim() : null
+}
 
 const BUILT_IN_TRANSCRIPT_STYLE_PRESETS: TranscriptStylePreset[] = [
     {
@@ -255,6 +288,75 @@ export class TranscriptServiceCore {
         return {
             ...result,
             items: result.items.map((item) => this.hydrateTranscript(item)!)
+        }
+    }
+
+    async listTicketAnalyticsHistory(query: TicketAnalyticsHistoryQuery): Promise<TicketAnalyticsHistoryResult> {
+        const empty = (warnings: string[] = []): TicketAnalyticsHistoryResult => ({
+            total: 0,
+            items: [],
+            warnings,
+            nextCursor: null,
+            truncated: false
+        })
+        if (!this.repository || !this.config) {
+            return empty(["Transcript analytics history is unavailable because the transcript service is not initialized."])
+        }
+
+        await this.normalizeExpiredLinks("list")
+        const limit = Math.max(1, Math.min(query.limit ?? 200, 500))
+        const offset = normalizeAnalyticsCursor(query.cursor)
+        const openedFrom = parseAnalyticsIsoMillis(query.openedFrom)
+        const openedTo = parseAnalyticsIsoMillis(query.openedTo)
+        const teamId = normalizeNullableAnalyticsString(query.teamId)
+        const assigneeId = normalizeNullableAnalyticsString(query.assigneeId)
+        const transportMode = normalizeAnalyticsTransport(query.transportMode)
+        const warnings: string[] = []
+        const result = await this.repository.listTranscriptAnalyticsCandidates({ limit, offset })
+        const { archiveRoot } = resolveTranscriptStoragePaths(this.config)
+        const items: TicketAnalyticsHistoryRecord[] = []
+
+        for (const transcript of result.items) {
+            if (!transcript.archivePath) {
+                warnings.push(`Transcript ${transcript.id} is missing archive metadata and was skipped.`)
+                continue
+            }
+
+            let document: LocalTranscriptDocument | null = null
+            try {
+                const safeArchivePath = ensurePathWithinRoot(archiveRoot, transcript.archivePath)
+                document = await this.readTranscriptDocument(path.join(safeArchivePath, "document.json"))
+            } catch {
+                document = null
+            }
+
+            if (!document?.ticket?.metadata) {
+                warnings.push(`Transcript ${transcript.id} is missing analytics-safe ticket metadata and was skipped.`)
+                continue
+            }
+
+            const record = this.mapTicketAnalyticsHistoryRecord(transcript, document)
+            if (!record) {
+                warnings.push(`Transcript ${transcript.id} has invalid analytics metadata and was skipped.`)
+                continue
+            }
+            if (openedFrom != null && (record.openedAt == null || record.openedAt < openedFrom)) continue
+            if (openedTo != null && (record.openedAt == null || record.openedAt >= openedTo)) continue
+            if (teamId && record.assignedTeamId !== teamId) continue
+            if (assigneeId && record.assignedStaffUserId !== assigneeId) continue
+            if (transportMode && record.transportMode !== transportMode) continue
+
+            items.push(record)
+        }
+
+        items.sort((left, right) => (right.openedAt ?? 0) - (left.openedAt ?? 0) || right.transcriptId.localeCompare(left.transcriptId))
+        const nextOffset = offset + result.items.length
+        return {
+            total: result.total,
+            items,
+            warnings,
+            nextCursor: nextOffset < result.total ? String(nextOffset) : null,
+            truncated: false
         }
     }
 
@@ -1878,6 +1980,26 @@ export class TranscriptServiceCore {
         }
 
         return []
+    }
+
+    private mapTicketAnalyticsHistoryRecord(transcript: TranscriptRecord, document: LocalTranscriptDocument): TicketAnalyticsHistoryRecord | null {
+        const metadata = document.ticket.metadata
+        if (!metadata) return null
+        const transportMode = normalizeAnalyticsTransport(metadata.transportMode)
+
+        return {
+            ticketId: stringOrNull(document.ticket.id),
+            transcriptId: transcript.id,
+            creatorId: stringOrNull(document.ticket.createdBy?.id) || transcript.creatorId || null,
+            openedAt: numberOrNull(document.ticket.createdOn),
+            closedAt: numberOrNull(document.ticket.closedOn),
+            resolvedAt: numberOrNull(metadata.resolvedAt),
+            firstStaffResponseAt: numberOrNull(metadata.firstStaffResponseAt),
+            assignedTeamId: stringOrNull(metadata.assignedTeamId),
+            assignedStaffUserId: stringOrNull(metadata.assignedStaffUserId),
+            transportMode,
+            transcriptStatus: transcript.status
+        }
     }
 
     private async readTranscriptDocument(documentPath: string): Promise<LocalTranscriptDocument | null> {

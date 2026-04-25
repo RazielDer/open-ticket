@@ -7,6 +7,7 @@ import type { AddressInfo } from "net"
 import type { Socket } from "net"
 
 import { createDashboardApp } from "../server/create-app"
+import { buildDashboardAnalyticsModel, medianDurationMs, p95DurationMs } from "../server/analytics"
 import type { DashboardConfig } from "../server/dashboard-config"
 import {
   defaultDashboardRuntimeBridge,
@@ -970,6 +971,115 @@ test("ticket workbench renders degraded read and write states instead of redirec
   await refreshResponse.arrayBuffer()
   assert.equal(refreshResponse.status, 302)
   assert.equal(redirectMessage(refreshResponse.headers.get("location")), "Ticket detail refreshed.")
+})
+
+test("analytics workspace is admin-only and degrades when transcript history is unavailable", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/analytics")
+  const adminAnalytics = await fetch(`${runtime.baseUrl}/dash/admin/analytics`, { headers: { cookie: admin.cookie } })
+  assert.equal(adminAnalytics.status, 200)
+  const html = await adminAnalytics.text()
+  assert.match(html, />Analytics</)
+  assert.match(html, /Current backlog/)
+  assert.match(html, /Transcript analytics history is unavailable/)
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/analytics")
+  assert.equal(editor.location, "/dash/visual/options")
+  const editorAnalytics = await fetch(`${runtime.baseUrl}/dash/admin/analytics`, {
+    headers: { cookie: editor.cookie },
+    redirect: "manual"
+  })
+  assert.equal(editorAnalytics.status, 302)
+  assert.equal(editorAnalytics.headers.get("location"), "/dash/visual/options")
+})
+
+test("analytics model normalizes UTC windows, computes SLA metrics, groups backlog, and dedupes live tickets over history", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({
+        id: "live-1",
+        openedOn: Date.parse("2026-04-20T10:00:00.000Z"),
+        firstStaffResponseAt: Date.parse("2026-04-20T10:10:00.000Z"),
+        resolvedAt: Date.parse("2026-04-20T11:00:00.000Z"),
+        assignedStaffUserId: "staff-1"
+      }),
+      ticket({
+        id: "outside",
+        openedOn: Date.parse("2026-03-01T10:00:00.000Z"),
+        assignedTeamId: "lead",
+        assignedStaffUserId: "staff-2"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const calls: unknown[] = []
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20", transport: "channel_text" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    transcriptService: {
+      async listTicketAnalyticsHistory(query) {
+        calls.push(query)
+        return {
+          total: 2,
+          warnings: [],
+          nextCursor: null,
+          truncated: false,
+          items: [
+            {
+              ticketId: "live-1",
+              transcriptId: "tr-live-1",
+              creatorId: "creator-1",
+              openedAt: Date.parse("2026-04-20T10:00:00.000Z"),
+              closedAt: Date.parse("2026-04-20T11:00:00.000Z"),
+              resolvedAt: Date.parse("2026-04-20T11:00:00.000Z"),
+              firstStaffResponseAt: Date.parse("2026-04-20T10:20:00.000Z"),
+              assignedTeamId: "triage",
+              assignedStaffUserId: "staff-archive",
+              transportMode: "channel_text",
+              transcriptStatus: "active"
+            },
+            {
+              ticketId: "archive-1",
+              transcriptId: "tr-archive-1",
+              creatorId: "creator-2",
+              openedAt: Date.parse("2026-04-20T12:00:00.000Z"),
+              closedAt: Date.parse("2026-04-20T14:00:00.000Z"),
+              resolvedAt: Date.parse("2026-04-20T14:00:00.000Z"),
+              firstStaffResponseAt: Date.parse("2026-04-20T12:30:00.000Z"),
+              assignedTeamId: "triage",
+              assignedStaffUserId: "staff-2",
+              transportMode: "channel_text",
+              transcriptStatus: "active"
+            }
+          ]
+        }
+      }
+    }
+  })
+
+  assert.equal(calls.length, 1)
+  assert.equal(model.request.openedFromMs, Date.parse("2026-04-20T00:00:00.000Z"))
+  assert.equal(model.request.openedToMs, Date.parse("2026-04-21T00:00:00.000Z"))
+  assert.equal(model.summaryCards[0].value, "2")
+  assert.equal(model.summaryCards[1].value, "2")
+  assert.equal(model.summaryCards[2].value, "20m")
+  assert.equal(model.summaryCards[3].value, "30m")
+  assert.equal(model.summaryCards[4].value, "1h 30m")
+  assert.equal(model.summaryCards[5].value, "2h")
+  assert.equal(model.backlogByTeam.find((row) => row.key === "triage")?.count, 1)
+  assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 2)
+})
+
+test("analytics duration helpers use fixed median and nearest-rank p95 math", () => {
+  assert.equal(medianDurationMs([30, 10, 20]), 20)
+  assert.equal(medianDurationMs([40, 10, 20, 30]), 25)
+  assert.equal(p95DurationMs([10, 20, 30, 40]), 40)
 })
 
 test("ticket workbench source boundaries preserve dashboard and bridge contracts", () => {

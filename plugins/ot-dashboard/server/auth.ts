@@ -45,6 +45,7 @@ export type DashboardCapability =
   | "config.write.visual"
   | "admin.shell"
   | "ticket.workbench"
+  | "analytics.view"
   | "transcript.view.global"
   | "transcript.manage"
   | "config.write.general"
@@ -235,6 +236,7 @@ function capabilitySetForTier(tier: DashboardAccessTier | null) {
   if (tier === "admin") {
     capabilities.push(
       "transcript.view.global",
+      "analytics.view",
       "transcript.manage",
       "config.write.general",
       "config.write.security",

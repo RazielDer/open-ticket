@@ -1,0 +1,219 @@
+<%
+  const historyUnavailable = analytics.historyState !== "available"
+  const renderBacklogRows = (rows, emptyKey) => { %>
+    <% if (rows.length) { %>
+      <% rows.forEach((row) => { %>
+        <tr>
+          <td><strong><%= row.label %></strong></td>
+          <td><%= row.count %></td>
+          <td><%= row.detail %></td>
+        </tr>
+      <% }) %>
+    <% } else { %>
+      <tr>
+        <td colspan="3"><%= t(emptyKey) %></td>
+      </tr>
+    <% } %>
+<% } %>
+<% const renderCohortRows = (rows) => { %>
+  <% if (historyUnavailable) { %>
+    <tr>
+      <td colspan="6"><%= t("analytics.page.historyUnavailable") %></td>
+    </tr>
+  <% } else if (rows.length) { %>
+    <% rows.forEach((row) => { %>
+      <tr>
+        <td><strong><%= row.label %></strong></td>
+        <td><%= row.count %></td>
+        <td>
+          <%= row.firstResponse.value %>
+          <% if (row.firstResponse.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+          <div class="field-help"><%= row.firstResponse.detail %></div>
+        </td>
+        <td><%= row.missingFirstResponse %></td>
+        <td>
+          <%= row.resolution.value %>
+          <% if (row.resolution.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+          <div class="field-help"><%= row.resolution.detail %></div>
+        </td>
+        <td><%= row.missingResolution %></td>
+      </tr>
+    <% }) %>
+  <% } else { %>
+    <tr>
+      <td colspan="6"><%= t("analytics.page.emptyCohort") %></td>
+    </tr>
+  <% } %>
+<% } %>
+
+<section class="section-card transcript-workspace-shell analytics-workspace-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("analytics.page.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("analytics.page.workspaceBody") %></p>
+    </div>
+  </div>
+
+  <% if (analytics.historyWarnings.length) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("analytics.page.degradedBadge") %></span>
+      <div>
+        <% analytics.historyWarnings.slice(0, 3).forEach((warning) => { %>
+          <p class="item-copy"><%= warning %></p>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell analytics-filter-shell" data-responsive-disclosure="analytics-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("analytics.page.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("analytics.page.filtersBody") %></p>
+    </div>
+    <% if (analytics.request.activeFilters.length) { %>
+      <span class="pill-tag"><%= t("analytics.page.activeFilterCount", { count: analytics.request.activeFilters.length }) %></span>
+    <% } %>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= analytics.filterAction %>" class="stack-form">
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.windowLabel") %></span>
+          <select class="select-input" name="window">
+            <% analytics.request.windowOptions.forEach((option) => { %>
+              <option value="<%= option %>" <%= analytics.request.window === option ? 'selected' : '' %>><%= t(`analytics.page.windows.${option}`) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.fromLabel") %></span>
+          <input class="text-input" type="date" name="from" value="<%= analytics.request.from %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.toLabel") %></span>
+          <input class="text-input" type="date" name="to" value="<%= analytics.request.to %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.transportLabel") %></span>
+          <select class="select-input" name="transport">
+            <% analytics.request.transportOptions.forEach((option) => { %>
+              <option value="<%= option %>" <%= analytics.request.transport === option ? 'selected' : '' %>><%= t(`analytics.page.transport.${option}`) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.teamLabel") %></span>
+          <input class="text-input" type="text" name="teamId" value="<%= analytics.request.teamId %>" placeholder="<%= t('analytics.page.filters.teamPlaceholder') %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("analytics.page.filters.assigneeLabel") %></span>
+          <input class="text-input" type="text" name="assigneeId" value="<%= analytics.request.assigneeId %>" placeholder="<%= t('analytics.page.filters.assigneePlaceholder') %>">
+        </label>
+      </div>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("analytics.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= analytics.clearFiltersHref %>"><%= t("analytics.page.filters.clearAction") %></a>
+        </div>
+        <% if (analytics.request.activeFilters.length) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("analytics.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% analytics.request.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.page.backlogByTeam") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th><%= t("analytics.page.table.group") %></th><th><%= t("analytics.page.table.open") %></th><th><%= t("analytics.page.table.detail") %></th></tr>
+      </thead>
+      <tbody><% renderBacklogRows(analytics.backlogByTeam, "analytics.page.emptyBacklog") %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.page.backlogByAssignee") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th><%= t("analytics.page.table.group") %></th><th><%= t("analytics.page.table.open") %></th><th><%= t("analytics.page.table.detail") %></th></tr>
+      </thead>
+      <tbody><% renderBacklogRows(analytics.backlogByAssignee, "analytics.page.emptyBacklog") %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.page.backlogByTransport") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th><%= t("analytics.page.table.group") %></th><th><%= t("analytics.page.table.open") %></th><th><%= t("analytics.page.table.detail") %></th></tr>
+      </thead>
+      <tbody><% renderBacklogRows(analytics.backlogByTransport, "analytics.page.emptyBacklog") %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.page.cohortByTeam") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.page.table.opened") %></th>
+          <th><%= t("analytics.page.table.firstResponse") %></th>
+          <th><%= t("analytics.page.table.missingFirstResponse") %></th>
+          <th><%= t("analytics.page.table.resolution") %></th>
+          <th><%= t("analytics.page.table.missingResolution") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderCohortRows(analytics.cohortByTeam) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.page.cohortByTransport") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.page.table.opened") %></th>
+          <th><%= t("analytics.page.table.firstResponse") %></th>
+          <th><%= t("analytics.page.table.missingFirstResponse") %></th>
+          <th><%= t("analytics.page.table.resolution") %></th>
+          <th><%= t("analytics.page.table.missingResolution") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderCohortRows(analytics.cohortByTransport) %></tbody>
+    </table>
+  </div>
+</section>
