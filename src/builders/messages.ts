@@ -3,7 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
-import { canShowRequestCloseButton, getTicketWorkflowState } from "../actions/ticketWorkflow.js"
+import { canShowRequestCloseButton, getTicketWorkflowState, resolveTicketWorkflowLock } from "../actions/ticketWorkflow.js"
 
 const messages = opendiscord.builders.messages
 const buttons = opendiscord.builders.buttons
@@ -745,7 +745,8 @@ const ticketMessages = () => {
             const workflowState = getTicketWorkflowState(ticket)
             if (!ticket.get("opendiscord:closed").value){
                 if (workflowState.closeRequestState == "requested"){
-                    instance.addComponent(await buttons.getSafe("opendiscord:cancel-close-request").build("ticket-message",{guild,channel,user,ticket}))
+                    const cancelLock = await resolveTicketWorkflowLock(ticket,"cancel-close-request")
+                    if (!cancelLock.locked) instance.addComponent(await buttons.getSafe("opendiscord:cancel-close-request").build("ticket-message",{guild,channel,user,ticket}))
                 }else if (await canShowRequestCloseButton(guild,channel as discord.GuildTextBasedChannel,ticket)){
                     instance.addComponent(await buttons.getSafe("opendiscord:request-close").build("ticket-message",{guild,channel,user,ticket}))
                 }

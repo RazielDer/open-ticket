@@ -287,6 +287,8 @@ export async function cancelTicketCloseRequest(guild: discord.Guild, channel: di
     const state = getTicketWorkflowState(ticket)
     if (!isTicketCurrentCreator(ticket,user.id)) throw new api.ODSystemError("Only the current ticket creator can cancel the close request.")
     if (state.closeRequestState != "requested") throw new api.ODSystemError("No close request is pending.")
+    const lock = await resolveTicketWorkflowLock(ticket,"cancel-close-request")
+    if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
     resetTicketCloseRequest(ticket)
     await sendWorkflowMessage("opendiscord:close-request-message","cancelled",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)

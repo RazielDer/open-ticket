@@ -21,6 +21,7 @@ export const DASHBOARD_TICKET_ACTION_IDS = [
 ] as const
 
 export type DashboardTicketActionId = (typeof DASHBOARD_TICKET_ACTION_IDS)[number]
+export type DashboardTicketProviderLockedActionId = DashboardTicketActionId | "request-close" | "cancel-close-request"
 
 export interface DashboardTicketActionAvailability {
   enabled: boolean
@@ -31,7 +32,7 @@ export interface DashboardTicketProviderLock {
   providerId: string
   title: string
   message: string
-  lockedActions: DashboardTicketActionId[]
+  lockedActions: DashboardTicketProviderLockedActionId[]
 }
 
 export interface DashboardTicketAssignableStaffChoice {
