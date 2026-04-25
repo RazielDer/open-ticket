@@ -19,9 +19,9 @@ import { ODPriorityLevel } from "../openticket/priority"
 export interface ODActionManagerIds_Default {
     "opendiscord:create-ticket-permissions":{
         source:"panel-button"|"panel-dropdown"|"slash"|"text"|"other",
-        params:{guild:discord.Guild,user:discord.User,option:ODTicketOption},
+        params:{guild:discord.Guild,user:discord.User,option:ODTicketOption,answers?:{id:string,name:string,type:"short"|"paragraph",value:string|null}[]},
         result:{valid:boolean,reason:"blacklist"|"cooldown"|"global-limit"|"global-user-limit"|"option-limit"|"option-user-limit"|"custom"|null,cooldownUntil?:Date,customReason?:string},
-        workers:"opendiscord:check-blacklist"|"opendiscord:check-cooldown"|"opendiscord:check-global-limits"|"opendiscord:check-option-limits"|"opendiscord:valid"
+        workers:"opendiscord:check-blacklist"|"opendiscord:check-cooldown"|"opendiscord:check-global-limits"|"opendiscord:check-option-limits"|"opendiscord:ticket-integration-eligibility"|"opendiscord:valid"
     },
     "opendiscord:create-transcript":{
         source:"slash"|"text"|"ticket-message"|"reopen-message"|"close-message"|"autoclose-message"|"autodelete"|"clear"|"other",

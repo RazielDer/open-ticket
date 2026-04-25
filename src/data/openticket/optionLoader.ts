@@ -67,6 +67,7 @@ export const loadTicketOption = (option:api.ODJsonConfig_DefaultOptionTicketType
         new api.ODOptionData("opendiscord:admins-readonly",option.readonlyAdmins),
         new api.ODOptionData("opendiscord:allow-blacklisted-users",option.allowCreationByBlacklistedUsers),
         new api.ODOptionData("opendiscord:questions",option.questions),
+        new api.ODOptionData("opendiscord:integration-profile",option.integrationProfileId ?? ""),
 
         new api.ODOptionData("opendiscord:channel-transport-mode",option.channel.transportMode ?? "channel_text"),
         new api.ODOptionData("opendiscord:channel-thread-parent",option.channel.threadParentChannel ?? ""),

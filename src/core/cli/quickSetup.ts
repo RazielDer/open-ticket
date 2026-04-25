@@ -1387,6 +1387,7 @@ async function saveQuickSetupConfig(){
             readonlyAdmins:[],
             allowCreationByBlacklistedUsers:false,
             questions:[],
+            integrationProfileId:"",
 
             channel:{
                 prefix:ticket.channelPrefix,

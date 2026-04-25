@@ -294,6 +294,9 @@ export function buildParityWarnings(id: ManagedConfigId) {
     "support-teams": [
       "Support-team edits are admin-only because team ids are referenced by ticket-option routing and escalation guards."
     ],
+    "integration-profiles": [
+      "Integration profile backups redact provider-declared secret settings. Restores keep existing secret values when a redacted placeholder is applied."
+    ],
     transcripts: [
       "Transcript styling changes can be extensive. Review the raw JSON before applying broad import or restore operations."
     ]

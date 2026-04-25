@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   ODTICKET_PLATFORM_METADATA_DEFAULTS,
   ODTICKET_PLATFORM_METADATA_IDS,
+  TICKET_PLATFORM_STOCK_ACTION_IDS,
   appendMissingTicketPlatformMetadataFields,
   clearTicketPlatformRuntimeApiForTests,
   createDefaultTicketPlatformMetadata,
@@ -37,6 +38,33 @@ test("ticket platform metadata helper keeps the locked ids and defaults", () => 
   })
 
   assert.deepEqual(createDefaultTicketPlatformMetadata(), ODTICKET_PLATFORM_METADATA_DEFAULTS)
+})
+
+test("ticket platform stock action ids stay fixed for provider locks", () => {
+  assert.deepEqual(TICKET_PLATFORM_STOCK_ACTION_IDS, [
+    "claim",
+    "unclaim",
+    "assign",
+    "escalate",
+    "move",
+    "transfer",
+    "add-participant",
+    "remove-participant",
+    "set-priority",
+    "set-topic",
+    "close",
+    "reopen",
+    "delete",
+    "pin",
+    "unpin",
+    "rename",
+    "request-close",
+    "cancel-close-request",
+    "approve-close-request",
+    "dismiss-close-request",
+    "set-awaiting-user",
+    "clear-awaiting-user"
+  ])
 })
 
 test("ticket platform metadata backfill appends only missing fields and preserves existing values", () => {
@@ -189,21 +217,32 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
   clearDashboardRuntimeRegistry()
 })
 
-test("descriptor-only ticket platform providers can register before the startup window seals", () => {
+test("executable ticket platform providers can register before the startup window seals", () => {
   clearTicketPlatformRuntimeApiForTests()
   const runtime = installTicketPlatformRuntimeApi()
 
   runtime.registerIntegrationProvider({
     id: "descriptor-provider",
     pluginId: "ot-descriptor-provider",
-    capabilities: ["eligibility", "status"]
+    capabilities: ["eligibility", "status"],
+    secretSettingKeys: ["sharedSecret", "apiToken", "sharedSecret"],
+    eligibility() {
+      return { allow: true, reason: null, degradedReason: null }
+    },
+    status() {
+      return { state: "ready", summary: null, lockedTicketActions: [], degradedReason: null }
+    }
   })
   runtime.registerAiAssistProvider({
     id: "descriptor-ai",
-    capabilities: ["summarize"]
+    capabilities: ["summarize"],
+    summarize() {
+      return null
+    }
   })
 
   assert.equal(runtime.getIntegrationProvider("descriptor-provider")?.pluginId, "ot-descriptor-provider")
+  assert.deepEqual(runtime.getIntegrationProvider("descriptor-provider")?.secretSettingKeys, ["sharedSecret", "apiToken"])
   assert.deepEqual(runtime.listIntegrationProviders().map((provider) => provider.id), ["descriptor-provider"])
   assert.deepEqual(runtime.listAiAssistProviders().map((provider) => provider.id), ["descriptor-ai"])
 
@@ -235,12 +274,18 @@ test("ticket platform provider registration rejects capability-hook drift and du
 
   runtime.registerIntegrationProvider({
     id: "stable-provider",
-    capabilities: ["eligibility"]
+    capabilities: ["eligibility"],
+    eligibility() {
+      return { allow: true, reason: null, degradedReason: null }
+    }
   })
 
   assert.throws(() => runtime.registerIntegrationProvider({
     id: "stable-provider",
-    capabilities: ["eligibility"]
+    capabilities: ["eligibility"],
+    eligibility() {
+      return { allow: true, reason: null, degradedReason: null }
+    }
   }), /already registered/i)
   assert.deepEqual(runtime.listIntegrationProviders().map((provider) => provider.id), ["stable-provider"])
 

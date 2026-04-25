@@ -7,6 +7,7 @@ import {
   normalizeDashboardPublicBaseUrl,
   type DashboardConfig
 } from "./dashboard-config"
+import { getTicketPlatformRuntimeApi } from "../../../src/core/api/openticket/ticket-platform"
 import {
   assertOneOf,
   EMOJI_STYLES,
@@ -90,6 +91,8 @@ function ensureDirectory(directory: string) {
 function generateWorkspaceRecordId(prefix: string) {
   return `${prefix}-${new Date().toISOString().replace(/[:.]/g, "-")}`
 }
+
+const INTEGRATION_SECRET_REDACTION = "__OPEN_TICKET_REDACTED_SECRET__"
 
 interface DashboardTranscriptHtmlStyleDraftShape {
   background: {
@@ -565,6 +568,7 @@ function normalizeTicketOption(option: any) {
     readonlyAdmins: [],
     allowCreationByBlacklistedUsers: false,
     questions: [],
+    integrationProfileId: "",
     channel: {
       prefix: "ticket-",
       suffix: "user-name",
@@ -660,6 +664,7 @@ function normalizeTicketOption(option: any) {
   normalized.ticketAdmins = parseStringArray(normalized.ticketAdmins)
   normalized.readonlyAdmins = parseStringArray(normalized.readonlyAdmins)
   normalized.questions = parseStringArray(normalized.questions)
+  normalized.integrationProfileId = ensureString(normalized.integrationProfileId, "").trim()
   normalized.allowCreationByBlacklistedUsers = ensureBoolean(normalized.allowCreationByBlacklistedUsers)
 
   assertPlainObject(normalized.channel, "Ticket channel")
@@ -719,6 +724,34 @@ function normalizeTicketOption(option: any) {
   return normalized
 }
 
+function normalizeIntegrationProfile(profile: any) {
+  const normalized: any = deepMerge(
+    {
+      id: profile.id || slugify(profile.label || `integration-profile-${Date.now()}`),
+      providerId: "",
+      label: profile.label || "",
+      enabled: true,
+      settings: {}
+    },
+    profile
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.providerId = ensureString(normalized.providerId, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.enabled = ensureBoolean(normalized.enabled)
+  normalized.settings = isPlainObject(normalized.settings) ? normalized.settings : {}
+
+  if (!normalized.id) {
+    throw new Error("Integration profile ID is required.")
+  }
+  if (!normalized.providerId) {
+    throw new Error("Integration profile providerId is required.")
+  }
+
+  return normalized
+}
+
 function normalizeRoleOption(option: any) {
   const normalized: any = deepMerge(
     {
@@ -739,6 +772,7 @@ function normalizeRoleOption(option: any) {
   delete normalized.transcripts
   delete normalized.routing
   delete normalized.workflow
+  delete normalized.integrationProfileId
 
   return normalized
 }
@@ -756,6 +790,7 @@ function normalizeWebsiteOption(option: any) {
   delete normalized.transcripts
   delete normalized.routing
   delete normalized.workflow
+  delete normalized.integrationProfileId
 
   return normalized
 }
@@ -907,6 +942,7 @@ export interface DashboardEditorDependencyGraph {
   optionPanels: Record<string, DashboardReferenceItem[]>
   questionOptions: Record<string, DashboardReferenceItem[]>
   supportTeamOptions: Record<string, DashboardReferenceItem[]>
+  integrationProfileOptions: Record<string, DashboardReferenceItem[]>
 }
 
 export class DashboardConfigOperationError extends Error {
@@ -998,7 +1034,29 @@ function buildSupportTeamOptionReferences(options: any[]): Record<string, Dashbo
   return references
 }
 
-function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team", duplicateId: string) {
+function buildIntegrationProfileOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const integrationProfileId = ensureString(option.integrationProfileId, "").trim()
+    if (!integrationProfileId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[integrationProfileId] = references[integrationProfileId] || []
+    references[integrationProfileId].push(reference)
+  })
+
+  return references
+}
+
+function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team" | "integration profile", duplicateId: string) {
   const codeKind = kind.toUpperCase().replace(/\s+/g, "_")
   return new DashboardConfigOperationError(
     `${kind[0].toUpperCase()}${kind.slice(1)} ID "${duplicateId}" already exists.`,
@@ -1008,7 +1066,7 @@ function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support 
 }
 
 function buildReferenceGuardError(
-  kind: "option" | "question" | "support team",
+  kind: "option" | "question" | "support team" | "integration profile",
   action: "delete" | "rename",
   currentId: string,
   references: DashboardReferenceItem[],
@@ -1027,7 +1085,9 @@ function buildReferenceGuardError(
       ? "Remove this option from the listed panels first, then try again."
       : kind === "question"
         ? "Remove this question from the listed options first, then try again."
-        : "Remove this support team from the listed ticket option routes first, then try again.",
+        : kind === "support team"
+          ? "Remove this support team from the listed ticket option routes first, then try again."
+          : "Remove this integration profile from the listed ticket options first, then try again.",
     references
   )
 }
@@ -1039,6 +1099,7 @@ export interface DashboardConfigService {
   definitions: ManagedConfigDefinition[]
   getFilePath: (id: ManagedConfigId) => string
   readManagedText: (id: ManagedConfigId) => string
+  readManagedBackupText: (id: ManagedConfigId) => string
   readManagedJson: <T>(id: ManagedConfigId) => T
   writeManagedJson: (id: ManagedConfigId, value: unknown) => void
   prettifyText: (text: string) => string
@@ -1047,6 +1108,7 @@ export interface DashboardConfigService {
   getAvailableOptions: () => Array<{ id: string; name: string; emoji: string; type: string; description: string }>
   listAvailableQuestions: () => Array<{ id: string; name: string; type: string; required: boolean }>
   listAvailableSupportTeams: () => Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }>
+  listAvailableIntegrationProfiles: () => Array<{ id: string; providerId: string; label: string; enabled: boolean }>
   getEditorDependencyGraph: () => DashboardEditorDependencyGraph
   normalizeGeneralDraft: (body: Record<string, unknown>, fallback?: Record<string, unknown> | null) => Record<string, unknown>
   inspectGeneralGlobalAdmins: (input: unknown) => DashboardGeneralGlobalAdminsDraftState
@@ -1061,11 +1123,11 @@ export interface DashboardConfigService {
   saveQuestion: (question: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   saveSupportTeam: (team: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   reorderArrayItems: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles">,
     orderedIds: string[]
   ) => { success: true; count: number; orderedIds: string[]; items: Record<string, unknown>[] }
   deleteArrayItem: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles">,
     index: number
   ) => { success: true; count: number; removedId: string; items: Record<string, unknown>[] }
   readDashboardPluginConfig: () => Partial<DashboardConfig>
@@ -1110,7 +1172,7 @@ export function createConfigService(
 
   const readManagedText = (id: ManagedConfigId): string => {
     const filePath = getFilePath(id)
-    if (id === "support-teams" && !fs.existsSync(filePath)) {
+    if ((id === "support-teams" || id === "integration-profiles") && !fs.existsSync(filePath)) {
       return "[]\n"
     }
     return fs.readFileSync(filePath, "utf8")
@@ -1120,10 +1182,59 @@ export function createConfigService(
     return JSON.parse(readManagedText(id)) as T
   }
 
+  const integrationProviderSecretKeys = (providerId: string): string[] => {
+    const provider = getTicketPlatformRuntimeApi()?.getIntegrationProvider(providerId) ?? null
+    return Array.isArray(provider?.secretSettingKeys)
+      ? provider.secretSettingKeys.map((key) => String(key || "").trim()).filter(Boolean)
+      : []
+  }
+
+  const redactIntegrationProfileSecrets = (profiles: unknown): unknown => {
+    if (!Array.isArray(profiles)) return profiles
+    return profiles.map((entry) => {
+      const profile = normalizeIntegrationProfile(entry)
+      const secretKeys = integrationProviderSecretKeys(profile.providerId)
+      for (const key of secretKeys) {
+        if (Object.prototype.hasOwnProperty.call(profile.settings, key)) {
+          profile.settings[key] = INTEGRATION_SECRET_REDACTION
+        }
+      }
+      return profile
+    })
+  }
+
+  const mergeRedactedIntegrationProfileSecrets = (profiles: unknown): unknown => {
+    if (!Array.isArray(profiles)) return profiles
+    let currentProfiles: any[] = []
+    try {
+      currentProfiles = readManagedJson<any[]>("integration-profiles")
+    } catch {
+      currentProfiles = []
+    }
+    const currentById = new Map(currentProfiles.map((profile) => [String(profile?.id || ""), profile]))
+    return profiles.map((entry) => {
+      const profile = normalizeIntegrationProfile(entry)
+      const current = currentById.get(profile.id)
+      const currentSettings = isPlainObject(current?.settings) ? current.settings : {}
+      for (const key of integrationProviderSecretKeys(profile.providerId)) {
+        if (profile.settings[key] === INTEGRATION_SECRET_REDACTION && Object.prototype.hasOwnProperty.call(currentSettings, key)) {
+          profile.settings[key] = currentSettings[key]
+        }
+      }
+      return profile
+    })
+  }
+
+  const readManagedBackupText = (id: ManagedConfigId): string => {
+    if (id !== "integration-profiles") return readManagedText(id)
+    return JSON.stringify(redactIntegrationProfileSecrets(readManagedJson<unknown>("integration-profiles")), null, 2) + "\n"
+  }
+
   const writeManagedJson = (id: ManagedConfigId, value: unknown): void => {
     const filePath = getFilePath(id)
     const tempPath = `${filePath}.tmp`
-    fs.writeFileSync(tempPath, JSON.stringify(value, null, 2) + "\n", "utf8")
+    const writableValue = id === "integration-profiles" ? mergeRedactedIntegrationProfileSecrets(value) : value
+    fs.writeFileSync(tempPath, JSON.stringify(writableValue, null, 2) + "\n", "utf8")
     fs.renameSync(tempPath, filePath)
   }
 
@@ -1152,11 +1263,30 @@ export function createConfigService(
         }
       }
     }
+    if (id === "integration-profiles") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("integration-profiles.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((profile: any) => String(profile?.id || "").trim()).filter(Boolean))
+      const references = buildIntegrationProfileOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("integration-profiles")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("integration profile", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map(normalizeIntegrationProfile)
+      writeManagedJson(id, normalized)
+      return normalized
+    }
     if (id === "options") {
       if (!Array.isArray(parsed)) {
         throw new Error("options.json must be an array.")
       }
       validateOptionRoutingReferences(parsed)
+      validateOptionIntegrationReferences(parsed)
     }
     writeManagedJson(id, parsed)
     return parsed
@@ -1425,6 +1555,16 @@ export function createConfigService(
     }))
   }
 
+  const listAvailableIntegrationProfiles = (): Array<{ id: string; providerId: string; label: string; enabled: boolean }> => {
+    const profiles = readManagedJson<any[]>("integration-profiles")
+    return profiles.map((profile) => ({
+      id: String(profile.id || ""),
+      providerId: String(profile.providerId || ""),
+      label: String(profile.label || profile.id || "Integration profile"),
+      enabled: profile.enabled === true
+    }))
+  }
+
   const getEditorDependencyGraph = (): DashboardEditorDependencyGraph => {
     const options = readManagedJson<any[]>("options")
     const panels = readManagedJson<any[]>("panels")
@@ -1432,13 +1572,14 @@ export function createConfigService(
     return {
       optionPanels: buildOptionPanelReferences(panels),
       questionOptions: buildQuestionOptionReferences(options),
-      supportTeamOptions: buildSupportTeamOptionReferences(options)
+      supportTeamOptions: buildSupportTeamOptionReferences(options),
+      integrationProfileOptions: buildIntegrationProfileOptionReferences(options)
     }
   }
 
   const ensureUniqueArrayId = (
     items: any[],
-    kind: "option" | "panel" | "question" | "support team",
+    kind: "option" | "panel" | "question" | "support team" | "integration profile",
     candidateId: string,
     currentIndex = -1
   ) => {
@@ -1512,6 +1653,23 @@ export function createConfigService(
           )
         }
       }
+    }
+  }
+
+  const validateOptionIntegrationReferences = (items: any[]) => {
+    const integrationProfileIds = new Set(readManagedJson<any[]>("integration-profiles").map((profile) => String(profile.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+
+    for (const option of ticketOptions) {
+      const integrationProfileId = ensureString(option.integrationProfileId, "").trim()
+      if (!integrationProfileId || integrationProfileIds.has(integrationProfileId)) continue
+      throw new DashboardConfigOperationError(
+        `Ticket option "${option.id}" references unknown integration profile "${integrationProfileId}".`,
+        "OPTION_UNKNOWN_INTEGRATION_PROFILE",
+        "Create the integration profile first or leave integrationProfileId empty.",
+        [],
+        400
+      )
     }
   }
 
@@ -1731,6 +1889,7 @@ export function createConfigService(
     definitions: MANAGED_CONFIGS,
     getFilePath,
     readManagedText,
+    readManagedBackupText,
     readManagedJson,
     writeManagedJson,
     prettifyText,
@@ -1739,6 +1898,7 @@ export function createConfigService(
     getAvailableOptions,
     listAvailableQuestions,
     listAvailableSupportTeams,
+    listAvailableIntegrationProfiles,
     getEditorDependencyGraph,
     normalizeGeneralDraft,
     inspectGeneralGlobalAdmins(input) {
@@ -1772,6 +1932,7 @@ export function createConfigService(
         ensureUniqueArrayId(items, "option", nextId, editIndex)
         items[editIndex] = normalized
         validateOptionRoutingReferences(items)
+        validateOptionIntegrationReferences(items)
         writeManagedJson("options", items)
         return {
           success: true as const,
@@ -1789,6 +1950,7 @@ export function createConfigService(
       ensureUniqueArrayId(items, "option", nextId)
       items.push(normalized)
       validateOptionRoutingReferences(items)
+      validateOptionIntegrationReferences(items)
       writeManagedJson("options", items)
       return {
         success: true as const,
@@ -2006,6 +2168,13 @@ export function createConfigService(
         const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
         if (references.length > 0) {
           throw buildReferenceGuardError("support team", "delete", removedId, references)
+        }
+      }
+
+      if (id === "integration-profiles") {
+        const references = buildIntegrationProfileOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("integration profile", "delete", removedId, references)
         }
       }
 

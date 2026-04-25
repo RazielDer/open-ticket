@@ -5,6 +5,8 @@ if (utilities.project != "openticket") throw new api.ODPluginError("This plugin 
 
 const DEFAULT_SERVER_ID = "1433418426029834305"
 const WHITELIST_OPTION_ID = "whitelist-application-ticket-81642e12"
+const WHITELIST_INTEGRATION_PROFILE_ID = "eotfs-whitelist"
+const WHITELIST_BRIDGE_PROVIDER_ID = "ot-eotfs-bridge"
 const DEFAULT_WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ID = "1489383064810553480"
 const WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ENV = "EOTFS_OT_WHITELIST_TRANSCRIPT_CHANNEL_ID"
 const WHITELIST_CANONICAL_STAFF_GUILD_ENV = "EOTFS_OT_WHITELIST_CANONICAL_STAFF_GUILD_ID"
@@ -52,6 +54,7 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
     readonlyAdmins:[],
     allowCreationByBlacklistedUsers:false,
     questions:[],
+    integrationProfileId:WHITELIST_INTEGRATION_PROFILE_ID,
 
     channel:{
         transportMode:"channel_text",
@@ -445,11 +448,49 @@ const sanitizeBridgeConfig = () => {
     }
 }
 
+const sanitizeIntegrationProfilesConfig = () => {
+    const profilesConfig = opendiscord.configs.get("opendiscord:integration-profiles")
+    const bridgeConfig = opendiscord.configs.get("ot-eotfs-bridge:config")
+    if (!profilesConfig || !Array.isArray(profilesConfig.data) || !bridgeConfig || typeof bridgeConfig.data != "object" || !bridgeConfig.data) return
+
+    const bridge = bridgeConfig.data as Record<string, unknown>
+    const profile = {
+        id:WHITELIST_INTEGRATION_PROFILE_ID,
+        providerId:WHITELIST_BRIDGE_PROVIDER_ID,
+        label:"EoTFS whitelist intake",
+        enabled:true,
+        settings:{
+            integrationId:typeof bridge.integrationId == "string" ? bridge.integrationId : "local-whitelist-intake",
+            endpointBaseUrl:typeof bridge.endpointBaseUrl == "string" ? bridge.endpointBaseUrl : "",
+            sharedSecret:typeof bridge.sharedSecret == "string" ? bridge.sharedSecret : "",
+            eligibleOptionIds:[WHITELIST_OPTION_ID],
+            formId:typeof bridge.formId == "string" ? bridge.formId : "whitelist-review-form",
+            targetGroupKey:typeof bridge.targetGroupKey == "string" ? bridge.targetGroupKey : "community_mirror",
+            authorizedRoleIds:Array.isArray(bridge.authorizedRoleIds) ? bridge.authorizedRoleIds.filter((value) => typeof value == "string") : [],
+            canonicalStaffGuildId:typeof bridge.canonicalStaffGuildId == "string" ? bridge.canonicalStaffGuildId : null,
+            formContract:bridge.formContract && typeof bridge.formContract == "object" && !Array.isArray(bridge.formContract)
+                ? bridge.formContract
+                : {
+                    discordUsernamePosition:1,
+                    alderonIdsPosition:2,
+                    rulesPasswordPosition:19,
+                    requiredAcknowledgementPositions:[5,6,7,8,9,17,18]
+                }
+        }
+    }
+
+    const index = profilesConfig.data.findIndex((entry:any) => entry && typeof entry == "object" && entry.id == WHITELIST_INTEGRATION_PROFILE_ID)
+    if (index >= 0) profilesConfig.data[index] = profile
+    else profilesConfig.data.unshift(profile)
+    opendiscord.log("Whitelist integration profile is managed by local runtime config.", "plugin")
+}
+
 opendiscord.events.get("afterConfigsInitiated").listen(() => {
     sanitizeGeneralConfig()
     sanitizeOptionsConfig()
     sanitizePanelsConfig()
     sanitizeTranscriptsConfig()
     sanitizeBridgeConfig()
+    sanitizeIntegrationProfilesConfig()
     opendiscord.log("Applied local runtime config overrides.","plugin")
 })

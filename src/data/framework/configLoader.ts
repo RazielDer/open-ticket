@@ -30,6 +30,7 @@ export const loadAllConfigs = async () => {
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultOptionsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultPanelsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultSupportTeamsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:integration-profiles","integration-profiles.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultIntegrationProfilesFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultTranscriptsFormatter))
 }
 
@@ -208,6 +209,7 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.ArrayFormatter("readonlyAdmins",false,new fjs.PropertyFormatter(null)),
         new fjs.PropertyFormatter("allowCreationByBlacklistedUsers"),
         new fjs.ArrayFormatter("questions",false,new fjs.PropertyFormatter(null)),
+        new fjs.PropertyFormatter("integrationProfileId"),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("channel",true,[
             new fjs.PropertyFormatter("transportMode"),
@@ -348,6 +350,14 @@ export const defaultSupportTeamsFormatter = new fjs.ArrayFormatter(null,true,new
     new fjs.PropertyFormatter("name"),
     new fjs.ArrayFormatter("roleIds",false,new fjs.PropertyFormatter(null)),
     new fjs.PropertyFormatter("assignmentStrategy"),
+]))
+
+export const defaultIntegrationProfilesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("providerId"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("enabled"),
+    new fjs.DefaultFormatter("settings",true),
 ]))
 
 export const defaultPanelsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[

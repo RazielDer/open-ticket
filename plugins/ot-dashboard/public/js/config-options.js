@@ -5,9 +5,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const options = ui.readJson("options-data", []);
   const availableQuestions = ui.readJson("available-questions-data", []);
   const supportTeams = ui.readJson("support-teams-data", []);
+  const integrationProfiles = ui.readJson("integration-profiles-data", []);
   const dependencyGraph = ui.readJson("dependency-graph-data", {
     optionPanels: {},
-    questionOptions: {}
+    questionOptions: {},
+    supportTeamOptions: {},
+    integrationProfileOptions: {}
   });
   const messages = ui.readJson("page-messages", {});
   const form = document.getElementById("optionForm");
@@ -54,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
     transcriptRoutingHelper: document.getElementById("transcriptRoutingHelper"),
     routingSupportTeamId: document.getElementById("routingSupportTeamId"),
     routingEscalationTargetIds: document.getElementById("routingEscalationTargetIds"),
+    integrationProfileId: document.getElementById("integrationProfileId"),
     workflowCloseRequestEnabled: document.getElementById("workflowCloseRequestEnabled"),
     workflowAwaitingUserEnabled: document.getElementById("workflowAwaitingUserEnabled"),
     workflowAwaitingUserReminderEnabled: document.getElementById("workflowAwaitingUserReminderEnabled"),
@@ -96,6 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const channelSuffixes = Array.from(fields.channelSuffix?.options || []).map((option) => option.value);
   const roleModes = Array.from(fields.roleMode?.options || []).map((option) => option.value);
   const supportTeamIds = new Set(supportTeams.map((team) => String(team.id || "")));
+  const integrationProfileIds = new Set(integrationProfiles.map((profile) => String(profile.id || "")));
   const questionCheckboxes = Array.from(document.querySelectorAll("[data-question-id]"));
   const questionById = new Map(availableQuestions.map((question) => [String(question.id), question]));
   const inventoryButtons = Array.from(document.querySelectorAll("[data-option-select]"));
@@ -341,6 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.transcriptChannels.value = ui.stringifyList(buildDefaultTranscriptRouting().channels);
     fields.routingSupportTeamId.value = "";
     fields.routingEscalationTargetIds.value = "[]";
+    fields.integrationProfileId.value = "";
     fields.workflowCloseRequestEnabled.checked = false;
     fields.workflowAwaitingUserEnabled.checked = false;
     fields.workflowAwaitingUserReminderEnabled.checked = false;
@@ -393,6 +399,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.transcriptChannels.value = ui.stringifyList(option.transcripts?.channels || []);
     fields.routingSupportTeamId.value = option.routing?.supportTeamId || "";
     fields.routingEscalationTargetIds.value = ui.stringifyList(option.routing?.escalationTargetOptionIds || []);
+    fields.integrationProfileId.value = option.integrationProfileId || "";
     fields.workflowCloseRequestEnabled.checked = Boolean(option.workflow?.closeRequest?.enabled);
     fields.workflowAwaitingUserEnabled.checked = Boolean(option.workflow?.awaitingUser?.enabled);
     fields.workflowAwaitingUserReminderEnabled.checked = Boolean(option.workflow?.awaitingUser?.reminderEnabled);
@@ -494,6 +501,11 @@ document.addEventListener("DOMContentLoaded", () => {
         supportTeamId: routingSupportTeamId,
         escalationTargetOptionIds: ui.parseList(fields.routingEscalationTargetIds.value)
       };
+      const integrationProfileId = fields.integrationProfileId.value.trim();
+      if (integrationProfileId && !integrationProfileIds.has(integrationProfileId)) {
+        throw new Error(messages["options.flash.validationIntegrationProfile"] || "Choose an existing integration profile.");
+      }
+      option.integrationProfileId = integrationProfileId;
       option.workflow = {
         closeRequest: {
           enabled: fields.workflowCloseRequestEnabled.checked

@@ -11,6 +11,7 @@ import {
     getTicketOptionTransportMode
 } from "./ticketTransport.js"
 import { buildTicketRoutingMetadata, getTicketOptionSupportTeamRoleIds } from "./ticketRouting.js"
+import { getTicketOptionIntegrationProfileId } from "./ticketIntegration.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -237,7 +238,8 @@ export const registerActions = async () => {
                 new api.ODTicketData("opendiscord:admin-message-sent",false),
                 ...api.createTicketPlatformMetadataEntries({
                     ...buildTicketTransportMetadata(option,transportParentChannelId),
-                    ...routingMetadata
+                    ...routingMetadata,
+                    integrationProfileId:getTicketOptionIntegrationProfileId(option) || null
                 })
             ])
 

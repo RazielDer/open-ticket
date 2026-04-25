@@ -116,6 +116,10 @@
         "title": "Support teams",
         "description": "Admin-only team ownership, role membership, assignment strategy, and route escalation bindings."
       },
+      "integrationProfiles": {
+        "title": "Integration profiles",
+        "description": "Provider-owned ticket integration profiles, secret-aware settings, and option bindings."
+      },
       "transcripts": {
         "title": "Transcripts",
         "description": "Delivery targets, transcript modes, text layouts, HTML styling, and favicon behavior."
@@ -479,6 +483,7 @@
           "options": "Edit the raw Options configuration file.",
           "panels": "Edit the raw Panels configuration file.",
           "questions": "Edit the raw Questions configuration file.",
+          "integration-profiles": "Edit the raw Integration Profiles configuration file.",
           "transcripts": "Edit the raw Transcripts configuration file."
         }
       },
@@ -746,6 +751,8 @@
       "ticketAutomationBody": "Keep inactivity, limits, and cooldown controls together.",
       "workflowTitle": "Close request and awaiting user",
       "workflowBody": "Configure creator close requests and staff-controlled awaiting-user reminders.",
+      "integrationTitle": "Integration profile",
+      "integrationBody": "Bind this ticket option to one generic integration provider profile.",
       "questionPickerTitle": "Question assignment",
       "questionPickerBody": "Use the structured picker so coverage stays visible while you edit.",
       "questionPickerEmptyTitle": "No reusable questions yet",
@@ -784,6 +791,8 @@
       "backupCategoryId": "Backup category ID",
       "supportTeamId": "Support team",
       "legacyRoleRouting": "Legacy role-only routing",
+      "integrationProfileId": "Integration profile",
+      "noIntegrationProfile": "No integration profile",
       "escalationTargets": "Escalation target option IDs",
       "escalationTargetsHelp": "Enter comma-separated, newline-separated, or JSON-array ticket option IDs. Targets must use the same transport and have a support team.",
       "useGlobalTranscriptDefault": "Use global transcript default",
@@ -845,6 +854,7 @@
       "validationRoleMode": "Choose a valid role mode.",
       "validationMessageJson": "Advanced message settings must be valid JSON objects.",
       "validationRoutingTargets": "Choose an existing support team and valid escalation target option IDs.",
+      "validationIntegrationProfile": "Choose an existing integration profile.",
       "validationWorkflowHours": "Awaiting-user timeout hours must be greater than reminder hours."
     }
   },
@@ -1106,6 +1116,11 @@
       "factsTitle": "Ticket facts",
       "actionsTitle": "Actions",
       "operatorWorkflowsTitle": "Operator workflows",
+      "integrationTitle": "Integration",
+      "integrationProfile": "Profile",
+      "integrationProvider": "Provider",
+      "integrationSummary": "Summary",
+      "integrationLockedActions": "Locked actions",
       "missingOption": "Missing option",
       "missingPanel": "Missing panel",
       "noTeam": "No team",

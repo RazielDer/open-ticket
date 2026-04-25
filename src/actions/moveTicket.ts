@@ -5,6 +5,7 @@ import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
 import { PRIVATE_THREAD_ACCESS_WARNING, validateTicketMoveTransport } from "./ticketTransport.js"
 import { applyTicketRoutingAssignment, getTicketOptionSupportTeamRoleIds } from "./ticketRouting.js"
+import { setTicketIntegrationProfileIdFromOption } from "./ticketIntegration.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -37,6 +38,7 @@ export const registerActions = async () => {
             }
             const previousOption = ticket.option
             ticket.option = data
+            setTicketIntegrationProfileIdFromOption(ticket,ticket.option)
             await applyTicketRoutingAssignment(ticket,guild,ticket.option)
             const permissionLoader = await import("../data/framework/permissionLoader.js")
             await permissionLoader.removeTicketPermissions(ticket,previousOption)

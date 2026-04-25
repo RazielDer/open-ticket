@@ -149,6 +149,7 @@ export interface ODTicketOptionIds {
     "opendiscord:admins-readonly":ODOptionData<string[]>,
     "opendiscord:allow-blacklisted-users":ODOptionData<boolean>,
     "opendiscord:questions":ODOptionData<string[]>,
+    "opendiscord:integration-profile":ODOptionData<string>,
     
     "opendiscord:channel-transport-mode":ODOptionData<"channel_text"|"private_thread">,
     "opendiscord:channel-thread-parent":ODOptionData<string>,

@@ -88,6 +88,7 @@ const main = async () => {
     //load plugin classes
     opendiscord.log("Loading plugin classes...","system")
     if (opendiscord.defaults.getDefault("pluginClassLoading")){
+        await (await import("./actions/ticketIntegration.js")).registerPluginClasses()
 
     }
     await opendiscord.events.get("onPluginClassLoad").emit([opendiscord.plugins.classes,opendiscord.plugins])
@@ -769,6 +770,7 @@ const main = async () => {
         await (await import("./actions/updateTicketPriority.js")).registerActions()
         await (await import("./actions/transferTicket.js")).registerActions()
         await (await import("./actions/ticketWorkflow.js")).registerActions()
+        await (await import("./actions/ticketIntegration.js")).registerActions()
     }
     await opendiscord.events.get("onActionLoad").emit([opendiscord.actions])
     await opendiscord.events.get("afterActionsLoaded").emit([opendiscord.actions])

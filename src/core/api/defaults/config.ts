@@ -37,6 +37,7 @@ export interface ODConfigManagerIds_Default {
     "opendiscord:options":ODJsonConfig_DefaultOptions,
     "opendiscord:panels":ODJsonConfig_DefaultPanels,
     "opendiscord:support-teams":ODJsonConfig_DefaultSupportTeams,
+    "opendiscord:integration-profiles":ODJsonConfig_DefaultIntegrationProfiles,
     "opendiscord:transcripts":ODJsonConfig_DefaultTranscripts
 }
 
@@ -479,6 +480,8 @@ export interface ODJsonConfig_DefaultOptionTicketType extends ODJsonConfig_Defau
     allowCreationByBlacklistedUsers:boolean,
     /**A list of valid question ids from the `questions.json` config. */
     questions:string[],
+    /**The integration profile bound to this ticket option. Empty disables generic provider integration. */
+    integrationProfileId:string,
     /**All settings related to the ticket channel itself. */
     channel:ODJsonConfig_DefaultOptionTicketChannelType,
     /**All settings related to support-team ownership and escalation targets. */
@@ -616,6 +619,34 @@ export type ODJsonConfig_DefaultSupportTeamsData = ODJsonConfig_DefaultSupportTe
  */
 export class ODJsonConfig_DefaultSupportTeams extends ODJsonConfig {
     declare data: ODJsonConfig_DefaultSupportTeamsData
+}
+
+/**## ODJsonConfig_DefaultIntegrationProfileType `interface`
+ * A named integration provider profile that ticket options can bind to.
+ */
+export interface ODJsonConfig_DefaultIntegrationProfileType {
+    /**Unique integration profile id. */
+    id:string,
+    /**The runtime integration provider id. */
+    providerId:string,
+    /**Human-readable profile label. */
+    label:string,
+    /**When disabled, bound ticket creation fails closed at runtime. */
+    enabled:boolean,
+    /**Provider-owned profile settings. */
+    settings:Record<string, unknown>
+}
+
+/**## ODJsonConfig_DefaultIntegrationProfilesData `type`
+ * All contents of the `integration-profiles.json` config file.
+ */
+export type ODJsonConfig_DefaultIntegrationProfilesData = ODJsonConfig_DefaultIntegrationProfileType[]
+
+/**## ODJsonConfig_DefaultIntegrationProfiles `default_class`
+ * This default class is made for the `integration-profiles.json` config!
+ */
+export class ODJsonConfig_DefaultIntegrationProfiles extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultIntegrationProfilesData
 }
 
 /**## ODJsonConfig_DefaultPanelEmbedSettingsType `interface`

@@ -5,6 +5,11 @@ import os from "os"
 import path from "path"
 
 import { createConfigService } from "../server/config-service"
+import { createBackupService } from "../server/backup-service"
+import {
+  clearTicketPlatformRuntimeApiForTests,
+  installTicketPlatformRuntimeApi
+} from "../../../src/core/api/openticket/ticket-platform.js"
 
 const generalGlobalAdminIds = ["123456789012345678", "234567890123456789"]
 
@@ -169,7 +174,8 @@ function createFixtureRoot() {
         inactiveDays: 7,
         enableUserLeave: false,
         disableOnClaim: true
-      }
+      },
+      integrationProfileId: "profile-1"
     },
     {
       id: "role-1",
@@ -212,6 +218,18 @@ function createFixtureRoot() {
   ], null, 2))
 
   fs.writeFileSync(path.join(configDir, "questions.json"), "[]\n")
+  fs.writeFileSync(path.join(configDir, "integration-profiles.json"), JSON.stringify([
+    {
+      id: "profile-1",
+      providerId: "test-provider",
+      label: "Test profile",
+      enabled: true,
+      settings: {
+        token: "test-secret-token",
+        endpoint: "https://example.invalid/api"
+      }
+    }
+  ], null, 2))
   fs.writeFileSync(path.join(configDir, "transcripts.json"), JSON.stringify({
     general: { enabled: true, enableChannel: true, enableCreatorDM: true, enableParticipantDM: false, enableActiveAdminDM: false, enableEveryAdminDM: false, channel: "1", mode: "html" },
     embedSettings: { customColor: "", listAllParticipants: false, includeTicketStats: false },
@@ -251,7 +269,8 @@ test("visual save helpers preserve runtime-aligned values and nested option data
       name: "Updated option",
       description: "Edited description",
       type: "ticket",
-      button: { label: "Updated option", emoji: "", color: "green" }
+      button: { label: "Updated option", emoji: "", color: "green" },
+      integrationProfileId: "profile-1"
     }, 0)
 
     service.savePanel({
@@ -312,12 +331,100 @@ test("visual save helpers preserve runtime-aligned values and nested option data
     assert.deepEqual(options[0].ticketMessage.ping.custom, ["8"])
     assert.equal(options[0].autoclose.enableUserLeave, true)
     assert.equal(options[0].autodelete.disableOnClaim, true)
+    assert.equal(options[0].integrationProfileId, "profile-1")
     assert.equal(panels[0].settings.describeOptionsLayout, "normal")
     assert.equal(panels[0].embed.footer, "Retained footer")
     assert.equal(transcripts.general.mode, "text")
     assert.equal(transcripts.textTranscriptStyle.fileMode, "channel-id")
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("ticket option integration profile binding roundtrips, strips from non-ticket options, and validates references", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    service.saveOption({
+      id: "option-1",
+      name: "Whitelist Application Ticket",
+      description: "Open this ticket.",
+      type: "ticket",
+      button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+      integrationProfileId: "profile-1"
+    }, 0)
+
+    let options = service.readManagedJson<any[]>("options")
+    assert.equal(options[0].integrationProfileId, "profile-1")
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        name: "Whitelist Application Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        integrationProfileId: "missing-profile"
+      }, 0)
+    }, /Unknown integration profile/i)
+
+    service.saveOption({
+      id: "role-1",
+      type: "role",
+      button: { emoji: "", label: "Role option", color: "blue" },
+      integrationProfileId: "profile-1"
+    }, 1)
+
+    service.saveOption({
+      id: "website-1",
+      name: "Website option",
+      description: "Open docs.",
+      type: "website",
+      button: { emoji: "🌐", label: "Website option" },
+      url: "https://example.com/docs",
+      integrationProfileId: "profile-1"
+    }, -1)
+
+    options = service.readManagedJson<any[]>("options")
+    assert.equal("integrationProfileId" in options[1], false)
+    assert.equal("integrationProfileId" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("integration profile backups redact provider secrets and restore preserves existing redacted secrets", () => {
+  clearTicketPlatformRuntimeApiForTests()
+  const runtime = installTicketPlatformRuntimeApi()
+  runtime.registerIntegrationProvider({
+    id: "test-provider",
+    capabilities: [],
+    secretSettingKeys: ["token"]
+  })
+
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+  const backupService = createBackupService(root, service)
+
+  try {
+    const backup = backupService.createBackup("redaction test", "test")
+    const backupText = backupService.getBackupText(backup.id, "integration-profiles")
+
+    assert.match(backupText, /__OPEN_TICKET_REDACTED_SECRET__/)
+    assert.doesNotMatch(backupText, /test-secret-token/)
+    assert.match(backupText, /https:\/\/example\.invalid\/api/)
+
+    const redactedProfiles = JSON.parse(backupText)
+    redactedProfiles[0].settings.endpoint = "https://example.invalid/restored"
+    service.writeManagedJson("integration-profiles", redactedProfiles)
+
+    const restored = service.readManagedJson<any[]>("integration-profiles")
+    assert.equal(restored[0].settings.token, "test-secret-token")
+    assert.equal(restored[0].settings.endpoint, "https://example.invalid/restored")
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+    clearTicketPlatformRuntimeApiForTests()
   }
 })
 

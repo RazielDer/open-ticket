@@ -15,6 +15,7 @@
         "readonlyAdmins":["discord role id"],
         "allowCreationByBlacklistedUsers":false,
         "questions":["example-question-1","example-question-2"],
+        "integrationProfileId":"",
 
         "channel":{
             "transportMode":"channel_text OR private_thread",

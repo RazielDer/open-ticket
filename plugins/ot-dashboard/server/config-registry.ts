@@ -1,4 +1,4 @@
-export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "support-teams" | "transcripts"
+export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "transcripts"
 
 export interface ManagedConfigDefinition {
   id: ManagedConfigId
@@ -60,6 +60,16 @@ export const MANAGED_CONFIGS: ManagedConfigDefinition[] = [
     titleKey: "admin.cards.supportTeams.title",
     descriptionKey: "admin.cards.supportTeams.description",
     icon: "users",
+    kind: "array"
+  },
+  {
+    id: "integration-profiles",
+    fileName: "integration-profiles.json",
+    visualPath: "/config/integration-profiles",
+    rawPath: "/config/integration-profiles",
+    titleKey: "admin.cards.integrationProfiles.title",
+    descriptionKey: "admin.cards.integrationProfiles.description",
+    icon: "plug",
     kind: "array"
   },
   {

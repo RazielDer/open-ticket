@@ -314,6 +314,23 @@
 
                 <section class="subsection-card option-ticket-subsection">
                   <div class="section-heading">
+                    <h4><%= t("options.workspace.integrationTitle") %></h4>
+                  </div>
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.integrationProfileId") %></span>
+                      <select class="select-input" id="integrationProfileId">
+                        <option value=""><%= t("options.fields.noIntegrationProfile") %></option>
+                        <% integrationProfiles.forEach((profile) => { %>
+                          <option value="<%= profile.id %>"><%= profile.label %> (<%= profile.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
                     <h4><%= t("options.workspace.questionPickerTitle") %></h4>
                   </div>
                   <% if (availableQuestions.length) { %>
@@ -516,6 +533,7 @@
       <textarea id="options-data" hidden><%= JSON.stringify(options) %></textarea>
       <textarea id="available-questions-data" hidden><%= JSON.stringify(availableQuestions) %></textarea>
       <textarea id="support-teams-data" hidden><%= JSON.stringify(supportTeams) %></textarea>
+      <textarea id="integration-profiles-data" hidden><%= JSON.stringify(integrationProfiles) %></textarea>
       <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
       <textarea id="page-messages" hidden><%= messages %></textarea>
     </main>

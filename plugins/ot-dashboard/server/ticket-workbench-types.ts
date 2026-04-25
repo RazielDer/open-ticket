@@ -21,7 +21,14 @@ export const DASHBOARD_TICKET_ACTION_IDS = [
 ] as const
 
 export type DashboardTicketActionId = (typeof DASHBOARD_TICKET_ACTION_IDS)[number]
-export type DashboardTicketProviderLockedActionId = DashboardTicketActionId | "request-close" | "cancel-close-request"
+export type DashboardTicketProviderLockedActionId =
+  | DashboardTicketActionId
+  | "request-close"
+  | "cancel-close-request"
+  | "delete"
+  | "pin"
+  | "unpin"
+  | "rename"
 
 export interface DashboardTicketActionAvailability {
   enabled: boolean
@@ -33,6 +40,16 @@ export interface DashboardTicketProviderLock {
   title: string
   message: string
   lockedActions: DashboardTicketProviderLockedActionId[]
+}
+
+export interface DashboardTicketIntegrationSummary {
+  profileId: string
+  providerId: string
+  label: string
+  state: "ready" | "degraded" | "locked" | "unavailable"
+  summary: string | null
+  degradedReason: string | null
+  lockedTicketActions: DashboardTicketProviderLockedActionId[]
 }
 
 export interface DashboardTicketAssignableStaffChoice {
@@ -97,6 +114,7 @@ export interface DashboardTicketDetailRecord {
   participantChoices: DashboardTicketParticipantChoice[]
   priorityChoices: DashboardTicketPriorityChoice[]
   providerLock: DashboardTicketProviderLock | null
+  integration: DashboardTicketIntegrationSummary | null
 }
 
 export interface DashboardTicketActionRequest {

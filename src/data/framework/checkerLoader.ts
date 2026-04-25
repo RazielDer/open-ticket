@@ -28,6 +28,7 @@ export const loadAllConfigCheckers = async () => {
     opendiscord.checkers.add(new api.ODChecker("opendiscord:options",opendiscord.checkers.storage,1,opendiscord.configs.get("opendiscord:options"),defaultOptionsStructure,{cliDisplayName:"Options Config",cliDisplayDescription:"Create, modify & delete options which are used in panels."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:panels",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:panels"),defaultPanelsStructure,{cliDisplayName:"Panels Config",cliDisplayDescription:"Create, modify & delete panels which can be spawned in discord."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:support-teams",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:support-teams"),defaultSupportTeamsStructure,{cliDisplayName:"Support Teams Config",cliDisplayDescription:"Create support teams for ticket routing, assignment, and escalation."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:integration-profiles",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:integration-profiles"),defaultIntegrationProfilesStructure,{cliDisplayName:"Integration Profiles Config",cliDisplayDescription:"Create integration profiles that ticket options can bind to."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:transcripts",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:transcripts"),defaultTranscriptsStructure,{cliDisplayName:"Transcript Config",cliDisplayDescription:"Configure everything related to transcripts."}))
 }
 
@@ -36,6 +37,7 @@ export const loadAllConfigCheckerFunctions = async () => {
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:unused-questions",defaultUnusedQuestionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:dropdown-options",defaultDropdownOptionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:support-team-routing",defaultSupportTeamRoutingFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:integration-profiles",defaultIntegrationProfilesFunction))
 }
 
 export const loadAllConfigCheckerTranslations = async () => {
@@ -398,6 +400,7 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
             const idList = uncheckedRawData.filter((option) => typeof option == "object" && typeof option["id"] == "string").map((option) => option.id)
             return (idList.length > 0) ? idList : null
         }})},
+        {key:"integrationProfileId",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-integration-profile-id",{maxLength:128,cliInitDefaultValue:"",cliDisplayName:"Integration Profile",cliDisplayDescription:"The integration profile id for this ticket option. Leave empty for no integration."})},
 
         //TICKET CHANNEL
         {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory","transportMode","threadParentChannel"],children:[
@@ -582,6 +585,21 @@ export const defaultSupportTeamsStructure = new api.ODCheckerArrayStructure("ope
     {key:"roleIds",checker:new api.ODCheckerCustomStructure_DiscordIdArray("opendiscord:support-team-role-ids","role",[],{allowDoubles:false,minLength:1,cliDisplayPropertyName:"team role",cliDisplayName:"Team Roles",cliDisplayDescription:"Discord role IDs that make a guild member eligible for this support team."},{cliDisplayName:"Team Role",cliDisplayDescription:"A Discord role ID that belongs to this support team."})},
     {key:"assignmentStrategy",checker:new api.ODCheckerStringStructure("opendiscord:support-team-assignment-strategy",{choices:["manual","round_robin"],cliDisplayName:"Assignment Strategy",cliDisplayDescription:"Manual leaves tickets unassigned; round_robin assigns the next eligible non-bot member."})},
 ],cliDisplayName:"Support Team",cliDisplayDescription:"Support-team ownership, role membership, and assignment strategy."})})
+
+export const defaultIntegrationProfilesStructure = new api.ODCheckerArrayStructure("opendiscord:integration-profiles",{allowedTypes:["object"],cliDisplayPropertyName:"integration profile",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:integration-profile",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","providerId"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:integration-profile-id","openticket","integration-profile-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this integration profile."})},
+    {key:"providerId",checker:new api.ODCheckerStringStructure("opendiscord:integration-profile-provider-id",{minLength:1,maxLength:128,cliDisplayName:"Provider ID",cliDisplayDescription:"The registered Open Ticket integration provider id."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:integration-profile-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this integration profile."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:integration-profile-enabled",{cliInitDefaultValue:true,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this integration profile."})},
+    {key:"settings",checker:new api.ODCheckerObjectStructure("opendiscord:integration-profile-settings",{children:[],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+        const lt = checker.locationTraceDeref(locationTrace)
+        if (!value || typeof value != "object" || Array.isArray(value)){
+            checker.createMessage("opendiscord:integration-profile-settings-object","error","Integration profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
+            return false
+        }
+        return true
+    },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned profile settings."})},
+],cliDisplayName:"Integration Profile",cliDisplayDescription:"A generic integration provider profile that ticket options can bind to."})})
 
 export const defaultPanelsStructure = new api.ODCheckerArrayStructure("opendiscord:panels",{allowedTypes:["object"],cliDisplayPropertyName:"panel",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:panels",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","dropdown"],children:[
     {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:panel-id","openticket","panel-ids",{regex:/^[A-Za-z0-9-éèçàêâôûî]+$/,minLength:3,maxLength:40,cliDisplayName:"Id",cliDisplayDescription:"The id of this panel. Used in the /panel command."})},
@@ -830,4 +848,110 @@ export const defaultSupportTeamRoutingFunction = (manager:api.ODCheckerManager, 
     })
 
     return {valid:(final.length < 1),messages:final}
+}
+
+function normalizeIntegrationProfileId(option:any): string {
+    return typeof option?.integrationProfileId == "string" ? option.integrationProfileId.trim() : ""
+}
+
+function collectIntegrationProfileReferences(options:any[]): Map<string,string[]> {
+    const references = new Map<string,string[]>()
+    options
+        .filter((option:any) => option?.type == "ticket")
+        .forEach((option:any) => {
+            const profileId = normalizeIntegrationProfileId(option)
+            if (!profileId) return
+            const optionId = typeof option?.id == "string" ? option.id : ""
+            if (!references.has(profileId)) references.set(profileId,[])
+            references.get(profileId)?.push(optionId)
+        })
+    return references
+}
+
+export const defaultIntegrationProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    void manager
+    const profileConfig = opendiscord.configs.get("opendiscord:integration-profiles")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!profileConfig || !optionConfig || !Array.isArray(profileConfig.data) || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const final: api.ODCheckerMessage[] = []
+    const profiles = profileConfig.data
+    const profileById = new Map(
+        profiles
+            .filter((profile:any) => typeof profile?.id == "string" && profile.id.trim().length > 0)
+            .map((profile:any) => [profile.id.trim(),profile])
+    )
+    const references = collectIntegrationProfileReferences(optionConfig.data)
+
+    optionConfig.data.forEach((option:any,index:number) => {
+        if (option?.type != "ticket") return
+        const profileId = normalizeIntegrationProfileId(option)
+        if (!profileId || profileById.has(profileId)) return
+        final.push(functions.createMessage(
+            "opendiscord:options",
+            "opendiscord:ticket-integration-profile-missing",
+            optionConfig.file,
+            "error",
+            `Ticket option "${option.id}" references unknown integration profile "${profileId}".`,
+            [index,"integrationProfileId"],
+            null,
+            [`"${profileId}"`],
+            new api.ODId("opendiscord:integration-profiles"),
+            null
+        ))
+    })
+
+    const runtimeApi = api.getTicketPlatformRuntimeApi()
+    profiles.forEach((profile:any,index:number) => {
+        const profileId = typeof profile?.id == "string" ? profile.id.trim() : ""
+        const providerId = typeof profile?.providerId == "string" ? profile.providerId.trim() : ""
+        if (!profileId || !providerId) return
+        const referencedByOptionIds = references.get(profileId) ?? []
+        const provider = runtimeApi?.getIntegrationProvider(providerId) ?? null
+        if (!provider){
+            final.push(functions.createMessage(
+                "opendiscord:integration-profiles",
+                "opendiscord:integration-profile-provider-missing",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                `Integration profile "${profileId}" references unavailable provider "${providerId}".`,
+                [index,"providerId"],
+                null,
+                [`"${providerId}"`],
+                new api.ODId("opendiscord:integration-profiles"),
+                null
+            ))
+            return
+        }
+
+        if (typeof provider.validateProfileSettings != "function") return
+        try {
+            provider.validateProfileSettings({
+                profile:{
+                    id:profileId,
+                    providerId,
+                    label:typeof profile.label == "string" && profile.label.trim().length > 0 ? profile.label.trim() : profileId,
+                    enabled:profile.enabled === true,
+                    settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {}
+                },
+                settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {},
+                referencedByOptionIds
+            })
+        } catch (error) {
+            final.push(functions.createMessage(
+                "opendiscord:integration-profiles",
+                "opendiscord:integration-profile-settings-invalid",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                error instanceof Error ? error.message : `Integration profile "${profileId}" settings are invalid.`,
+                [index,"settings"],
+                null,
+                [`"${profileId}"`],
+                new api.ODId("opendiscord:integration-profiles"),
+                null
+            ))
+        }
+    })
+
+    return {valid:(final.every((message) => message.type != "error")),messages:final}
 }

@@ -21,7 +21,9 @@ import {
   type DashboardTicketEscalationTargetChoice,
   type DashboardTicketMoveTargetChoice,
   type DashboardTicketParticipantChoice,
+  type DashboardTicketProviderLockedActionId,
   type DashboardTicketProviderLock,
+  type DashboardTicketIntegrationSummary,
   type DashboardTicketPriorityChoice,
   type DashboardTicketTransferCandidateChoice,
   type DashboardTicketTransportMode
@@ -684,6 +686,45 @@ async function resolveProviderLock(runtimeBridge: DashboardRuntimeBridge, ticket
   }
 }
 
+function normalizeProviderLockedActions(value: unknown): DashboardTicketProviderLockedActionId[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((action) => normalizeString(action))
+    .filter((action): action is DashboardTicketProviderLockedActionId => Boolean(action))
+}
+
+async function resolveIntegrationSummary(runtimeBridge: DashboardRuntimeBridge, ticketId: string): Promise<DashboardTicketIntegrationSummary | null> {
+  const runtime = runtimeBridge.getRuntimeSource?.() as any
+  const service = runtime?.plugins?.classes?.get?.("opendiscord:ticket-integration-service")
+  if (!service || typeof service.getTicketIntegrationSummary !== "function") return null
+  const ticket = getRuntimeTicket(runtime, ticketId)
+  if (!ticket) return null
+
+  try {
+    const guild = await resolveRuntimeActionGuild(runtimeBridge, runtime)
+    const channel = guild && runtime?.client
+      ? await (
+        runtime.client.fetchGuildTextBasedChannel?.(guild, ticketId)
+        || runtime.client.fetchGuildTextChannel?.(guild, ticketId)
+        || Promise.resolve(null)
+      ).catch(() => null)
+      : null
+    const summary = await service.getTicketIntegrationSummary({ ticket, channel, guild })
+    if (!summary) return null
+    return {
+      profileId: normalizeString(summary.profileId),
+      providerId: normalizeString(summary.providerId),
+      label: normalizeString(summary.label) || normalizeString(summary.profileId) || "Ticket integration",
+      state: summary.state == "ready" || summary.state == "degraded" || summary.state == "locked" || summary.state == "unavailable" ? summary.state : "ready",
+      summary: normalizeString(summary.summary) || null,
+      degradedReason: normalizeString(summary.degradedReason) || null,
+      lockedTicketActions: normalizeProviderLockedActions(summary.lockedTicketActions)
+    }
+  } catch {
+    return null
+  }
+}
+
 async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, ticketId: string, actorUserId = ""): Promise<DashboardTicketDetailRecord | null> {
   const normalizedTicketId = normalizeString(ticketId)
   if (!normalizedTicketId) return null
@@ -704,7 +745,15 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const context = normalizeString(actorUserId)
     ? await resolveRuntimeActionContext(runtimeBridge, ticket.id, actorUserId)
     : null
-  const providerLock = await resolveProviderLock(runtimeBridge, ticket.id)
+  const integration = await resolveIntegrationSummary(runtimeBridge, ticket.id)
+  const providerLock = integration
+    ? {
+      providerId: integration.providerId,
+      title: integration.label,
+      message: integration.degradedReason || integration.summary || "Ticket integration controls locked actions for this ticket.",
+      lockedActions: integration.lockedTicketActions
+    }
+    : await resolveProviderLock(runtimeBridge, ticket.id)
   const assignableStaff = await buildAssignableStaffChoices(runtimeBridge, runtime, guild, owningTeamId)
   const escalationTargets = buildEscalationTargetChoices(runtime, option, ticketTransport)
   const moveTargets = buildMoveTargetChoices(runtime, ticket.optionId, owningTeamId, ticketTransport, ticket.transportParentChannelId)
@@ -766,7 +815,8 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     transferCandidates,
     participantChoices,
     priorityChoices,
-    providerLock
+    providerLock,
+    integration
   }
 }
 

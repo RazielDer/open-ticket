@@ -111,27 +111,130 @@ export const TICKET_PLATFORM_RUNTIME_SYMBOL = Symbol.for("open-ticket.ot-ticket-
 export type TicketPlatformIntegrationCapability = "eligibility" | "status" | "action" | "enrichment"
 export type TicketPlatformAiAssistCapability = "summarize" | "answerFaq" | "suggestReply"
 
-type TicketPlatformHookHandler = (...args: any[]) => unknown
+export const TICKET_PLATFORM_STOCK_ACTION_IDS = [
+    "claim",
+    "unclaim",
+    "assign",
+    "escalate",
+    "move",
+    "transfer",
+    "add-participant",
+    "remove-participant",
+    "set-priority",
+    "set-topic",
+    "close",
+    "reopen",
+    "delete",
+    "pin",
+    "unpin",
+    "rename",
+    "request-close",
+    "cancel-close-request",
+    "approve-close-request",
+    "dismiss-close-request",
+    "set-awaiting-user",
+    "clear-awaiting-user"
+] as const
+
+export type TicketPlatformStockActionId = (typeof TICKET_PLATFORM_STOCK_ACTION_IDS)[number]
+
+export interface TicketIntegrationProfile {
+    id: string
+    providerId: string
+    label: string
+    enabled: boolean
+    settings: Record<string, unknown>
+}
+
+export interface TicketIntegrationValidateProfileSettingsInput {
+    profile: TicketIntegrationProfile
+    settings: Record<string, unknown>
+    referencedByOptionIds: string[]
+}
+
+export interface TicketIntegrationEligibilityInput {
+    profile: TicketIntegrationProfile
+    settings: Record<string, unknown>
+    option: unknown
+    guild: unknown
+    user: unknown
+    answers: unknown[]
+}
+
+export interface TicketIntegrationStatusInput {
+    profile: TicketIntegrationProfile
+    settings: Record<string, unknown>
+    ticket: unknown
+    channel: unknown
+    guild: unknown
+}
+
+export interface TicketIntegrationActionInput {
+    profile: TicketIntegrationProfile
+    settings: Record<string, unknown>
+    ticket: unknown
+    channel: unknown
+    guild: unknown
+    user: unknown
+    actionId: TicketPlatformStockActionId | string
+    reason: string | null
+    payload: Record<string, unknown>
+}
+
+export interface TicketIntegrationEnrichmentInput {
+    profile: TicketIntegrationProfile
+    settings: Record<string, unknown>
+    ticket: unknown
+    channel: unknown
+    guild: unknown
+}
+
+export interface TicketIntegrationEligibilityResult {
+    allow: boolean
+    reason: string | null
+    degradedReason: string | null
+}
+
+export interface TicketIntegrationStatusResult {
+    state: "ready" | "degraded" | "locked" | "unavailable"
+    summary: string | null
+    lockedTicketActions: string[]
+    degradedReason: string | null
+}
+
+export interface TicketIntegrationActionResult {
+    ok: boolean
+    message: string
+    degradedReason: string | null
+}
+
+export interface TicketIntegrationEnrichmentResult {
+    summary: string | null
+    details: Record<string, string>
+}
+
+type TicketPlatformHookHandler<Input, Result> = (input: Input) => Result | Promise<Result>
 
 export interface TicketPlatformIntegrationProvider {
     id: string
     pluginId?: string
     capabilities: readonly TicketPlatformIntegrationCapability[]
-    validateProfileSettings?: TicketPlatformHookHandler
-    eligibility?: TicketPlatformHookHandler
-    status?: TicketPlatformHookHandler
-    action?: TicketPlatformHookHandler
-    enrichment?: TicketPlatformHookHandler
+    secretSettingKeys?: readonly string[]
+    validateProfileSettings?: TicketPlatformHookHandler<TicketIntegrationValidateProfileSettingsInput, void>
+    eligibility?: TicketPlatformHookHandler<TicketIntegrationEligibilityInput, TicketIntegrationEligibilityResult>
+    status?: TicketPlatformHookHandler<TicketIntegrationStatusInput, TicketIntegrationStatusResult>
+    action?: TicketPlatformHookHandler<TicketIntegrationActionInput, TicketIntegrationActionResult>
+    enrichment?: TicketPlatformHookHandler<TicketIntegrationEnrichmentInput, TicketIntegrationEnrichmentResult>
 }
 
 export interface TicketPlatformAiAssistProvider {
     id: string
     pluginId?: string
     capabilities: readonly TicketPlatformAiAssistCapability[]
-    validateProfileSettings?: TicketPlatformHookHandler
-    summarize?: TicketPlatformHookHandler
-    answerFaq?: TicketPlatformHookHandler
-    suggestReply?: TicketPlatformHookHandler
+    validateProfileSettings?: TicketPlatformHookHandler<any, void>
+    summarize?: TicketPlatformHookHandler<any, unknown>
+    answerFaq?: TicketPlatformHookHandler<any, unknown>
+    suggestReply?: TicketPlatformHookHandler<any, unknown>
 }
 
 export interface TicketPlatformRuntimeApi {
@@ -331,8 +434,6 @@ function validateCapabilityHooks<Capability extends string, Provider extends { [
         suppliedHooks.push(hookName)
     }
 
-    if (suppliedHooks.length < 1) return
-
     for (const capability of capabilities) {
         if (typeof provider[capability] != "function") {
             throw new Error(`Ticket platform ${registryLabel} provider "${providerId}" declared capability "${capability}" without a matching hook.`)
@@ -350,12 +451,14 @@ function normalizeIntegrationProvider(provider: TicketPlatformIntegrationProvide
     const capabilities = normalizeCapabilityList(providerId, provider?.capabilities ?? [], INTEGRATION_CAPABILITIES, "integration")
     validateOptionalHelperHook(providerId, "integration", provider)
     validateCapabilityHooks(providerId, "integration", provider as unknown as Record<string, unknown>, capabilities, INTEGRATION_CAPABILITIES)
+    const secretSettingKeys = normalizeSecretSettingKeys(providerId, provider?.secretSettingKeys)
 
     return {
         ...provider,
         id: providerId,
         pluginId: normalizeOptionalPluginId(providerId, "integration", provider?.pluginId),
-        capabilities
+        capabilities,
+        secretSettingKeys
     }
 }
 
@@ -384,4 +487,24 @@ function registerTicketPlatformProvider<Provider extends { id: string }>(
 
     providers.set(provider.id, provider)
     return provider
+}
+
+function normalizeSecretSettingKeys(providerId: string, secretSettingKeys: unknown): readonly string[] {
+    if (secretSettingKeys == null) return Object.freeze([])
+    if (!Array.isArray(secretSettingKeys)) {
+        throw new Error(`Ticket platform integration provider "${providerId}" must declare secretSettingKeys as an array when supplied.`)
+    }
+
+    const normalized: string[] = []
+    const seen = new Set<string>()
+    for (const key of secretSettingKeys) {
+        if (typeof key != "string") {
+            throw new Error(`Ticket platform integration provider "${providerId}" secretSettingKeys entries must be strings.`)
+        }
+        const normalizedKey = key.trim()
+        if (normalizedKey.length < 1 || seen.has(normalizedKey)) continue
+        seen.add(normalizedKey)
+        normalized.push(normalizedKey)
+    }
+    return Object.freeze(normalized)
 }

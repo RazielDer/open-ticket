@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api} from "../index"
 import * as discord from "discord.js"
+import { resolveTicketIntegrationActionLock } from "./ticketIntegration.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -105,6 +106,16 @@ export function isTicketCurrentCreator(ticket: api.ODTicket, userId: string | nu
 
 export async function resolveTicketWorkflowLock(ticket: api.ODTicket, action?: TicketWorkflowAction): Promise<TicketWorkflowLockResult> {
     if (action && !WORKFLOW_ACTIONS.has(action)) return {locked:false, reason:null}
+
+    if (action){
+        const integrationLock = await resolveTicketIntegrationActionLock(ticket,action)
+        if (integrationLock.locked){
+            return {
+                locked:true,
+                reason:integrationLock.reason || "Ticket workflow is locked by its integration provider."
+            }
+        }
+    }
 
     let bridgeService: any = null
     try {

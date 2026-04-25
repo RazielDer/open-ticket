@@ -371,7 +371,8 @@ function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActi
       { priorityId: "normal", label: "Normal" },
       { priorityId: "urgent", label: "Urgent" }
     ],
-    providerLock: null
+    providerLock: null,
+    integration: null
   }
 }
 
@@ -500,7 +501,8 @@ async function startServer(options: {
           title: "Whitelist bridge",
           message: "Bridge-owned actions are locked.",
           lockedActions: ["close", "escalate"]
-        }
+        },
+        integration: null
       }
     },
     ...(options.writes === false ? {} : {

@@ -519,6 +519,7 @@ export function buildFallbackTicketDetail(input: {
   ticket: DashboardTicketRecord
   configService: DashboardConfigService
   providerLock?: DashboardTicketProviderLock | null
+  integration?: DashboardTicketDetailRecord["integration"] | null
 }): DashboardTicketDetailRecord {
   const lookups = buildConfigLookups(input.configService)
   const panel = resolvePanelMapping(lookups.panelForOption, input.ticket.optionId)
@@ -626,7 +627,8 @@ export function buildFallbackTicketDetail(input: {
     transferCandidates: [],
     participantChoices: [],
     priorityChoices: [],
-    providerLock
+    providerLock,
+    integration: input.integration || null
   }
 }
 
