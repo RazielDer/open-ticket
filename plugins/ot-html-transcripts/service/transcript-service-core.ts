@@ -111,6 +111,9 @@ const VIEWER_NOT_READY_MESSAGE = "Transcript archive is not ready."
 const PREVIEW_UNAVAILABLE_MESSAGE = "Transcript style preview is unavailable while the transcript service is unhealthy or missing the preview renderer."
 const OPERATIONAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MAX_VIEWER_ACCESS_FRESHNESS_MS = 60_000
+const ANALYTICS_CANDIDATE_SCAN_PAGE_SIZE = 500
+const ANALYTICS_CANDIDATE_SCAN_LIMIT = 2_000
+const ANALYTICS_CANDIDATE_SCAN_LIMIT_WARNING = "Transcript analytics history exceeded the archive scan ceiling and was truncated."
 
 function normalizeAnalyticsCursor(value: unknown) {
     if (typeof value != "string" || value.trim().length == 0) return 0
@@ -311,50 +314,83 @@ export class TranscriptServiceCore {
         const assigneeId = normalizeNullableAnalyticsString(query.assigneeId)
         const transportMode = normalizeAnalyticsTransport(query.transportMode)
         const warnings: string[] = []
-        const result = await this.repository.listTranscriptAnalyticsCandidates({ limit, offset })
         const { archiveRoot } = resolveTranscriptStoragePaths(this.config)
-        const items: TicketAnalyticsHistoryRecord[] = []
+        const matchingRecords: TicketAnalyticsHistoryRecord[] = []
+        let candidateOffset = 0
 
-        for (const transcript of result.items) {
-            if (!transcript.archivePath) {
-                warnings.push(`Transcript ${transcript.id} is missing archive metadata and was skipped.`)
-                continue
+        let scannedCandidates = 0
+        let truncated = false
+
+        while (scannedCandidates < ANALYTICS_CANDIDATE_SCAN_LIMIT) {
+            const pageLimit = Math.min(ANALYTICS_CANDIDATE_SCAN_PAGE_SIZE, ANALYTICS_CANDIDATE_SCAN_LIMIT - scannedCandidates)
+            const result = await this.repository.listTranscriptAnalyticsCandidates({
+                limit: pageLimit,
+                offset: candidateOffset
+            })
+
+            for (const transcript of result.items) {
+                if (!transcript.archivePath) {
+                    warnings.push(`Transcript ${transcript.id} is missing archive metadata and was skipped.`)
+                    continue
+                }
+
+                let document: LocalTranscriptDocument | null = null
+                try {
+                    const safeArchivePath = ensurePathWithinRoot(archiveRoot, transcript.archivePath)
+                    document = await this.readTranscriptDocument(path.join(safeArchivePath, "document.json"))
+                } catch {
+                    document = null
+                }
+
+                if (!document?.ticket?.metadata) {
+                    warnings.push(`Transcript ${transcript.id} is missing analytics-safe ticket metadata and was skipped.`)
+                    continue
+                }
+
+                const record = this.mapTicketAnalyticsHistoryRecord(transcript, document)
+                if (!record) {
+                    warnings.push(`Transcript ${transcript.id} has invalid analytics metadata and was skipped.`)
+                    continue
+                }
+                if (openedFrom != null && (record.openedAt == null || record.openedAt < openedFrom)) continue
+                if (openedTo != null && (record.openedAt == null || record.openedAt >= openedTo)) continue
+                if (teamId && record.assignedTeamId !== teamId) continue
+                if (assigneeId && record.assignedStaffUserId !== assigneeId) continue
+                if (transportMode && record.transportMode !== transportMode) continue
+
+                matchingRecords.push(record)
             }
 
-            let document: LocalTranscriptDocument | null = null
-            try {
-                const safeArchivePath = ensurePathWithinRoot(archiveRoot, transcript.archivePath)
-                document = await this.readTranscriptDocument(path.join(safeArchivePath, "document.json"))
-            } catch {
-                document = null
+            candidateOffset += result.items.length
+            scannedCandidates += result.items.length
+            if (result.items.length == 0 || candidateOffset >= result.total) {
+                break
             }
-
-            if (!document?.ticket?.metadata) {
-                warnings.push(`Transcript ${transcript.id} is missing analytics-safe ticket metadata and was skipped.`)
-                continue
+            if (scannedCandidates >= ANALYTICS_CANDIDATE_SCAN_LIMIT) {
+                truncated = true
+                warnings.push(ANALYTICS_CANDIDATE_SCAN_LIMIT_WARNING)
+                break
             }
-
-            const record = this.mapTicketAnalyticsHistoryRecord(transcript, document)
-            if (!record) {
-                warnings.push(`Transcript ${transcript.id} has invalid analytics metadata and was skipped.`)
-                continue
-            }
-            if (openedFrom != null && (record.openedAt == null || record.openedAt < openedFrom)) continue
-            if (openedTo != null && (record.openedAt == null || record.openedAt >= openedTo)) continue
-            if (teamId && record.assignedTeamId !== teamId) continue
-            if (assigneeId && record.assignedStaffUserId !== assigneeId) continue
-            if (transportMode && record.transportMode !== transportMode) continue
-
-            items.push(record)
         }
 
-        items.sort((left, right) => (right.openedAt ?? 0) - (left.openedAt ?? 0) || right.transcriptId.localeCompare(left.transcriptId))
-        const nextOffset = offset + result.items.length
+        matchingRecords.sort((left, right) => (right.openedAt ?? 0) - (left.openedAt ?? 0) || right.transcriptId.localeCompare(left.transcriptId))
+        if (truncated) {
+            return {
+                total: matchingRecords.length,
+                items: [],
+                warnings,
+                nextCursor: null,
+                truncated: true
+            }
+        }
+
+        const items = matchingRecords.slice(offset, offset + limit)
+        const nextOffset = offset + items.length
         return {
-            total: result.total,
+            total: matchingRecords.length,
             items,
             warnings,
-            nextCursor: nextOffset < result.total ? String(nextOffset) : null,
+            nextCursor: nextOffset < matchingRecords.length ? String(nextOffset) : null,
             truncated: false
         }
     }

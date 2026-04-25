@@ -1076,6 +1076,80 @@ test("analytics model normalizes UTC windows, computes SLA metrics, groups backl
   assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 2)
 })
 
+test("analytics model preserves live backlog when transcript history reads fail", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({
+        id: "live-backlog",
+        openedOn: Date.parse("2026-04-20T10:00:00.000Z"),
+        assignedTeamId: "triage",
+        assignedStaffUserId: "staff-1"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "30d" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    now: Date.parse("2026-04-25T12:00:00.000Z"),
+    transcriptService: {
+      async listTicketAnalyticsHistory() {
+        throw new Error("history store unavailable")
+      }
+    }
+  })
+
+  assert.equal(model.historyState, "unavailable")
+  assert.equal(model.summaryCards[0].value, "Unavailable")
+  assert.equal(model.summaryCards[1].value, "1")
+  assert.equal(model.backlogByTeam.find((row) => row.key === "triage")?.count, 1)
+  assert.equal(model.cohortByTeam.length, 0)
+  assert.match(model.historyWarnings.join("\n"), /could not be read/)
+})
+
+test("analytics model surfaces truncation warnings before lower-priority history warnings", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({
+        id: "live-backlog-truncated",
+        openedOn: Date.parse("2026-04-20T10:00:00.000Z"),
+        assignedTeamId: "triage"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "30d" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    now: Date.parse("2026-04-25T12:00:00.000Z"),
+    transcriptService: {
+      async listTicketAnalyticsHistory() {
+        return {
+          total: 0,
+          items: [],
+          warnings: ["older skipped archive warning", "another skipped archive warning"],
+          nextCursor: null,
+          truncated: true
+        }
+      }
+    }
+  })
+
+  assert.equal(model.historyState, "truncated")
+  assert.match(model.historyWarnings[0], /truncated/)
+  assert.equal(model.summaryCards[0].value, "Unavailable")
+  assert.equal(model.summaryCards[1].value, "1")
+  assert.equal(model.cohortByTeam.length, 0)
+})
+
 test("analytics request parser honors preset windows and fails invalid custom ranges closed", () => {
   const now = Date.parse("2026-04-25T12:00:00.000Z")
   const sevenDay = parseDashboardAnalyticsRequest({ window: "7d" }, { now })

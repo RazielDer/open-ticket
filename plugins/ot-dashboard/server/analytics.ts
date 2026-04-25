@@ -400,22 +400,31 @@ async function fetchHistoryRecords(input: {
 
   let cursor: string | null = null
   for (let page = 0; page < HISTORY_MAX_PAGES; page += 1) {
-    const result = await input.transcriptService.listTicketAnalyticsHistory({
-      openedFrom: new Date(input.request.openedFromMs).toISOString(),
-      openedTo: new Date(input.request.openedToMs).toISOString(),
-      teamId: input.request.teamId || null,
-      assigneeId: input.request.assigneeId || null,
-      transportMode: input.request.transport === "all" ? null : input.request.transport,
-      cursor,
-      limit: HISTORY_PAGE_LIMIT
-    })
+    let result
+    try {
+      result = await input.transcriptService.listTicketAnalyticsHistory({
+        openedFrom: new Date(input.request.openedFromMs).toISOString(),
+        openedTo: new Date(input.request.openedToMs).toISOString(),
+        teamId: input.request.teamId || null,
+        assigneeId: input.request.assigneeId || null,
+        transportMode: input.request.transport === "all" ? null : input.request.transport,
+        cursor,
+        limit: HISTORY_PAGE_LIMIT
+      })
+    } catch {
+      return {
+        state: "unavailable" as DashboardAnalyticsHistoryState,
+        records: [],
+        warnings: [...warnings, "Transcript analytics history could not be read; cohort and SLA metrics are unavailable."]
+      }
+    }
     warnings.push(...result.warnings)
     records.push(...result.items)
     if (result.truncated) {
       return {
         state: "truncated" as DashboardAnalyticsHistoryState,
         records: [],
-        warnings: [...warnings, "Transcript analytics history was truncated; cohort and SLA metrics are unavailable."]
+        warnings: ["Transcript analytics history was truncated; cohort and SLA metrics are unavailable.", ...warnings]
       }
     }
     cursor = result.nextCursor
@@ -428,7 +437,7 @@ async function fetchHistoryRecords(input: {
   return {
     state: "truncated" as DashboardAnalyticsHistoryState,
     records: [],
-    warnings: [...warnings, "Transcript analytics history exceeded the dashboard scan ceiling; cohort and SLA metrics are unavailable."]
+    warnings: ["Transcript analytics history exceeded the dashboard scan ceiling; cohort and SLA metrics are unavailable.", ...warnings]
   }
 }
 
