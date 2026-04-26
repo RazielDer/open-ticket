@@ -5,11 +5,12 @@ import path from "path"
 import * as discord from "discord.js"
 
 import { ODId } from "../../../src/core/api/modules/base.js"
-import { ODMessageInstance } from "../../../src/core/api/modules/builder.js"
+import { ODMessage, ODMessageInstance } from "../../../src/core/api/modules/builder.js"
 import {
   OD_RICHER_MESSAGE_DISABLE_ENV,
   applyRicherMessageSurface,
-  buildRicherMessagePayload
+  buildRicherMessagePayload,
+  toRicherMessageEditPayload
 } from "../../../src/core/api/openticket/richer-message.js"
 
 test("richer message helper converts embed and action row payloads to Components V2 while preserving action ids", () => {
@@ -33,7 +34,8 @@ test("richer message helper converts embed and action row payloads to Components
 
   assert.ok(payload)
   assert.deepEqual(payload.flags, [discord.MessageFlags.IsComponentsV2])
-  assert.deepEqual(payload.embeds, [])
+  assert.equal(Object.hasOwn(payload, "content"), false)
+  assert.equal(Object.hasOwn(payload, "embeds"), false)
   const components = payload.components as any[]
   assert.equal(components[0].type, discord.ComponentType.Container)
   assert.equal(components[0].accent_color, 0x2563EB)
@@ -42,9 +44,13 @@ test("richer message helper converts embed and action row payloads to Components
   assert.match(components[0].components[0].content, /\*\*State\*\*/)
   assert.equal(components[1].type, discord.ComponentType.ActionRow)
   assert.equal(components[1].components[0].custom_id, "ot-ticket-forms:start:form-instance-1")
+
+  const editPayload = toRicherMessageEditPayload(payload)
+  assert.equal(editPayload.content, null)
+  assert.deepEqual(editPayload.embeds, [])
 })
 
-test("ODMessage richer adoption keeps the built legacy payload as the fallback path", () => {
+test("ODMessage richer adoption keeps the built legacy payload as the fallback path", async () => {
   const instance = new ODMessageInstance()
   instance.setEmbeds({
     id: new ODId("test:embed"),
@@ -68,6 +74,18 @@ test("ODMessage richer adoption keeps the built legacy payload as the fallback p
   const components = payload.components as any[]
   assert.equal(components[1].components[0].custom_id, "od:approve-close-request")
 
+  const builder = new ODMessage<"test", Record<string, never>>("test:richer", (builtInstance) => {
+    builtInstance.setContent("legacy content")
+    builtInstance.setEmbeds({
+      id: new ODId("test:compiled-embed"),
+      embed: new discord.EmbedBuilder().setTitle("Compiled Layout")
+    })
+    applyRicherMessageSurface(builtInstance, { surfaceId: "test:richer" })
+  })
+  const built = await builder.build("test", {})
+  assert.equal(Object.hasOwn(built.message, "content"), false)
+  assert.equal(Object.hasOwn(built.message, "embeds"), false)
+
   const previousDisableValue = process.env[OD_RICHER_MESSAGE_DISABLE_ENV]
   process.env[OD_RICHER_MESSAGE_DISABLE_ENV] = "1"
   try {
@@ -89,6 +107,7 @@ test("ODMessage richer adoption keeps the built legacy payload as the fallback p
 test("SLICE-013A adoption is limited to the approved first-wave persistent surfaces", () => {
   const repoRoot = path.resolve(__dirname, "..", "..", "..", "..")
   const formsSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "builders", "messageBuilders.ts"), "utf8")
+  const startFormRuntimeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "service", "start-form-runtime.ts"), "utf8")
   const coreMessageSource = fs.readFileSync(path.join(repoRoot, "src", "builders", "messages.ts"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
 
@@ -102,5 +121,7 @@ test("SLICE-013A adoption is limited to the approved first-wave persistent surfa
   assert.equal(coreSurfaceIds.some((id) => id.includes("verifybar")), false)
 
   assert.match(bridgeSource, /surfaceId:\s*"ot-eotfs-bridge:whitelist-staff-review"/)
+  assert.match(bridgeSource, /toRicherMessageEditPayload\(messagePayload\)/)
+  assert.match(startFormRuntimeSource, /toRicherMessageEditPayload\(messagePayload\)/)
   assert.doesNotMatch(bridgeSource, /provider action form|generic provider action|provider-specific standalone/i)
 })

@@ -1395,13 +1395,13 @@ async function ensureControlMessage(
 ): Promise<discord.Message> {
     const messagePayload = buildControlMessage(state)
     if (currentMessage && currentMessage.editable) {
-        await currentMessage.edit(messagePayload as discord.MessageEditOptions)
+        await currentMessage.edit(api.toRicherMessageEditPayload(messagePayload))
         return currentMessage
     }
     if (state.controlMessageId) {
         const existingMessage = await channel.messages.fetch(state.controlMessageId).catch(() => null)
         if (existingMessage && existingMessage.editable) {
-            await existingMessage.edit(messagePayload as discord.MessageEditOptions)
+            await existingMessage.edit(api.toRicherMessageEditPayload(messagePayload))
             return existingMessage
         }
     }

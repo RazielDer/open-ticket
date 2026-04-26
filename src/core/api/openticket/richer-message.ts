@@ -27,6 +27,15 @@ export interface ODRicherMessageSurfaceOptions {
     surfaceId: string
 }
 
+function hasComponentsV2Flag(flags: unknown): boolean {
+    if (Array.isArray(flags)) {
+        return flags.includes(discord.MessageFlags.IsComponentsV2) || flags.includes("IsComponentsV2")
+    }
+    if (typeof flags == "number") return (flags & discord.MessageFlags.IsComponentsV2) != 0
+    if (typeof flags == "string") return flags == "IsComponentsV2"
+    return false
+}
+
 function richerMessagesDisabled(): boolean {
     const value = process.env[OD_RICHER_MESSAGE_DISABLE_ENV]
     return value == "1" || value?.toLowerCase() == "true"
@@ -180,14 +189,21 @@ export function buildRicherMessagePayload(input: ODRicherMessagePayloadInput): d
         } as MessageTopLevelComponent
 
         return {
-            content: "",
-            embeds: [],
             components: [container, ...actionRows],
             flags: [discord.MessageFlags.IsComponentsV2]
         }
     } catch {
         return null
     }
+}
+
+export function toRicherMessageEditPayload(payload: discord.MessageCreateOptions): discord.MessageEditOptions {
+    if (!hasComponentsV2Flag(payload.flags)) return payload as discord.MessageEditOptions
+    return {
+        ...payload,
+        content: null,
+        embeds: []
+    } as discord.MessageEditOptions
 }
 
 export function applyRicherMessageSurface(

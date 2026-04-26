@@ -6,6 +6,28 @@ import * as discord from "discord.js"
 import { ODWorkerManager, ODWorkerCallback, ODWorker } from "./worker"
 import { ODDebugger } from "./console"
 
+function messageFlagsIncludeComponentsV2(flags: unknown): boolean {
+    const componentsV2Flag = (discord.MessageFlags as unknown as Record<string, number>).IsComponentsV2
+    if (typeof componentsV2Flag != "number") return false
+    if (Array.isArray(flags)) return flags.includes(componentsV2Flag) || flags.includes("IsComponentsV2")
+    if (typeof flags == "number") return (flags & componentsV2Flag) != 0
+    if (typeof flags == "string") return flags == "IsComponentsV2"
+    return false
+}
+
+function pruneComponentsV2CreatePayload(message: discord.MessageCreateOptions): void {
+    const rawMessage = message as Record<string, unknown>
+    if (!messageFlagsIncludeComponentsV2(rawMessage.flags)) return
+    delete rawMessage.content
+    delete rawMessage.embeds
+    delete rawMessage.poll
+    delete rawMessage.files
+    delete rawMessage.attachments
+    delete rawMessage.stickers
+    delete rawMessage.sticker_ids
+    delete rawMessage.shared_client_theme
+}
+
 /**## ODBuilderImplementation `class`
  * This is an Open Ticket builder implementation.
  * 
@@ -1304,6 +1326,7 @@ export class ODMessage<Source extends string,Params> extends ODBuilderImplementa
         let result = {id:this.id,message,ephemeral:instance.data.ephemeral}
 
         Object.assign(result.message,instance.data.additionalOptions)
+        pruneComponentsV2CreatePayload(result.message)
 
         this.cache = result
         this.didCache = true
@@ -1382,6 +1405,7 @@ export class ODQuickMessage {
         let result = {id:this.id,message,ephemeral:this.data.ephemeral ?? false}
 
         Object.assign(result.message,this.data.additionalOptions)
+        pruneComponentsV2CreatePayload(result.message)
         return result
     }
 }
