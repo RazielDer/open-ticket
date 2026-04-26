@@ -61,6 +61,20 @@ function buildGeneralValidationMessage(context: DashboardAppContext, code: strin
   }
 }
 
+function normalizeAiAssistRouteInput(
+  body: unknown,
+  action: "summarize" | "answerFaq" | "suggestReply"
+) {
+  const data = body && typeof body === "object" ? body as Record<string, unknown> : {}
+  if (action === "summarize") {
+    return { prompt: "", instructions: "" }
+  }
+  if (action === "answerFaq") {
+    return { prompt: typeof data.question === "string" ? data.question : "", instructions: "" }
+  }
+  return { prompt: "", instructions: typeof data.instructions === "string" ? data.instructions : "" }
+}
+
 export function registerApiRoutes(app: express.Express, context: DashboardAppContext) {
   const { basePath, configService } = context
   const adminGuard = createAdminGuard(context)
@@ -84,12 +98,13 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       return res.status(400).json({ success: false, outcome, error: "AI assist is unavailable for this dashboard session." })
     }
 
+    const assistInput = normalizeAiAssistRouteInput(req.body, action)
     const result = await context.runtimeBridge.runTicketAiAssist({
       ticketId,
       action,
       actorUserId,
-      prompt: typeof req.body?.prompt === "string" ? req.body.prompt : typeof req.body?.question === "string" ? req.body.question : "",
-      instructions: typeof req.body?.instructions === "string" ? req.body.instructions : ""
+      prompt: assistInput.prompt,
+      instructions: assistInput.instructions
     })
 
     void recordAdminAuditEvent(context, req, {
@@ -106,7 +121,12 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
     })
 
     const status = result.ok ? 200 : result.outcome === "denied" ? 403 : result.outcome === "busy" ? 409 : 400
-    res.status(status).json({ success: result.ok, result })
+    const error = result.ok ? null : result.degradedReason || result.message || "AI assist request failed."
+    res.status(status).json({
+      success: result.ok,
+      ...(error ? { error } : {}),
+      result
+    })
   }
 
   app.post(joinBasePath(basePath, "api/config/general"), adminGuard.form("config.write.general"), (req, res) => {

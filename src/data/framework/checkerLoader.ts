@@ -626,7 +626,7 @@ export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure(
             checker.createMessage("opendiscord:ai-assist-profile-settings-object","error","AI assist profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
             return false
         }
-        const secretKey = Object.keys(value).find((key) => /secret|token|password|api[_-]?key|authorization|credential/i.test(key))
+        const secretKey = Object.keys(value).find((key) => /secret|token|password|api[_-]?key|authorization|credential|bearer/i.test(key))
         if (secretKey){
             checker.createMessage("opendiscord:ai-assist-profile-settings-secret","error","AI assist profile settings must not contain secret-shaped keys. Use host environment variables for provider secrets.",lt,null,[secretKey],locationId,locationDocs)
             return false

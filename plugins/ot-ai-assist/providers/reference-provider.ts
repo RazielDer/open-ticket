@@ -44,13 +44,16 @@ function unavailableBase() {
   }
 }
 
-function validateProfileSettings(input: TicketAiAssistValidateProfileSettingsInput) {
+function validateProfileSettings(input: TicketAiAssistValidateProfileSettingsInput, env: ReferenceProviderEnv = process.env) {
   void input.profile
   void input.referencedByOptionIds
   void input.knowledgeSources
-  const secretKey = Object.keys(input.settings || {}).find((key) => /secret|token|password|api[_-]?key|authorization|credential/i.test(key))
+  const secretKey = Object.keys(input.settings || {}).find((key) => /secret|token|password|api[_-]?key|authorization|credential|bearer/i.test(key))
   if (secretKey) {
     throw new Error(`AI assist profile settings must not contain secret-shaped key "${secretKey}". Use host environment variables for provider secrets.`)
+  }
+  if (!isReferenceAiAssistConfigured(env)) {
+    throw new Error(REFERENCE_PROVIDER_MISSING_CONFIG_REASON)
   }
 }
 
@@ -69,7 +72,9 @@ export function createReferenceAiAssistProvider(env: ReferenceProviderEnv = proc
     id: REFERENCE_PROVIDER_ID,
     pluginId: "ot-ai-assist",
     capabilities: ["summarize", "answerFaq", "suggestReply"],
-    validateProfileSettings,
+    validateProfileSettings(input) {
+      return validateProfileSettings(input, env)
+    },
     summarize(input): TicketAiAssistSummarizeResult {
       if (!configured()) return { ...unavailableBase(), summary: null }
       const messageCount = input.context.messages.length

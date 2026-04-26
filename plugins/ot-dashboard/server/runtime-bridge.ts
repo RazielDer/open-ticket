@@ -1316,8 +1316,8 @@ async function runRuntimeTicketAiAssist(runtimeBridge: DashboardRuntimeBridge, i
       actorUser: context.user,
       action,
       source: "dashboard",
-      prompt: normalizeString(input.prompt) || null,
-      instructions: normalizeString(input.instructions) || null
+      prompt: action === "answerFaq" ? normalizeString(input.prompt) || null : null,
+      instructions: action === "suggestReply" ? normalizeString(input.instructions) || null : null
     })
 
     return ticketAiAssistResult({

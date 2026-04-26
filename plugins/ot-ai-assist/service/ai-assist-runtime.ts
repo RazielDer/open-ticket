@@ -82,6 +82,13 @@ function normalizeStringArray(value: unknown) {
     : []
 }
 
+function normalizeAttachmentFilename(attachment: unknown) {
+  if (!attachment || typeof attachment !== "object") return ""
+  const name = normalizeString((attachment as { name?: unknown }).name)
+  if (!name || /^[a-z][a-z0-9+.-]*:\/\//i.test(name)) return ""
+  return path.posix.basename(name.replace(/\\/g, "/"))
+}
+
 function valuesFromCollection(value: any): any[] {
   if (!value) return []
   if (Array.isArray(value)) return value
@@ -190,6 +197,40 @@ function readSources(data: unknown) {
   return Array.isArray(data) ? data.map(normalizeKnowledgeSource).filter(Boolean) as TicketAiAssistKnowledgeSource[] : []
 }
 
+function knowledgeSourcesForProfile(profile: TicketAiAssistProfile, data: unknown) {
+  const sourceById = new Map(readSources(data).map((source) => [source.id, source]))
+  return profile.knowledgeSourceIds
+    .map((sourceId) => sourceById.get(sourceId) || null)
+    .filter((source): source is TicketAiAssistKnowledgeSource => Boolean(source))
+}
+
+function providerValidationReason(
+  provider: TicketPlatformAiAssistProvider,
+  profile: TicketAiAssistProfile,
+  knowledgeSources: TicketAiAssistKnowledgeSource[]
+) {
+  if (typeof provider.validateProfileSettings !== "function") return null
+  try {
+    provider.validateProfileSettings({
+      profile,
+      settings: profile.settings,
+      referencedByOptionIds: [],
+      knowledgeSources
+    })
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : DEFAULT_UNAVAILABLE_REASON
+  }
+}
+
+function actionPrompt(action: TicketPlatformAiAssistCapability, value: unknown) {
+  return action === "answerFaq" ? normalizeString(value) || null : null
+}
+
+function actionInstructions(action: TicketPlatformAiAssistCapability, value: unknown) {
+  return action === "suggestReply" ? normalizeString(value) || null : null
+}
+
 async function fetchRecentMessages(channel: any, maxRecentMessages: number) {
   const fetched = typeof channel?.messages?.fetch === "function"
     ? await channel.messages.fetch({ limit: maxRecentMessages }).catch(() => null)
@@ -207,7 +248,7 @@ async function buildMessageContext(channel: any, profile: TicketAiAssistProfile)
       authorLabel: normalizeString(message?.member?.displayName || message?.author?.globalName || message?.author?.username) || normalizeString(message?.author?.id) || "Unknown",
       createdAt: message?.createdAt instanceof Date ? message.createdAt.toISOString() : new Date(Number(message?.createdTimestamp || Date.now())).toISOString(),
       content: normalizeString(message?.content),
-      attachmentFilenames: valuesFromCollection(message?.attachments).map((attachment) => normalizeString(attachment?.name || attachment?.attachment)).filter(Boolean)
+      attachmentFilenames: valuesFromCollection(message?.attachments).map((attachment) => normalizeAttachmentFilename(attachment)).filter(Boolean)
     }))
 }
 
@@ -483,6 +524,14 @@ export class OTAiAssistService {
     if (!provider) {
       return { profileId: profile.id, providerId: profile.providerId, label: profile.label, available: false, actions: [], reason: "AI assist provider is unavailable." }
     }
+    const validationReason = providerValidationReason(
+      provider,
+      profile,
+      knowledgeSourcesForProfile(profile, this.dependencies.getConfigData("opendiscord:knowledge-sources"))
+    )
+    if (validationReason) {
+      return { profileId: profile.id, providerId: profile.providerId, label: profile.label, available: false, actions: [], reason: validationReason }
+    }
     return {
       profileId: profile.id,
       providerId: profile.providerId,
@@ -538,11 +587,10 @@ export class OTAiAssistService {
         throw new Error(DEFAULT_UNAVAILABLE_REASON)
       }
 
-      const sourceById = new Map(readSources(this.dependencies.getConfigData("opendiscord:knowledge-sources")).map((source) => [source.id, source]))
-      const knowledge = applyKnowledgeBudget(profile.knowledgeSourceIds
-        .map((sourceId) => sourceById.get(sourceId) || null)
-        .filter((source): source is TicketAiAssistKnowledgeSource => Boolean(source))
-        .map((source) => readKnowledgeContent(this.dependencies.projectRoot, source, input.prompt || null))
+      const requestPrompt = actionPrompt(input.action, input.prompt)
+      const requestInstructions = actionInstructions(input.action, input.instructions)
+      const knowledge = applyKnowledgeBudget(knowledgeSourcesForProfile(profile, this.dependencies.getConfigData("opendiscord:knowledge-sources"))
+        .map((source) => readKnowledgeContent(this.dependencies.projectRoot, source, requestPrompt))
         .filter((entry): entry is TicketAiAssistKnowledgeContext => Boolean(entry)))
 
       if (input.action === "answerFaq" && knowledge.length < 1) {
@@ -579,8 +627,8 @@ export class OTAiAssistService {
         knowledge,
         request: {
           action: input.action,
-          prompt: normalizeString(input.prompt) || null,
-          instructions: normalizeString(input.instructions) || null,
+          prompt: requestPrompt,
+          instructions: requestInstructions,
           source: input.source
         }
       }

@@ -323,6 +323,13 @@ test("slash AI assist records metadata-only ai-assist-request audit events throu
   assert.match(dashboardStartSource, /context\.authStore\.recordAuditEvent/)
 })
 
+test("AI assist managed-config secret predicates include bearer keys", () => {
+  const root = process.cwd()
+  const checkerLoaderSource = fs.readFileSync(path.resolve(root, "src/data/framework/checkerLoader.ts"), "utf8")
+
+  assert.match(checkerLoaderSource, /secret\|token\|password\|api\[_-\]\?key\|authorization\|credential\|bearer/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")

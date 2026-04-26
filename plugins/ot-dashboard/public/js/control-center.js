@@ -85,10 +85,12 @@
         setResult("Working...", "info");
         try {
           const formData = new FormData(form);
-          const payload = {
-            prompt: String(formData.get("prompt") || ""),
-            instructions: String(formData.get("instructions") || "")
-          };
+          const payload = {};
+          if (route === "answer-faq") {
+            payload.question = String(formData.get("prompt") || "");
+          } else if (route === "suggest-reply") {
+            payload.instructions = String(formData.get("instructions") || "");
+          }
           const response = await ui.requestJson(ui.join(`api/tickets/${encodeURIComponent(ticketId)}/ai/${route}`), {
             method: "POST",
             json: payload

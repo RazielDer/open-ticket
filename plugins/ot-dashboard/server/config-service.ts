@@ -754,7 +754,7 @@ function normalizeIntegrationProfile(profile: any) {
   return normalized
 }
 
-const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential/i
+const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
 
 function assertNoSecretShapedSettings(settings: Record<string, unknown>, label: string) {
   const secretKey = Object.keys(settings).find((key) => SECRET_SHAPED_KEY_REGEX.test(key))

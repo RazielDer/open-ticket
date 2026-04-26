@@ -483,19 +483,21 @@ test("AI assist profiles and knowledge sources reject secret settings and guarde
   const service = createConfigService(root)
 
   try {
-    assert.throws(() => {
-      service.saveRawJson("ai-assist-profiles", JSON.stringify([
-        {
-          id: "assist-1",
-          providerId: "reference",
-          label: "Reference assist",
-          enabled: true,
-          knowledgeSourceIds: ["faq-1"],
-          context: { maxRecentMessages: 40 },
-          settings: { apiKey: "must-not-be-here" }
-        }
-      ]))
-    }, /secret-shaped key/i)
+    for (const secretKey of ["apiKey", "bearer"]) {
+      assert.throws(() => {
+        service.saveRawJson("ai-assist-profiles", JSON.stringify([
+          {
+            id: "assist-1",
+            providerId: "reference",
+            label: "Reference assist",
+            enabled: true,
+            knowledgeSourceIds: ["faq-1"],
+            context: { maxRecentMessages: 40 },
+            settings: { [secretKey]: "must-not-be-here" }
+          }
+        ]))
+      }, /secret-shaped key/i)
+    }
 
     assert.throws(() => {
       service.saveRawJson("knowledge-sources", JSON.stringify([]))

@@ -49,7 +49,10 @@ function channel() {
           content: "I need help with the rules password.",
           createdTimestamp: 1710000001000,
           author: { id: "creator-1", username: "Creator", bot: false },
-          attachments: new Map([["a", { name: "proof.png" }]])
+          attachments: new Map([
+            ["a", { name: "proof.png" }],
+            ["b", { attachment: "https://cdn.discordapp.invalid/attachments/ticket-1/secret.png" }]
+          ])
         },
         {
           id: "message-2",
@@ -98,6 +101,55 @@ test("reference provider registers but fails closed without host env", async () 
 
   assert.equal(result?.outcome, "unavailable")
   assert.equal(result?.degradedReason, REFERENCE_PROVIDER_MISSING_CONFIG_REASON)
+
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "reference",
+          label: "Reference",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return provider
+    }
+  })
+  const summary = service.getTicketAiAssistSummary({ ticket: ticket("profile-1") })
+  assert.equal(summary?.available, false)
+  assert.equal(summary?.reason, REFERENCE_PROVIDER_MISSING_CONFIG_REASON)
+})
+
+test("reference provider rejects bearer-shaped profile settings", () => {
+  const provider = createReferenceAiAssistProvider({})
+  assert.throws(() => provider.validateProfileSettings?.({
+    profile: {
+      id: "profile-1",
+      providerId: "reference",
+      label: "Reference",
+      enabled: true,
+      knowledgeSourceIds: [],
+      context: {
+        maxRecentMessages: 40,
+        includeTicketMetadata: true,
+        includeParticipants: true,
+        includeManagedFormSnapshot: true,
+        includeBotMessages: false
+      },
+      settings: { bearer: "must-not-be-here" }
+    },
+    settings: { bearer: "must-not-be-here" },
+    referencedByOptionIds: [],
+    knowledgeSources: []
+  }), /secret-shaped key/i)
 })
 
 test("AI assist service uses stored ticket profile, reads local FAQ knowledge, and excludes bot messages", async () => {
@@ -111,7 +163,7 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
     OT_AI_ASSIST_REFERENCE_API_KEY: "test-key",
     OT_AI_ASSIST_REFERENCE_MODEL: "test-model"
   })
-  const messagesSeen: number[] = []
+  let contextMessagesSeen: any[] = []
   const service = new OTAiAssistService({
     projectRoot: root,
     getConfigData(id) {
@@ -150,7 +202,7 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
       return {
         ...provider,
         answerFaq(input) {
-          messagesSeen.push(input.context.messages.length)
+          contextMessagesSeen = input.context.messages
           return provider.answerFaq!(input)
         }
       }
@@ -176,7 +228,8 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
     assert.equal(result.answer, "The rules password is in the rules channel.")
     assert.equal(result.profileId, "stored-profile")
     assert.equal(result.providerId, "reference")
-    assert.deepEqual(messagesSeen, [1])
+    assert.equal(contextMessagesSeen.length, 1)
+    assert.deepEqual(contextMessagesSeen[0]?.attachmentFilenames, ["proof.png"])
     assert.equal(result.citations[0]?.sourceId, "faq")
     assert.equal(result.citations[0]?.locator, "knowledge/faq.json#rules-password")
   } finally {
@@ -233,6 +286,57 @@ test("AI assist service strips low-confidence output text and citations", async 
   assert.equal(result.draft, null)
   assert.deepEqual(result.citations, [])
   assert.equal(result.degradedReason, "Low confidence.")
+})
+
+test("AI assist service strips summarize prompt and instructions before provider dispatch", async () => {
+  let requestSeen: any = null
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          requestSeen = input.request
+          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard",
+    prompt: "unexpected prompt",
+    instructions: "unexpected instructions"
+  })
+
+  assert.equal(result.outcome, "success")
+  assert.deepEqual(requestSeen, {
+    action: "summarize",
+    prompt: null,
+    instructions: null,
+    source: "dashboard"
+  })
 })
 
 test("FAQ assist fails closed without resolved local knowledge and does not dispatch provider", async () => {
@@ -327,10 +431,10 @@ test("knowledge retrieval enforces excerpt budget and citation locators", async 
     getProvider() {
       return {
         id: "probe",
-        capabilities: ["summarize"],
-        summarize(input) {
+        capabilities: ["answerFaq"],
+        answerFaq(input) {
           seenKnowledge = input.knowledge
-          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+          return { outcome: "success", confidence: "high", answer: "ok", citations: [], degradedReason: null, warnings: [] }
         }
       }
     }
@@ -342,7 +446,7 @@ test("knowledge retrieval enforces excerpt budget and citation locators", async 
       channel: channel(),
       guild: {},
       actorUser: { id: "staff-1" },
-      action: "summarize",
+      action: "answerFaq",
       source: "dashboard",
       prompt: "install"
     })

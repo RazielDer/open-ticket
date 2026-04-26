@@ -847,7 +847,7 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
       cookie,
       "content-type": "application/json"
     },
-    body: JSON.stringify({ prompt: "secret prompt text" })
+    body: JSON.stringify({ question: "secret prompt text" })
   })
   await missingCsrf.arrayBuffer()
   assert.equal(missingCsrf.status, 403)
@@ -860,7 +860,7 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
       "content-type": "application/json",
       "x-csrf-token": csrfToken
     },
-    body: JSON.stringify({ prompt: "secret prompt text" })
+    body: JSON.stringify({ question: "secret prompt text" })
   })
   const body = await response.json()
   assert.equal(response.status, 200)
@@ -887,6 +887,68 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
     confidence: "high"
   })
   assert.doesNotMatch(JSON.stringify(audits[0]), /secret prompt text|FAQ answer text/)
+})
+
+test("ticket AI assist API strips summarize body and returns degraded reasons", async (t) => {
+  const reason = "Reference AI provider is not configured on this host"
+  const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
+  const detail = enabledDetail(baseTicket)
+  detail.aiAssist = {
+    profileId: "assist-1",
+    providerId: "reference",
+    label: "Reference assist",
+    available: true,
+    actions: ["summarize", "answerFaq", "suggestReply"],
+    reason: null
+  }
+  const runtime = await startServer({
+    tickets: [baseTicket],
+    detail,
+    aiAssistResult: {
+      ok: false,
+      outcome: "unavailable",
+      action: "summarize",
+      message: "tickets.detail.actionResults.unavailable",
+      profileId: "assist-1",
+      providerId: "reference",
+      confidence: null,
+      summary: null,
+      answer: null,
+      draft: null,
+      citations: [],
+      warnings: [],
+      degradedReason: reason,
+      ticketId: "ticket-1"
+    }
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie } })
+  const csrfToken = csrfFrom(await detailResponse.text())
+  const response = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/summarize`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken
+    },
+    body: JSON.stringify({ prompt: "unexpected prompt", instructions: "unexpected instructions" })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.equal(body.success, false)
+  assert.equal(body.error, reason)
+  assert.equal(body.result.degradedReason, reason)
+  assert.equal(runtime.aiAssistRequests.length, 1)
+  assert.deepEqual(runtime.aiAssistRequests[0], {
+    ticketId: "ticket-1",
+    action: "summarize",
+    actorUserId: "admin-user",
+    prompt: "",
+    instructions: ""
+  })
 })
 
 test("ticket action route forwards every locked action id through the runtime bridge with actor context", async (t) => {
