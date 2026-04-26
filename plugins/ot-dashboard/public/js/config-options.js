@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
     channelCategory: document.getElementById("channelCategory"),
     closedCategory: document.getElementById("closedCategory"),
     backupCategory: document.getElementById("backupCategory"),
+    overflowCategories: document.getElementById("overflowCategories"),
     claimedCategory: document.getElementById("claimedCategory"),
     channelTopic: document.getElementById("channelTopic"),
     cooldownEnabled: document.getElementById("cooldownEnabled"),
@@ -333,6 +334,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.type.value = "";
     fields.ticketAdmins.value = "[]";
     fields.readonlyAdmins.value = "[]";
+    fields.overflowCategories.value = ui.stringifyList([]);
     fields.claimedCategory.value = ui.stringifyJson([]);
     fields.roleIds.value = "[]";
     fields.removeRoleIds.value = "[]";
@@ -386,6 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.channelCategory.value = option.channel?.category || "";
     fields.closedCategory.value = option.channel?.closedCategory || "";
     fields.backupCategory.value = option.channel?.backupCategory || "";
+    fields.overflowCategories.value = ui.stringifyList(option.channel?.overflowCategories || (option.channel?.backupCategory ? [option.channel.backupCategory] : []));
     fields.claimedCategory.value = ui.stringifyJson(option.channel?.claimedCategory || []);
     fields.channelTopic.value = option.channel?.topic || "";
     fields.cooldownEnabled.checked = Boolean(option.cooldown?.enabled);
@@ -462,6 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
         category: fields.channelCategory.value.trim(),
         closedCategory: fields.closedCategory.value.trim(),
         backupCategory: fields.backupCategory.value.trim(),
+        overflowCategories: ui.parseList(fields.overflowCategories.value),
         claimedCategory: parseClaimedCategories(),
         topic: fields.channelTopic.value.trim()
       };

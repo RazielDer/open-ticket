@@ -10,7 +10,7 @@ import {
     getTicketOptionThreadParentChannel,
     getTicketOptionTransportMode
 } from "./ticketTransport.js"
-import { buildTicketRoutingMetadata, getTicketOptionSupportTeamRoleIds } from "./ticketRouting.js"
+import { buildTicketRoutingMetadata, getTicketOptionSupportTeamRoleIds, resolveTicketOpenCategoryRoute } from "./ticketRouting.js"
 import { getTicketOptionIntegrationProfileId } from "./ticketIntegration.js"
 import { getTicketOptionAiAssistProfileId } from "./ticketAiAssist.js"
 
@@ -30,45 +30,18 @@ export const registerActions = async () => {
             const transportMode = getTicketOptionTransportMode(option)
             const threadParentChannelId = getTicketOptionThreadParentChannel(option)
             const channelPrefix = option.get("opendiscord:channel-prefix").value
-            const channelCategory = option.get("opendiscord:channel-category").value
-            const channelBackupCategory = option.get("opendiscord:channel-category-backup").value
             const channelTopicText = option.get("opendiscord:channel-topic").value
             const channelSuffix = await opendiscord.options.suffix.getSuffixFromOption(option,user,guild)
             const channelName = channelPrefix+channelSuffix
 
             //handle category
             let category: string|null = null
-            let categoryMode: "backup"|"normal"|null = null
-            if (transportMode == "channel_text" && channelCategory != ""){
-                //category enabled
-                const normalCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelCategory)
-                if (!normalCategory){
-                    //default category was not found
-                    opendiscord.log("Ticket Creation Error: Unable to find category! #1","error",[
-                        {key:"categoryid",value:channelCategory},
-                        {key:"backup",value:"false"}
-                    ])
-                }else{
-                    //default category was found
-                    if (normalCategory.children.cache.size >= 50 && channelBackupCategory != ""){
-                        //use backup category
-                        const backupCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelBackupCategory)
-                        if (!backupCategory){
-                            //default category was not found
-                            opendiscord.log("Ticket Creation Error: Unable to find category! #2","error",[
-                                {key:"categoryid",value:channelBackupCategory},
-                                {key:"backup",value:"true"}
-                            ])
-                        }else{
-                            category = backupCategory.id
-                            categoryMode = "backup"
-                        }
-                    }else{
-                        //use default category
-                        category = normalCategory.id
-                        categoryMode = "normal"
-                    }
-                }
+            let categoryMode: "normal"|"overflow"|null = null
+            if (transportMode == "channel_text"){
+                const route = await resolveTicketOpenCategoryRoute({guild,option,logPrefix:"Ticket Creation"})
+                if (!route.ok) throw new api.ODSystemError(`Unable to create ticket! ${route.reason}`)
+                category = route.categoryId
+                categoryMode = route.categoryMode
             }
 
             //handle permissions

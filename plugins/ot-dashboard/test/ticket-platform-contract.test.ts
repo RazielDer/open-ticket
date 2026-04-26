@@ -18,6 +18,7 @@ import {
 } from "../../../src/core/api/openticket/ticket-platform.js"
 import {
   clearDashboardRuntimeRegistry,
+  getDashboardRuntimeSnapshot,
   listDashboardTickets,
   registerDashboardRuntime
 } from "../server/dashboard-runtime-registry.js"
@@ -208,7 +209,7 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
     "opendiscord:claimed": true,
     "opendiscord:pinned": false,
     "opendiscord:participants": [{ type: "user", id: "creator-1" }],
-    "opendiscord:category-mode": "normal",
+    "opendiscord:category-mode": "backup",
     "opendiscord:channel-suffix": "creator-1",
     [ODTICKET_PLATFORM_METADATA_IDS.transportMode]: "private_thread",
     [ODTICKET_PLATFORM_METADATA_IDS.transportParentChannelId]: "parent-channel-1",
@@ -233,6 +234,7 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
         return [{
           id: { value: "ticket-1" },
           option: { id: { value: "support" } },
+          channel: { name: "ticket-channel-name" },
           get(id: string) {
             return { value: ticketValues[id as keyof typeof ticketValues] }
           }
@@ -248,6 +250,7 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
     optionId: "support",
     creatorId: "creator-1",
     transportMode: "private_thread",
+    channelName: "ticket-channel-name",
     transportParentChannelId: "parent-channel-1",
     transportParentMessageId: "parent-message-1",
     assignedTeamId: "team-1",
@@ -274,9 +277,48 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
     claimed: true,
     pinned: false,
     participantCount: 1,
-    categoryMode: "normal",
+    categoryMode: "overflow",
     channelSuffix: "creator-1"
   })
+
+  clearDashboardRuntimeRegistry()
+})
+
+test("dashboard runtime snapshot warns when ticket categories are near Discord capacity", () => {
+  clearDashboardRuntimeRegistry()
+
+  registerDashboardRuntime({
+    readyStartupDate: new Date("2026-04-26T12:00:00.000Z"),
+    configs: {
+      get(id: string) {
+        if (id !== "opendiscord:options") return null
+        return {
+          data: [{
+            id: "intake",
+            type: "ticket",
+            channel: {
+              category: "category-primary",
+              overflowCategories: ["category-overflow"]
+            }
+          }]
+        }
+      }
+    } as any,
+    client: {
+      mainServer: {
+        channels: {
+          cache: new Map([
+            ["category-primary", { id: "category-primary", children: { cache: { size: 44 } } }],
+            ["category-overflow", { id: "category-overflow", children: { cache: { size: 45 } } }]
+          ])
+        }
+      }
+    } as any
+  } as any)
+
+  const snapshot = getDashboardRuntimeSnapshot({ projectRoot: process.cwd() })
+  assert.equal(snapshot.availability, "degraded")
+  assert.match(snapshot.warnings.join("\n"), /intake category category-overflow is near Discord channel capacity \(45\/50\)/)
 
   clearDashboardRuntimeRegistry()
 })
@@ -285,8 +327,12 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   const root = process.cwd()
   const read = (relativePath: string) => fs.readFileSync(path.resolve(root, relativePath), "utf8")
   const configLoaderSource = read("src/data/framework/configLoader.ts")
+  const ticketRoutingSource = read("src/actions/ticketRouting.ts")
   const ticketIntegrationSource = read("src/actions/ticketIntegration.ts")
   const createTicketSource = read("src/actions/createTicket.ts")
+  const moveTicketSource = read("src/actions/moveTicket.ts")
+  const reopenTicketSource = read("src/actions/reopenTicket.ts")
+  const unclaimTicketSource = read("src/actions/unclaimTicket.ts")
   const bridgeSource = read("plugins/ot-eotfs-bridge/index.ts")
   const localRuntimeSource = read("plugins/ot-local-runtime-config/index.ts")
 
@@ -299,11 +345,27 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.equal(ticketIntegrationSource.includes("return stored || getTicketOptionIntegrationProfileId(ticket.option)"), false)
   assert.match(ticketIntegrationSource, /ticket\.get\("opendiscord:integration-profile"\)\.value = profileId/)
   assert.equal(createTicketSource.includes("integrationProfileId:getTicketOptionIntegrationProfileId(option) || null"), false)
+  assert.equal(ticketIntegrationSource.includes("buildLegacyBridgeProfile"), false)
+
+  assert.match(ticketRoutingSource, /TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID = "opendiscord:channel-categories-overflow"/)
+  assert.match(ticketRoutingSource, /TICKET_CATEGORY_NEAR_CAPACITY_CHILD_COUNT = 45/)
+  assert.match(ticketRoutingSource, /resolveTicketOpenCategoryRoute/)
+  assert.match(ticketRoutingSource, /value == "backup"\) return "overflow"/)
+  assert.match(createTicketSource, /categoryMode: "normal"\|"overflow"\|null/)
+  assert.match(moveTicketSource, /categoryMode: "normal"\|"overflow"\|"closed"\|"claimed"\|null/)
+  assert.match(reopenTicketSource, /resolveTicketOpenCategoryRoute/)
+  assert.match(unclaimTicketSource, /resolveTicketOpenCategoryRoute/)
+  assert.equal(createTicketSource.includes('categoryMode = "backup"'), false)
+  assert.equal(moveTicketSource.includes('categoryMode = "backup"'), false)
+  assert.equal(reopenTicketSource.includes('category-mode").value = "backup"'), false)
+  assert.equal(unclaimTicketSource.includes('category-mode").value = "backup"'), false)
 
   assert.match(bridgeSource, /function resolveBridgeConfigForTicket/)
   assert.match(bridgeSource, /hasOwnProperty\.call\(settings,"eligibleOptionIds"\)/)
   assert.equal(bridgeSource.includes("parseStringArraySetting(settings.eligibleOptionIds).length > 0"), false)
   assert.match(bridgeSource, /return Boolean\(resolveBridgeConfigForTicket\(entry\)\)/)
+  assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
+  assert.equal(bridgeSource.includes("return isEligibleOptionId(getBridgeConfig().eligibleOptionIds"), false)
 
   assert.equal(localRuntimeSource.includes("eligibleOptionIds:[WHITELIST_OPTION_ID]"), false)
 })

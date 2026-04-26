@@ -99,6 +99,7 @@ function ticket(overrides: Partial<DashboardTicketRecord>): DashboardTicketRecor
     optionId: "intake",
     creatorId: "creator-1",
     transportMode: "channel_text",
+    channelName: null,
     transportParentChannelId: null,
     transportParentMessageId: null,
     assignedTeamId: "triage",
@@ -635,6 +636,10 @@ function redirectMessage(location: string | null) {
   return new URL(String(location), "http://dashboard.local").searchParams.get("msg")
 }
 
+function redirectAlertStatus(location: string | null) {
+  return new URL(String(location), "http://dashboard.local").searchParams.get("alertStatus")
+}
+
 test("ticket workbench restores editor/admin access without reopening admin home to editors", async (t) => {
   const runtime = await startServer()
   t.after(() => stopServer(runtime))
@@ -799,6 +804,101 @@ test("ticket action POSTs require csrf and revalidate disabled provider-locked a
   await invalidAction.arrayBuffer()
   assert.equal(invalidAction.status, 302)
   assert.equal(redirectMessage(invalidAction.headers.get("location")), "Unsupported ticket action.")
+})
+
+test("ticket bulk actions require csrf, keep return filters, and map claim-self to actor claim", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({ id: "ticket-1", channelName: "intake-channel" }),
+      ticket({ id: "ticket-2", channelName: "second-channel", openedOn: 1710000100000 })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?status=open&q=channel`, { headers: { cookie } })
+  const listHtml = await listResponse.text()
+  assert.equal(listResponse.status, 200)
+  assert.match(listHtml, /id="ticket-bulk-actions"/)
+  assert.match(listHtml, /intake-channel/)
+  const csrfToken = csrfFrom(listHtml)
+
+  const missingCsrf = await fetch(`${runtime.baseUrl}/dash/admin/tickets/bulk/claim-self`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      ticketIds: "ticket-1",
+      returnTo: "/dash/admin/tickets?status=open&q=channel"
+    })
+  })
+  await missingCsrf.arrayBuffer()
+  assert.equal(missingCsrf.status, 403)
+  assert.equal(runtime.actionRequests.length, 0)
+
+  const claimResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/bulk/claim-self`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams([
+      ["csrfToken", csrfToken],
+      ["ticketIds", "ticket-1"],
+      ["ticketIds", "ticket-2"],
+      ["returnTo", "/dash/admin/tickets?status=open&q=channel"],
+      ["reason", "bulk claim"]
+    ])
+  })
+  await claimResponse.arrayBuffer()
+  assert.equal(claimResponse.status, 302)
+  const claimLocation = String(claimResponse.headers.get("location"))
+  assert.match(claimLocation, /^\/dash\/admin\/tickets\?status=open&q=channel&alertStatus=success&msg=/)
+  assert.match(String(redirectMessage(claimLocation)), /2 succeeded, 0 skipped, 0 failed/)
+  assert.equal(redirectAlertStatus(claimLocation), "success")
+  assert.deepEqual(runtime.actionRequests.map((request) => ({
+    ticketId: request.ticketId,
+    action: request.action,
+    actorUserId: request.actorUserId,
+    reason: request.reason,
+    assigneeUserId: request.assigneeUserId
+  })), [
+    { ticketId: "ticket-1", action: "claim", actorUserId: "admin-user", reason: "bulk claim", assigneeUserId: undefined },
+    { ticketId: "ticket-2", action: "claim", actorUserId: "admin-user", reason: "bulk claim", assigneeUserId: undefined }
+  ])
+
+  runtime.actionRequests.length = 0
+  const closeResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/bulk/close`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams([
+      ["csrfToken", csrfToken],
+      ["ticketIds", "ticket-1"],
+      ["ticketIds", "ticket-2"],
+      ["returnTo", "/dash/admin/tickets?status=open&q=channel"]
+    ])
+  })
+  await closeResponse.arrayBuffer()
+  assert.equal(closeResponse.status, 302)
+  assert.match(String(redirectMessage(closeResponse.headers.get("location"))), /0 succeeded, 2 skipped, 0 failed/)
+  assert.equal(redirectAlertStatus(closeResponse.headers.get("location")), "warning")
+  assert.equal(runtime.actionRequests.length, 0)
+
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ticket-bulk-action" })
+  assert.equal(audits.length, 2)
+  const claimAudit = audits.find((event) => event.details?.action === "claim-self")
+  const closeAudit = audits.find((event) => event.details?.action === "close")
+  assert.equal(claimAudit?.details?.succeeded, 2)
+  assert.equal(closeAudit?.details?.skipped, 2)
 })
 
 test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {
@@ -1621,7 +1721,12 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(authSource, /"\/admin\/tickets"/)
   assert.match(authSource, /if \(tier === "editor" \|\| tier === "admin"\) \{\s+capabilities\.push\("config\.write\.visual", "admin\.shell", "ticket\.workbench"\)/)
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
+  assert.match(routesSource, /admin\/tickets\/bulk\/:actionId"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)
+  assert.match(routesSource, /eventType: "ticket-bulk-action"/)
+  assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
+  assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
   assert.match(workflowSource, /superseded by the workspace SLICE-010 controller contract/)
   assert.match(controllerSource, /SLICE-010` supersedes that local retirement contract/)
 })

@@ -34,11 +34,31 @@ export interface ODSupportTeamConfigEntry {
 
 export const TICKET_OPTION_ROUTING_SUPPORT_TEAM_ID = "opendiscord:routing-support-team"
 export const TICKET_OPTION_ROUTING_ESCALATION_TARGETS_ID = "opendiscord:routing-escalation-targets"
+export const TICKET_OPTION_CHANNEL_CATEGORY_ID = "opendiscord:channel-category"
+export const TICKET_OPTION_CHANNEL_BACKUP_CATEGORY_ID = "opendiscord:channel-category-backup"
+export const TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID = "opendiscord:channel-categories-overflow"
+export const TICKET_OPTION_CHANNEL_CLOSED_CATEGORY_ID = "opendiscord:channel-category-closed"
+export const TICKET_OPTION_CHANNEL_CLAIMED_CATEGORIES_ID = "opendiscord:channel-categories-claimed"
 export const SUPPORT_TEAM_ROUND_ROBIN_CATEGORY = "opendiscord:support-teams:round-robin"
+export const TICKET_CATEGORY_FULL_CHILD_COUNT = 50
+export const TICKET_CATEGORY_NEAR_CAPACITY_CHILD_COUNT = 45
 
-type OptionDataSource = {
+export type ODTicketOpenCategoryMode = "normal"|"overflow"|null
+
+export type OptionDataSource = {
     get?: (id:string) => {value?:unknown}|null,
     exists?: (id:string) => boolean
+}
+
+export type ODTicketOpenCategoryRoute = {
+    ok: true
+    categoryId: string|null
+    categoryMode: ODTicketOpenCategoryMode
+    warnings: string[]
+} | {
+    ok: false
+    reason: string
+    warnings: string[]
 }
 
 export function getTicketOptionSupportTeamId(option:OptionDataSource): string {
@@ -50,6 +70,120 @@ export function getTicketOptionSupportTeamId(option:OptionDataSource): string {
 export function getTicketOptionEscalationTargetIds(option:OptionDataSource): string[] {
     if (!option.exists?.(TICKET_OPTION_ROUTING_ESCALATION_TARGETS_ID)) return []
     return normalizeStringList(option.get?.(TICKET_OPTION_ROUTING_ESCALATION_TARGETS_ID)?.value)
+}
+
+function getTicketOptionString(option:OptionDataSource, id:string): string {
+    if (typeof option.exists == "function" && !option.exists(id)) return ""
+    const value = option.get?.(id)?.value
+    return typeof value == "string" ? value.trim() : ""
+}
+
+function getTicketOptionClaimedCategoryIds(option:OptionDataSource): string[] {
+    if (typeof option.exists == "function" && !option.exists(TICKET_OPTION_CHANNEL_CLAIMED_CATEGORIES_ID)) return []
+    const value = option.get?.(TICKET_OPTION_CHANNEL_CLAIMED_CATEGORIES_ID)?.value
+    if (!Array.isArray(value)) return []
+    return normalizeStringList(value.map((entry) => entry && typeof entry == "object" && !Array.isArray(entry) ? (entry as Record<string,unknown>).category : ""))
+}
+
+export function getTicketOptionOverflowCategoryIds(option:OptionDataSource): string[] {
+    const primaryCategoryId = getTicketOptionString(option,TICKET_OPTION_CHANNEL_CATEGORY_ID)
+    const backupCategoryId = getTicketOptionString(option,TICKET_OPTION_CHANNEL_BACKUP_CATEGORY_ID)
+    const closedCategoryId = getTicketOptionString(option,TICKET_OPTION_CHANNEL_CLOSED_CATEGORY_ID)
+    const claimedCategoryIds = new Set(getTicketOptionClaimedCategoryIds(option))
+    const rawOverflow = typeof option.exists == "function" && !option.exists(TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)
+        ? []
+        : normalizeStringList(option.get?.(TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)?.value)
+    const source = rawOverflow.length > 0 ? rawOverflow : (backupCategoryId ? [backupCategoryId] : [])
+    const seen = new Set<string>()
+    const result: string[] = []
+    source.forEach((categoryId) => {
+        if (!categoryId || seen.has(categoryId)) return
+        seen.add(categoryId)
+        if (categoryId == primaryCategoryId) return
+        if (categoryId == closedCategoryId) return
+        if (claimedCategoryIds.has(categoryId)) return
+        result.push(categoryId)
+    })
+    return result
+}
+
+export function normalizeOpenCategoryMode(value:unknown): ODTicketOpenCategoryMode {
+    if (value == "normal" || value == "overflow") return value as ODTicketOpenCategoryMode
+    if (value == "backup") return "overflow"
+    return null
+}
+
+function getCategoryChildCount(category:discord.CategoryChannel): number {
+    const children = category.children as unknown as { cache?: { size?: number }, size?: number }
+    if (typeof children?.cache?.size == "number") return children.cache.size
+    if (typeof children?.size == "number") return children.size
+    return 0
+}
+
+function logOpenCategoryWarning(logPrefix:string, message:string, categoryId:string, mode:ODTicketOpenCategoryMode, childCount:number|null = null) {
+    opendiscord.log(`${logPrefix}: ${message}`,"warning",[
+        {key:"categoryid",value:categoryId,hidden:true},
+        {key:"mode",value:mode ?? "/"},
+        ...(childCount == null ? [] : [{key:"children",value:String(childCount)}])
+    ])
+}
+
+export async function resolveTicketOpenCategoryRoute(input:{
+    guild: discord.Guild
+    option: OptionDataSource
+    logPrefix: string
+}): Promise<ODTicketOpenCategoryRoute> {
+    const primaryCategoryId = getTicketOptionString(input.option,TICKET_OPTION_CHANNEL_CATEGORY_ID)
+    if (!primaryCategoryId) {
+        return {ok:true,categoryId:null,categoryMode:null,warnings:[]}
+    }
+
+    const warnings: string[] = []
+    const candidates: Array<{categoryId:string, mode:Exclude<ODTicketOpenCategoryMode,null>}> = [
+        {categoryId:primaryCategoryId,mode:"normal"},
+        ...getTicketOptionOverflowCategoryIds(input.option).map((categoryId) => ({categoryId,mode:"overflow" as const}))
+    ]
+    const seen = new Set<string>()
+
+    for (const candidate of candidates) {
+        if (!candidate.categoryId || seen.has(candidate.categoryId)) continue
+        seen.add(candidate.categoryId)
+
+        const category = await opendiscord.client.fetchGuildCategoryChannel(input.guild,candidate.categoryId)
+        if (!category) {
+            const message = "Skipping ticket category because it no longer resolves."
+            warnings.push(message)
+            logOpenCategoryWarning(input.logPrefix,message,candidate.categoryId,candidate.mode)
+            continue
+        }
+
+        const childCount = getCategoryChildCount(category)
+        if (childCount >= TICKET_CATEGORY_FULL_CHILD_COUNT) {
+            const message = "Skipping ticket category because it is at Discord channel capacity."
+            warnings.push(message)
+            logOpenCategoryWarning(input.logPrefix,message,candidate.categoryId,candidate.mode,childCount)
+            continue
+        }
+        if (childCount >= TICKET_CATEGORY_NEAR_CAPACITY_CHILD_COUNT) {
+            const message = "Ticket category is nearing Discord channel capacity."
+            warnings.push(message)
+            logOpenCategoryWarning(input.logPrefix,message,candidate.categoryId,candidate.mode,childCount)
+        }
+
+        return {ok:true,categoryId:category.id,categoryMode:candidate.mode,warnings}
+    }
+
+    const reason = "No configured ticket category has capacity for this ticket."
+    opendiscord.log(`${input.logPrefix}: ${reason}`,"error",[
+        {key:"primary",value:primaryCategoryId,hidden:true},
+        {key:"overflowCount",value:String(Math.max(0,candidates.length - 1))}
+    ])
+    return {ok:false,reason,warnings}
+}
+
+export function applyTicketCategoryRoute(ticket:api.ODTicket, route:{categoryId:string|null, categoryMode:ODTicketOpenCategoryMode}) {
+    ticket.get("opendiscord:category").value = route.categoryId
+    ticket.get("opendiscord:category-mode").value = route.categoryMode
 }
 
 export function getSupportTeamsConfig(): ODSupportTeamConfigEntry[] {

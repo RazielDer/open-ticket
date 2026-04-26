@@ -425,6 +425,8 @@ export interface ODJsonConfig_DefaultOptionTicketChannelType {
     closedCategory:string,
     /**An optional discord category id to create this ticket in when the primary one is full (max. 50 tickets). */
     backupCategory:string,
+    /**Ordered overflow category ids to try when the primary category is unavailable or full. */
+    overflowCategories:string[],
     /**A list of discord category ids to move this ticket to when claimed by a specific user. */
     claimedCategory:{
         /**The user which claimed the ticket. */

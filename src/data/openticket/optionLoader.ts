@@ -77,6 +77,7 @@ export const loadTicketOption = (option:api.ODJsonConfig_DefaultOptionTicketType
         new api.ODOptionData("opendiscord:channel-category",option.channel.category),
         new api.ODOptionData("opendiscord:channel-category-closed",option.channel.closedCategory),
         new api.ODOptionData("opendiscord:channel-category-backup",option.channel.backupCategory),
+        new api.ODOptionData("opendiscord:channel-categories-overflow",option.channel.overflowCategories ?? (option.channel.backupCategory ? [option.channel.backupCategory] : [])),
         new api.ODOptionData("opendiscord:channel-categories-claimed",option.channel.claimedCategory),
         new api.ODOptionData("opendiscord:channel-topic",option.channel.topic),
 

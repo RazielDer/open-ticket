@@ -575,6 +575,7 @@ function normalizeTicketOption(option: any) {
       suffix: "user-name",
       category: "",
       backupCategory: "",
+      overflowCategories: [],
       closedCategory: "",
       claimedCategory: [],
       topic: ""
@@ -677,6 +678,15 @@ function normalizeTicketOption(option: any) {
   normalized.channel.backupCategory = ensureString(normalized.channel.backupCategory, "")
   normalized.channel.closedCategory = ensureString(normalized.channel.closedCategory, "")
   normalized.channel.claimedCategory = normalizeClaimedCategories(normalized.channel.claimedCategory ?? [])
+  const rawOverflowCategories = Array.isArray(option?.channel?.overflowCategories)
+    ? option.channel.overflowCategories
+    : normalized.channel.backupCategory
+      ? [normalized.channel.backupCategory]
+      : []
+  normalized.channel.overflowCategories = parseStringArray(rawOverflowCategories)
+    .filter((categoryId, index, values) => values.indexOf(categoryId) === index)
+    .filter((categoryId) => categoryId !== normalized.channel.category)
+  normalized.channel.backupCategory = normalized.channel.overflowCategories[0] || ""
   normalized.channel.topic = ensureString(normalized.channel.topic, "")
 
   validateOptionMessage(normalized.dmMessage, "DM message", false)

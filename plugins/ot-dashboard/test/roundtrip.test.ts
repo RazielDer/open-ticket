@@ -130,6 +130,7 @@ function createFixtureRoot() {
         suffix: "counter-fixed",
         category: "1",
         backupCategory: "2",
+        overflowCategories: ["2", "5"],
         closedCategory: "3",
         claimedCategory: [{ user: "4", category: "44" }],
         topic: "Open this ticket."
@@ -355,6 +356,8 @@ test("visual save helpers preserve runtime-aligned values and nested option data
     assert.equal(general.status.type, "custom")
     assert.equal(general.system.emojiStyle, "disabled")
     assert.equal(options[0].channel.suffix, "counter-fixed")
+    assert.deepEqual(options[0].channel.overflowCategories, ["2", "5"])
+    assert.equal(options[0].channel.backupCategory, "2")
     assert.deepEqual(options[0].channel.claimedCategory, [{ user: "4", category: "44" }])
     assert.deepEqual(options[0].dmMessage.embed.fields, [{ name: "DM retained", value: "DM field", inline: false }])
     assert.deepEqual(options[0].ticketMessage.embed.fields, [{ name: "Retained", value: "Field", inline: false }])

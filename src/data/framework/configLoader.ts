@@ -235,6 +235,7 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
             new fjs.PropertyFormatter("suffix"),
             new fjs.PropertyFormatter("category"),
             new fjs.PropertyFormatter("backupCategory"),
+            new fjs.ArrayFormatter("overflowCategories",false,new fjs.PropertyFormatter(null)),
             new fjs.PropertyFormatter("closedCategory"),
             new fjs.ArrayFormatter("claimedCategory",true,new fjs.ObjectFormatter(null,false,[
                 new fjs.PropertyFormatter("user"),

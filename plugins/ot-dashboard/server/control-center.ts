@@ -84,7 +84,9 @@ export function formatDate(value: string | number | null | undefined) {
 export function getAlert(req: express.Request) {
   const message = typeof req.query.msg === "string" ? req.query.msg : ""
   if (!message) return null
-  const rawTone = typeof req.query.status === "string" ? req.query.status : "success"
+  const rawTone = typeof req.query.alertStatus === "string"
+    ? req.query.alertStatus
+    : typeof req.query.status === "string" ? req.query.status : "success"
   const tone = rawTone === "error" || rawTone === "danger"
     ? "danger"
     : rawTone === "warning"

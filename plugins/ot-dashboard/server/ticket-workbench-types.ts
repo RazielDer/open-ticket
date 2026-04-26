@@ -21,6 +21,8 @@ export const DASHBOARD_TICKET_ACTION_IDS = [
 ] as const
 
 export type DashboardTicketActionId = (typeof DASHBOARD_TICKET_ACTION_IDS)[number]
+export const DASHBOARD_TICKET_BULK_ACTION_IDS = ["claim-self","unclaim","close","reopen"] as const
+export type DashboardTicketBulkActionId = (typeof DASHBOARD_TICKET_BULK_ACTION_IDS)[number]
 export type DashboardTicketProviderLockedActionId =
   | DashboardTicketActionId
   | "request-close"
@@ -183,4 +185,18 @@ export interface DashboardTicketActionResult {
   message: string
   warnings?: string[]
   ticketId?: string
+}
+
+export interface DashboardTicketBulkActionRequest {
+  ticketIds: string[]
+  action: DashboardTicketBulkActionId
+  actorUserId: string
+  reason?: string
+}
+
+export interface DashboardTicketBulkActionResult {
+  requested: number
+  succeeded: number
+  skipped: number
+  failed: number
 }

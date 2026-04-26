@@ -4,7 +4,7 @@
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
 import { PRIVATE_THREAD_ACCESS_WARNING, validateTicketMoveTransport } from "./ticketTransport.js"
-import { applyTicketRoutingAssignment, getTicketOptionSupportTeamRoleIds } from "./ticketRouting.js"
+import { applyTicketRoutingAssignment, getTicketOptionSupportTeamRoleIds, resolveTicketOpenCategoryRoute, type ODTicketOpenCategoryRoute } from "./ticketRouting.js"
 import { setTicketIntegrationProfileIdFromOption } from "./ticketIntegration.js"
 import { setTicketAiAssistProfileIdFromOption } from "./ticketAiAssist.js"
 
@@ -19,6 +19,20 @@ export const registerActions = async () => {
             if (!moveValidation.valid){
                 await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:moveValidation.reason,layout:"simple"})).message).catch(() => null)
                 return cancel()
+            }
+
+            let openCategoryRoute: ODTicketOpenCategoryRoute|null = null
+            if (!channel.isThread()){
+                const rawClaimCategory = data.get("opendiscord:channel-categories-claimed").value.find((c) => c.user == user.id)
+                const claimCategory = (rawClaimCategory) ? rawClaimCategory.category : null
+                const closeCategory = data.get("opendiscord:channel-category-closed").value
+                if (!claimCategory && !(closeCategory != "" && ticket.get("opendiscord:closed").value)){
+                    openCategoryRoute = await resolveTicketOpenCategoryRoute({guild,option:data,logPrefix:"Ticket Move"})
+                    if (!openCategoryRoute.ok){
+                        await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:openCategoryRoute.reason,layout:"simple"})).message).catch(() => null)
+                        return cancel()
+                    }
+                }
             }
 
             await opendiscord.events.get("onTicketMove").emit([ticket,user,channel,reason])
@@ -53,8 +67,6 @@ export const registerActions = async () => {
             //get new channel properties
             const channelPrefix = ticket.option.get("opendiscord:channel-prefix").value
             const channelSuffix = ticket.get("opendiscord:channel-suffix").value
-            const channelCategory = ticket.option.get("opendiscord:channel-category").value
-            const channelBackupCategory = ticket.option.get("opendiscord:channel-category-backup").value
             const rawClaimCategory = ticket.option.get("opendiscord:channel-categories-claimed").value.find((c) => c.user == user.id)
             const claimCategory = (rawClaimCategory) ? rawClaimCategory.category : null
             const closeCategory = ticket.option.get("opendiscord:channel-category-closed").value
@@ -62,7 +74,7 @@ export const registerActions = async () => {
 
             //handle category
             let category: string|null = null
-            let categoryMode: "backup"|"normal"|"closed"|"claimed"|null = null
+            let categoryMode: "normal"|"overflow"|"closed"|"claimed"|null = null
             if (channel.isThread()){
                 category = null
                 categoryMode = null
@@ -74,36 +86,9 @@ export const registerActions = async () => {
                 //use close category
                 category = closeCategory
                 categoryMode = "closed"
-            }else if (channelCategory != ""){
-                //category enabled
-                const normalCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelCategory)
-                if (!normalCategory){
-                    //default category was not found
-                    opendiscord.log("Ticket Move Error: Unable to find category! #1","error",[
-                        {key:"categoryid",value:channelCategory},
-                        {key:"backup",value:"false"}
-                    ])
-                }else{
-                    //default category was found
-                    if (normalCategory.children.cache.size >= 50 && channelBackupCategory != ""){
-                        //use backup category
-                        const backupCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelBackupCategory)
-                        if (!backupCategory){
-                            //default category was not found
-                            opendiscord.log("Ticket Move Error: Unable to find category! #2","error",[
-                                {key:"categoryid",value:channelBackupCategory},
-                                {key:"backup",value:"true"}
-                            ])
-                        }else{
-                            category = backupCategory.id
-                            categoryMode = "backup"
-                        }
-                    }else{
-                        //use default category
-                        category = normalCategory.id
-                        categoryMode = "normal"
-                    }
-                }
+            }else if (openCategoryRoute?.ok){
+                category = openCategoryRoute.categoryId
+                categoryMode = openCategoryRoute.categoryMode
             }
 
             try {

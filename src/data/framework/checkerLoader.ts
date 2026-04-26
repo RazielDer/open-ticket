@@ -418,6 +418,7 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
             {key:"category",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-category","category",true,[],{cliDisplayName:"Category",cliDisplayDescription:"The category the ticket will be created in. Leave empty for no category."})},
             {key:"closedCategory",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-closed-category","category",true,[],{cliDisplayName:"Closed Category",cliDisplayDescription:"An additional category where the ticket will be moved to when closed."})},
             {key:"backupCategory",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-backup-category","category",true,[],{cliDisplayName:"Backup Category",cliDisplayDescription:"An additional category where the ticket will be created in when the primary category is full (50 channels)."})},
+            {key:"overflowCategories",optional:true,checker:new api.ODCheckerArrayStructure("opendiscord:ticket-channel-overflow-categories",{allowDoubles:false,allowedTypes:["string"],cliDisplayPropertyName:"overflow category",propertyChecker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-overflow-category","category",true,[],{cliDisplayName:"Overflow Category",cliDisplayDescription:"An ordered overflow category to try when the primary category is unavailable or full."}),cliDisplayName:"Overflow Categories",cliDisplayDescription:"Ordered categories to try after the primary ticket category."})},
             {key:"claimedCategory",checker:new api.ODCheckerArrayStructure("opendiscord:ticket-channel-claimed-category",{allowDoubles:false,allowedTypes:["object"],cliDisplayPropertyName:"claim category",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel-claimed-category",{children:[
                 {key:"user",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-claimed-user","user",false,[],{cliDisplayName:"User",cliDisplayDescription:"A discord user ID of the ticket claimer."})},
                 {key:"category",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-claimed-category","category",false,[],{cliDisplayName:"Category",cliDisplayDescription:"A discord category ID to move the ticket to."})}
@@ -433,13 +434,42 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
                     return false
                 }
 
-                const ignoredFields = ["category","backupCategory","closedCategory","claimedCategory"].filter((key) => {
+                const ignoredFields = ["category","backupCategory","overflowCategories","closedCategory","claimedCategory"].filter((key) => {
                     const field = value[key]
                     if (Array.isArray(field)) return field.length > 0
                     return typeof field == "string" && field.trim().length > 0
                 })
                 if (ignoredFields.length > 0){
-                    checker.createMessage("opendiscord:ticket-channel-thread-ignores-category-routing","warning","Private-thread tickets ignore category, backupCategory, closedCategory, and claimedCategory routing fields.",lt,null,ignoredFields,locationId,locationDocs)
+                    checker.createMessage("opendiscord:ticket-channel-thread-ignores-category-routing","warning","Private-thread tickets ignore category, backupCategory, overflowCategories, closedCategory, and claimedCategory routing fields.",lt,null,ignoredFields,locationId,locationDocs)
+                }
+            }else{
+                const primaryCategory = typeof value["category"] == "string" ? value["category"].trim() : ""
+                const backupCategory = typeof value["backupCategory"] == "string" ? value["backupCategory"].trim() : ""
+                const overflowCategories = Array.isArray(value["overflowCategories"])
+                    ? value["overflowCategories"].filter((entry): entry is string => typeof entry == "string").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+                    : backupCategory ? [backupCategory] : []
+                const claimedCategories = Array.isArray(value["claimedCategory"])
+                    ? value["claimedCategory"].map((entry) => {
+                        const category = entry && typeof entry == "object" ? (entry as Record<string,unknown>)["category"] : null
+                        return typeof category == "string" ? category.trim() : ""
+                    }).filter((entry) => entry.length > 0)
+                    : []
+                if (primaryCategory && overflowCategories.length == 0){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-missing","warning","Channel ticket options with a primary category should configure at least one overflow category for scale headroom.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                const duplicates = overflowCategories.filter((entry,index) => overflowCategories.indexOf(entry) != index)
+                if (duplicates.length > 0){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-duplicate","warning","Duplicate overflow category entries are ignored after their first occurrence.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                if (primaryCategory && overflowCategories.includes(primaryCategory)){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-primary-repeat","warning","Overflow categories must not repeat the primary category; repeated primary entries are ignored for routing.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                const closedCategory = typeof value["closedCategory"] == "string" ? value["closedCategory"].trim() : ""
+                if (closedCategory && overflowCategories.includes(closedCategory)){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-closed-collision","warning","Overflow categories that match the closed category are invalid for open routing.",lt,null,["overflowCategories","closedCategory"],locationId,locationDocs)
+                }
+                if (overflowCategories.some((entry) => claimedCategories.includes(entry))){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-claimed-collision","warning","Overflow categories that match claimed-category mappings are invalid for open routing.",lt,null,["overflowCategories","claimedCategory"],locationId,locationDocs)
                 }
             }
 

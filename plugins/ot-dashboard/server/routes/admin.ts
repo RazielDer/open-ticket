@@ -68,6 +68,7 @@ import {
   buildFallbackTicketDetail,
   buildTicketWorkbenchDetailModel,
   buildTicketWorkbenchListModel,
+  parseDashboardTicketBulkActionId,
   parseDashboardTicketActionId,
   parseTicketWorkbenchListRequest,
   sanitizeTicketWorkbenchReturnTo,
@@ -94,6 +95,18 @@ function buildBulkActionTone(result: { succeeded: number; skipped: number; faile
   if (result.failed > 0) return "danger"
   if (result.skipped > 0) return "warning"
   return "success"
+}
+
+function normalizeStringListInput(value: unknown) {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? [value] : []
+  return raw
+    .map((entry) => typeof entry === "string" ? entry.trim() : "")
+    .filter(Boolean)
+    .filter((entry, index, values) => values.indexOf(entry) === index)
+}
+
+function appendAlertQuery(href: string, status: string, message: string) {
+  return `${href}${href.includes("?") ? "&" : "?"}alertStatus=${encodeURIComponent(status)}&msg=${encodeURIComponent(message)}`
 }
 
 function registerPreparedExportCleanup(
@@ -1014,6 +1027,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const runtimeAvailable = snapshot.ticketSummary.available === true
     const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
     const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
     const model = buildTicketWorkbenchListModel({
       basePath,
@@ -1022,6 +1036,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       tickets: readsSupported ? runtimeBridge.listTickets() : [],
       configService,
       readsSupported,
+      writesSupported,
       warningMessage: runtimeAvailable
         ? ""
         : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now."
@@ -1038,6 +1053,109 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       contentView: "sections/tickets",
       ticketList: model
     }))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/bulk/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const action = parseDashboardTicketBulkActionId(req.params.actionId)
+    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const ticketIds = normalizeStringListInput(req.body?.ticketIds)
+    const reason = typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined
+
+    if (!action) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "invalid-action",
+        details: {
+          actionId: req.params.actionId,
+          actorUserId
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.invalidAction")))
+    }
+
+    if (ticketIds.length < 1) {
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.emptySelection")))
+    }
+
+    const runtimeAvailable = runtimeBridge.getSnapshot(context.projectRoot).ticketSummary.available === true
+    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge) && typeof runtimeBridge.runTicketAction === "function"
+    if (!readsSupported || !writesSupported) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "unsupported",
+        details: {
+          action,
+          requested: ticketIds.length,
+          actorUserId
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.unsupported")))
+    }
+
+    const runtimeAction = action === "claim-self" ? "claim" : action
+    const aggregate = {
+      requested: ticketIds.length,
+      succeeded: 0,
+      skipped: 0,
+      failed: 0
+    }
+
+    for (const ticketId of ticketIds) {
+      const detail = typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(ticketId, actorUserId)
+        : (() => {
+            const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === ticketId) || null
+            return ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+          })()
+      const availability = detail?.actionAvailability?.[runtimeAction]
+      if (!detail || (availability && !availability.enabled)) {
+        aggregate.skipped += 1
+        continue
+      }
+
+      try {
+        const result = await runtimeBridge.runTicketAction!({
+          ticketId,
+          action: runtimeAction,
+          actorUserId,
+          reason
+        })
+        if (result.ok) {
+          aggregate.succeeded += 1
+        } else if (result.status === "warning") {
+          aggregate.skipped += 1
+        } else {
+          aggregate.failed += 1
+        }
+      } catch {
+        aggregate.failed += 1
+      }
+    }
+
+    await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+      eventType: "ticket-bulk-action",
+      target: "bulk",
+      outcome: aggregate.failed > 0 ? "failure" : "success",
+      reason: action,
+      details: {
+        action,
+        runtimeAction,
+        requested: aggregate.requested,
+        succeeded: aggregate.succeeded,
+        skipped: aggregate.skipped,
+        failed: aggregate.failed,
+        actorUserId
+      }
+    })
+
+    const tone = buildBulkActionTone(aggregate)
+    return res.redirect(appendAlertQuery(returnTo, tone, i18n.t("tickets.page.bulk.result", aggregate)))
   })
 
   app.get(joinBasePath(basePath, "admin/tickets/:ticketId"), adminGuard.page("ticket.workbench"), async (req, res, next) => {

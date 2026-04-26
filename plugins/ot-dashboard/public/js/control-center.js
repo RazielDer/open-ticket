@@ -50,13 +50,20 @@
     });
   });
 
+  const confirmationForms = new Set();
   document.querySelectorAll("[data-confirm-message]").forEach((button) => {
     const form = button.closest("form");
-    if (!form) return;
+    if (!form || confirmationForms.has(form)) return;
+    confirmationForms.add(form);
     form.addEventListener("submit", async (event) => {
+      const submitter = event.submitter && event.submitter.getAttribute ? event.submitter : button;
+      const message = submitter.getAttribute("data-confirm-message");
+      if (!message) return;
       event.preventDefault();
-      const confirmed = await ui.confirm(button.getAttribute("data-confirm-message"));
-      if (confirmed) form.submit();
+      const confirmed = await ui.confirm(message);
+      if (!confirmed) return;
+      if (submitter.formAction) form.action = submitter.formAction;
+      form.submit();
     });
   });
 
@@ -198,4 +205,92 @@
       });
     });
   });
+
+  const ticketBulkForm = document.querySelector("[data-ticket-bulk-form]");
+  if (ticketBulkForm) {
+    const checkboxes = Array.from(document.querySelectorAll('input[data-ticket-row-select][form="ticket-bulk-actions"]'));
+    const selectedCount = ticketBulkForm.querySelector("[data-ticket-selected-count]");
+    const submitButtons = Array.from(ticketBulkForm.querySelectorAll("[data-ticket-bulk-submit]"));
+    const selectionTemplate = selectedCount ? selectedCount.textContent || "__COUNT__ selected" : "__COUNT__ selected";
+    const selectedTickets = () => checkboxes.filter((checkbox) => checkbox.checked);
+    const updateSelection = () => {
+      const count = selectedTickets().length;
+      if (selectedCount) {
+        selectedCount.textContent = selectionTemplate.replace(/\d+|__COUNT__/, String(count));
+      }
+      submitButtons.forEach((button) => {
+        button.disabled = count < 1;
+      });
+    };
+    const clearSelection = () => {
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      updateSelection();
+    };
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", updateSelection);
+    });
+    ticketBulkForm.querySelector("[data-ticket-select-visible]")?.addEventListener("click", () => {
+      checkboxes.forEach((checkbox) => {
+        const row = checkbox.closest("tr");
+        checkbox.checked = !row || !row.hidden;
+      });
+      updateSelection();
+    });
+    ticketBulkForm.querySelector("[data-ticket-clear-selection]")?.addEventListener("click", clearSelection);
+    ticketBulkForm.addEventListener("submit", (event) => {
+      if (selectedTickets().length > 0) return;
+      event.preventDefault();
+      ui.showToast("Select at least one ticket.", "warning");
+    });
+
+    const clearOnNavigation = (event) => {
+      const target = event.target;
+      if (target?.closest?.(".ticket-filter-shell form") || target?.closest?.(".pagination-bar a")) {
+        clearSelection();
+      }
+    };
+    document.addEventListener("submit", clearOnNavigation, true);
+    document.addEventListener("click", clearOnNavigation, true);
+    updateSelection();
+  }
+
+  const ticketWorkbench = document.querySelector(".ticket-workbench-shell");
+  if (ticketWorkbench) {
+    const basePath = String(document.body?.dataset?.basePath || "").replace(/\/$/, "");
+    const ticketsPath = `${basePath === "/" ? "" : basePath}/admin/tickets`;
+    const viewStorageKey = "ot-dashboard:ticket-workbench:last-view";
+    const filterKeys = ["q", "status", "transport", "teamId", "assigneeId", "optionId", "panelId", "creatorId", "sort", "limit"];
+    const validValues = {
+      status: new Set(["all", "open", "closed", "claimed", "unclaimed"]),
+      transport: new Set(["all", "channel_text", "private_thread"]),
+      sort: new Set(["opened-desc", "opened-asc", "activity-desc", "activity-asc"]),
+      limit: new Set(["10", "25", "50", "100"])
+    };
+    const normalizedViewParams = (searchParams) => {
+      const params = new URLSearchParams();
+      filterKeys.forEach((key) => {
+        const value = String(searchParams.get(key) || "").trim();
+        if (!value) return;
+        if (validValues[key] && !validValues[key].has(value)) return;
+        params.set(key, value);
+      });
+      return params;
+    };
+
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.pathname === ticketsPath) {
+      const currentView = normalizedViewParams(currentUrl.searchParams);
+      if ([...currentView.keys()].length > 0) {
+        localStorage.setItem(viewStorageKey, currentView.toString());
+      } else if (!currentUrl.searchParams.has("msg")) {
+        const saved = new URLSearchParams(localStorage.getItem(viewStorageKey) || "");
+        const savedView = normalizedViewParams(saved);
+        if ([...savedView.keys()].length > 0) {
+          window.location.replace(`${ticketsPath}?${savedView.toString()}`);
+        }
+      }
+    }
+  }
 })();

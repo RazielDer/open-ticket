@@ -1396,6 +1396,7 @@ async function saveQuickSetupConfig(){
                 category:quickSetupStorage.ticketCategory ?? "",
                 closedCategory:"",
                 backupCategory:"",
+                overflowCategories:[],
                 claimedCategory:[],
                 topic:ticket.description
             },

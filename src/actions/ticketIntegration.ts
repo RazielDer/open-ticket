@@ -7,8 +7,6 @@ import * as discord from "discord.js"
 export const TICKET_INTEGRATION_SERVICE_ID = "opendiscord:ticket-integration-service"
 export const TICKET_OPTION_INTEGRATION_PROFILE_ID = "opendiscord:integration-profile"
 
-const LEGACY_BRIDGE_PROVIDER_ID = "ot-eotfs-bridge"
-const LEGACY_BRIDGE_PROFILE_ID = "ot-eotfs-bridge:legacy"
 const STOCK_ACTION_IDS = new Set<string>(api.TICKET_PLATFORM_STOCK_ACTION_IDS)
 const ALL_STOCK_ACTION_IDS = [...api.TICKET_PLATFORM_STOCK_ACTION_IDS]
 const PROVIDER_UNAVAILABLE_REASON = "Ticket integration provider is unavailable."
@@ -62,38 +60,6 @@ function getProfileConfigData(): api.TicketIntegrationProfile[] {
     const config = opendiscord.configs.get("opendiscord:integration-profiles") as { data?: unknown } | null
     const data = Array.isArray(config?.data) ? config.data : []
     return data.map(normalizeProfile).filter((profile): profile is api.TicketIntegrationProfile => Boolean(profile))
-}
-
-function getLegacyBridgeConfigData(): Record<string, unknown> | null {
-    try {
-        const config = opendiscord.configs.get("ot-eotfs-bridge:config") as { data?: Record<string, unknown> } | null
-        return config?.data && typeof config.data == "object" ? config.data : null
-    } catch {
-        return null
-    }
-}
-
-function isLegacyBridgeEligibleOption(optionId: string): boolean {
-    const config = getLegacyBridgeConfigData()
-    const eligibleOptionIds = Array.isArray(config?.eligibleOptionIds) ? config.eligibleOptionIds : []
-    return eligibleOptionIds.some((id) => normalizeString(id) == optionId)
-}
-
-function buildLegacyBridgeProfile(optionId: string): api.TicketIntegrationProfile | null {
-    const config = getLegacyBridgeConfigData()
-    const provider = api.getTicketPlatformRuntimeApi()?.getIntegrationProvider(LEGACY_BRIDGE_PROVIDER_ID)
-    if (!config || !provider || !isLegacyBridgeEligibleOption(optionId)) return null
-    opendiscord.log("Using legacy whitelist bridge eligibleOptionIds fallback for ticket integration profile resolution. Configure integration-profiles.json before SLICE-015.", "warning", [
-        {key:"option",value:optionId},
-        {key:"provider",value:LEGACY_BRIDGE_PROVIDER_ID}
-    ])
-    return {
-        id: LEGACY_BRIDGE_PROFILE_ID,
-        providerId: LEGACY_BRIDGE_PROVIDER_ID,
-        label: "Whitelist bridge legacy config",
-        enabled: true,
-        settings: {...config}
-    }
 }
 
 function safeLogIntegrationFailure(message: string, error: unknown, profile?: api.TicketIntegrationProfile | null) {
@@ -212,10 +178,8 @@ export class TicketIntegrationService extends api.ODManagerData {
     }
 
     getProfileForOption(option: api.ODTicketOption | null | undefined): api.TicketIntegrationProfile | null {
-        const optionId = option?.id?.value ?? ""
         const profileId = getTicketOptionIntegrationProfileId(option)
-        if (profileId) return this.getProfile(profileId)
-        return buildLegacyBridgeProfile(optionId)
+        return profileId ? this.getProfile(profileId) : null
     }
 
     getProfileForTicket(ticket: api.ODTicket | null | undefined): api.TicketIntegrationProfile | null {
@@ -223,9 +187,7 @@ export class TicketIntegrationService extends api.ODManagerData {
         const stored = api.resolveTicketIntegrationProfileState(ticket)
         const optionProfileId = getTicketOptionIntegrationProfileId(ticket.option)
         const profileId = stored.hasStoredValue ? stored.profileId : optionProfileId
-        if (profileId) return this.getProfile(profileId)
-        if (stored.hasStoredValue && optionProfileId) return null
-        return buildLegacyBridgeProfile(ticket.option.id.value)
+        return profileId ? this.getProfile(profileId) : null
     }
 
     getProvider(profile: api.TicketIntegrationProfile): api.TicketPlatformIntegrationProvider | null {

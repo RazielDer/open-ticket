@@ -123,8 +123,7 @@ class OTEotfsBridgeService extends api.ODManagerData {
 
     ownsTicketFollowups(optionId: string): boolean {
         const profileId = getRuntimeOptionIntegrationProfileId(optionId)
-        if (profileId) return isBridgeIntegrationProfile(profileId)
-        return isEligibleOptionId(getBridgeConfig().eligibleOptionIds, optionId)
+        return profileId ? isBridgeIntegrationProfile(profileId) : false
     }
 
     async getDashboardTicketLockState(ticketId: string): Promise<{
@@ -206,6 +205,11 @@ function getRuntimeOptionIntegrationProfileId(optionId: string): string {
     return typeof value == "string" ? value.trim() : ""
 }
 
+function getOptionIntegrationProfileId(option: {get?: (id:string) => {value?: unknown}|null} | null | undefined): string {
+    const value = option?.get?.("opendiscord:integration-profile")?.value
+    return typeof value == "string" ? value.trim() : ""
+}
+
 function getIntegrationProfilesConfig(): api.TicketIntegrationProfile[] {
     const config = opendiscord.configs.get("opendiscord:integration-profiles") as { data?: unknown } | null
     const data = Array.isArray(config?.data) ? config.data : []
@@ -222,7 +226,7 @@ function getIntegrationProfilesConfig(): api.TicketIntegrationProfile[] {
 }
 
 function isBridgeIntegrationProfile(profileId: string): boolean {
-    if (profileId == WHITELIST_INTEGRATION_PROFILE_ID || profileId == "ot-eotfs-bridge:legacy") return true
+    if (profileId == WHITELIST_INTEGRATION_PROFILE_ID) return true
     const profile = getIntegrationProfilesConfig().find((entry) => entry.id == profileId)
     return profile?.providerId == BRIDGE_PROVIDER_ID
 }
@@ -282,9 +286,7 @@ function bridgeConfigFromSettings(settings: Record<string, unknown>, referencedO
 
 function resolveBridgeConfigForOption(optionId: string): BridgeConfigData | null {
     const profile = resolveBridgeProfileForOption(optionId)
-    if (profile) return bridgeConfigFromSettings(profile.settings, [optionId])
-    const legacy = getBridgeConfig()
-    return isEligibleOptionId(legacy.eligibleOptionIds, optionId) ? legacy : null
+    return profile ? bridgeConfigFromSettings(profile.settings, [optionId]) : null
 }
 
 function resolveBridgeConfigForTicket(ticket: api.ODTicket): BridgeConfigData | null {
@@ -295,9 +297,7 @@ function resolveBridgeConfigForTicket(ticket: api.ODTicket): BridgeConfigData | 
             const profile = resolveBridgeProfile(stored.profileId)
             return profile ? bridgeConfigFromSettings(profile.settings, [optionId]) : null
         }
-        if (getRuntimeOptionIntegrationProfileId(optionId)) return null
-        const legacy = getBridgeConfig()
-        return isEligibleOptionId(legacy.eligibleOptionIds, optionId) ? legacy : null
+        return null
     }
     return resolveBridgeConfigForOption(optionId)
 }
@@ -1677,6 +1677,18 @@ function ensureBridgePollLoop() {
 }
 
 function logMisconfiguredEligibleOptions(config: BridgeConfigData) {
+    const canonicalOptionIds = new Set((opendiscord.options.getAll?.() ?? [])
+        .filter((option) => isBridgeIntegrationProfile(getOptionIntegrationProfileId(option)))
+        .map((option) => option.id.value))
+    const legacyOnly = config.eligibleOptionIds.filter((optionId) => !canonicalOptionIds.has(optionId))
+    if (legacyOnly.length > 0) {
+        opendiscord.log(
+            "Whitelist bridge warning: eligibleOptionIds no longer enable live ticket integration. Bind these ticket options through integrationProfileId.",
+            "plugin",
+            legacyOnly.map((optionId) => ({ key: "option", value: optionId }))
+        )
+    }
+
     const snapshots: BridgeOptionLimitSnapshot[] = config.eligibleOptionIds.map((optionId) => {
         const option = opendiscord.options.get(optionId)
         return {
@@ -1690,7 +1702,7 @@ function logMisconfiguredEligibleOptions(config: BridgeConfigData) {
     const misconfigured = findMisconfiguredEligibleOptionIds(snapshots)
     if (misconfigured.length < 1) return
     opendiscord.log(
-        "Whitelist bridge warning: eligible options should be configured with userMaximum=1. Fallback live-ticket enforcement remains active.",
+        "Whitelist bridge warning: bridge-bound options should be configured with userMaximum=1 before using the canonical integration profile.",
         "plugin",
         misconfigured.map((optionId) => ({ key: "option", value: optionId }))
     )
@@ -1821,51 +1833,6 @@ opendiscord.events.get("afterActionsLoaded").listen((actions) => {
         new api.ODWorker("ot-eotfs-bridge:create-ticket-eligibility", 6, async (instance, params, source, cancel) => {
             void source
             if (opendiscord.plugins.classes.exists("opendiscord:ticket-integration-service")) return
-            const config = getBridgeConfig()
-            const optionId = params.option.id.value
-            const applicantDiscordUserId = params.user.id
-            if (!isEligibleOptionId(config.eligibleOptionIds, optionId)) return
-
-            const openTickets: BridgeOpenTicketSnapshot[] = opendiscord.tickets.getFiltered((ticket) => {
-                if (ticket.get("opendiscord:closed").value) return false
-                return isEligibleOptionId(config.eligibleOptionIds, ticket.option.id.value)
-            }).map((ticket) => ({
-                ticketChannelId: ticket.id.value,
-                optionId: ticket.option.id.value,
-                creatorDiscordUserId: getLiveTicketCreatorDiscordUserId(ticket),
-                closed: ticket.get("opendiscord:closed").value === true
-            }))
-
-            let eligibility: BridgeEligibilityResponse | null = null
-            let degradedReason: string | null = null
-            const outageKey = buildOutageKey(optionId, applicantDiscordUserId)
-            try {
-                eligibility = await fetchBridgeEligibility(config, applicantDiscordUserId)
-                createEligibilityOutageMap.delete(outageKey)
-            } catch (error) {
-                degradedReason = error instanceof Error ? error.message : "Whitelist bridge eligibility is unavailable."
-                createEligibilityOutageMap.set(outageKey, degradedReason)
-                opendiscord.log("Whitelist bridge eligibility check failed open during ticket creation.", "plugin", [
-                    { key: "option", value: optionId },
-                    { key: "userid", value: applicantDiscordUserId, hidden: true },
-                    { key: "error", value: degradedReason }
-                ])
-            }
-
-            const decision = evaluateCreateTicketDecision(
-                optionId,
-                config.eligibleOptionIds,
-                applicantDiscordUserId,
-                openTickets,
-                eligibility,
-                degradedReason
-            )
-            if (!decision.allow) {
-                instance.valid = false
-                instance.reason = "custom"
-                instance.customReason = decision.reason ?? "You cannot create this ticket right now."
-                return cancel()
-            }
         })
     ])
 })

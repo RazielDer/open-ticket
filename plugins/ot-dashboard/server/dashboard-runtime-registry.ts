@@ -133,6 +133,7 @@ export interface DashboardTicketRecord {
   optionId: string | null
   creatorId: string | null
   transportMode: DashboardTicketTransportMode | null
+  channelName: string | null
   transportParentChannelId: string | null
   transportParentMessageId: string | null
   assignedTeamId: string | null
@@ -166,6 +167,9 @@ export interface DashboardTicketRecord {
 type RuntimeTicket = {
   id?: { value?: string } | string
   option?: { id?: { value?: string } | string } | null
+  channel?: { name?: string | null } | null
+  channelName?: string | null
+  name?: string | null
   get?: (id: string) => { value?: unknown } | null
 }
 
@@ -194,6 +198,7 @@ interface TicketState {
   optionId: string | null
   creatorId: string | null
   transportMode: DashboardTicketTransportMode | null
+  channelName: string | null
   transportParentChannelId: string | null
   transportParentMessageId: string | null
   assignedTeamId: string | null
@@ -295,6 +300,7 @@ function extractTicketState(ticket: RuntimeTicket): TicketState | null {
     optionId: optionRaw ? String(optionRaw) : null,
     creatorId: stringOrNull(safeGetValue(ticket, "opendiscord:opened-by")),
     transportMode: ticketTransportModeOrNull(stringOrDefault(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportMode), ODTICKET_PLATFORM_METADATA_DEFAULTS.transportMode)),
+    channelName: stringOrNull(ticket.channel?.name) || stringOrNull(ticket.channelName) || stringOrNull(ticket.name),
     transportParentChannelId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentChannelId)),
     transportParentMessageId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportParentMessageId)),
     assignedTeamId: stringOrNull(safeGetValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedTeamId)),
@@ -321,7 +327,7 @@ function extractTicketState(ticket: RuntimeTicket): TicketState | null {
     claimed: Boolean(safeGetValue(ticket, "opendiscord:claimed")),
     pinned: Boolean(safeGetValue(ticket, "opendiscord:pinned")),
     participantCount: Array.isArray(participants) ? participants.length : 0,
-    categoryMode: stringOrNull(safeGetValue(ticket, "opendiscord:category-mode")),
+    categoryMode: categoryModeOrNull(safeGetValue(ticket, "opendiscord:category-mode")),
     channelSuffix: stringOrNull(safeGetValue(ticket, "opendiscord:channel-suffix"))
   }
 }
@@ -351,8 +357,20 @@ function ticketTransportModeOrNull(value: unknown): DashboardTicketTransportMode
   return value === "channel_text" || value === "private_thread" ? value : null
 }
 
+function categoryModeOrNull(value: unknown): string | null {
+  const normalized = stringOrNull(value)
+  return normalized === "backup" ? "overflow" : normalized
+}
+
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : []
+}
+
+function uniqueStringArray(value: unknown) {
+  return stringArray(value)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .filter((entry, index, values) => values.indexOf(entry) === index)
 }
 
 function recordTicketActivity(type: DashboardTicketActivityType, state: TicketState, timestamp: number | null, actorId: string | null) {
@@ -506,6 +524,59 @@ function getPluginSummary(runtime: DashboardRuntimeSource | null) {
   }
 }
 
+function runtimeConfigArray(runtime: any, id: string) {
+  const namespaced = runtime?.configs?.get?.(`opendiscord:${id}`)?.data
+  const data = namespaced !== undefined ? namespaced : runtime?.configs?.get?.(id)?.data
+  return Array.isArray(data) ? data : []
+}
+
+function valuesFromCollection(value: any) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value.values === "function") return Array.from(value.values())
+  if (typeof value === "object") return Object.values(value)
+  return []
+}
+
+function categoryChildCount(category: any) {
+  const children = category?.children
+  if (typeof children?.cache?.size === "number") return children.cache.size
+  if (typeof children?.size === "number") return children.size
+  return 0
+}
+
+function findCachedCategory(runtime: any, categoryId: string) {
+  const guild = runtime?.client?.mainServer
+  const channels = guild?.channels?.cache || guild?.channels
+  const direct = typeof channels?.get === "function" ? channels.get(categoryId) : null
+  if (direct) return direct
+  return valuesFromCollection(channels).find((channel: any) => String(channel?.id || "") === categoryId) || null
+}
+
+function collectCategoryCapacityWarnings(runtime: DashboardRuntimeSource | null) {
+  const warnings: string[] = []
+  const runtimeAny = runtime as any
+  for (const option of runtimeConfigArray(runtimeAny, "options")) {
+    if (String(option?.type || "") !== "ticket") continue
+    const optionId = String(option?.id || "").trim() || "unknown"
+    const primary = String(option?.channel?.category || "").trim()
+    const overflow = uniqueStringArray(option?.channel?.overflowCategories).length > 0
+      ? uniqueStringArray(option?.channel?.overflowCategories)
+      : uniqueStringArray(option?.channel?.backupCategory ? [option.channel.backupCategory] : [])
+    const seen = new Set<string>()
+    for (const categoryId of [primary, ...overflow]) {
+      if (!categoryId || seen.has(categoryId)) continue
+      seen.add(categoryId)
+      const category = findCachedCategory(runtimeAny, categoryId)
+      const count = categoryChildCount(category)
+      if (category && count >= 45) {
+        warnings.push(`Ticket option ${optionId} category ${categoryId} is near Discord channel capacity (${count}/50).`)
+      }
+    }
+  }
+  return warnings
+}
+
 function getTicketSummary() {
   const tickets = Array.from(registryState.ticketStates.values())
   return {
@@ -534,6 +605,7 @@ function getWarnings(runtime: DashboardRuntimeSource | null, checkerSummary: Ret
   if (pluginSummary.crashed > 0 || pluginSummary.unknownCrashed > 0) {
     warnings.push("One or more plugins are currently crashed or unavailable.")
   }
+  warnings.push(...collectCategoryCapacityWarnings(runtime))
   return warnings
 }
 
@@ -803,6 +875,7 @@ export function listDashboardTickets(): DashboardTicketRecord[] {
       optionId: ticket.optionId,
       creatorId: ticket.creatorId,
       transportMode: ticket.transportMode,
+      channelName: ticket.channelName,
       transportParentChannelId: ticket.transportParentChannelId,
       transportParentMessageId: ticket.transportParentMessageId,
       assignedTeamId: ticket.assignedTeamId,

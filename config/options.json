@@ -25,6 +25,7 @@
             "category":"category id (or leave empty)",
             "closedCategory":"category id (or leave empty)",
             "backupCategory":"category id (or leave empty)",
+            "overflowCategories":["category id (or leave empty)"],
             "claimedCategory":[
                 {"user":"user id","category":"category id"}
             ],

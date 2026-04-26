@@ -6,6 +6,7 @@ import type { DashboardI18n } from "./i18n"
 import type {
   DashboardTicketActionAvailability,
   DashboardTicketActionId,
+  DashboardTicketBulkActionId,
   DashboardTicketDetailRecord,
   DashboardTicketEscalationTargetChoice,
   DashboardTicketProviderLock,
@@ -74,6 +75,13 @@ export interface TicketWorkbenchListModel {
   filteredSummary: {
     cards: Array<{ label: string; value: string; tone: DashboardTone }>
   }
+  bulkActions: {
+    returnTo: string
+    claimSelfAction: string
+    unclaimAction: string
+    closeAction: string
+    reopenAction: string
+  } | null
   options: Array<{ id: string; label: string }>
   panels: Array<{ id: string; label: string }>
   supportTeams: Array<{ id: string; label: string }>
@@ -85,6 +93,7 @@ export interface TicketWorkbenchListModel {
     teamLabel: string
     assigneeLabel: string
     transportLabel: string
+    channelNameLabel: string
     statusBadge: { label: string; tone: DashboardTone }
     openedLabel: string
     activityLabel: string
@@ -145,6 +154,13 @@ function isDashboardTicketActionId(value: string): value is DashboardTicketActio
 export function parseDashboardTicketActionId(value: unknown): DashboardTicketActionId | null {
   const normalized = normalizeString(value)
   return isDashboardTicketActionId(normalized) ? normalized : null
+}
+
+export function parseDashboardTicketBulkActionId(value: unknown): DashboardTicketBulkActionId | null {
+  const normalized = normalizeString(value)
+  return normalized === "claim-self" || normalized === "unclaim" || normalized === "close" || normalized === "reopen"
+    ? normalized
+    : null
 }
 
 function enumOrDefault<T extends readonly string[]>(value: unknown, values: T, fallback: T[number]): T[number] {
@@ -369,6 +385,8 @@ function applyListFilters(
       ticket.id,
       ticket.optionId || "",
       optionLabel,
+      ticket.channelName || "",
+      ticket.channelSuffix || "",
       panel.panelId || "",
       panel.panelLabel,
       ticket.creatorId || "",
@@ -414,6 +432,7 @@ export function buildTicketWorkbenchListModel(input: {
   configService: DashboardConfigService
   readsSupported: boolean
   warningMessage?: string
+  writesSupported?: boolean
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
   const normalizedTickets = input.tickets.map((ticket) => ({
@@ -459,6 +478,15 @@ export function buildTicketWorkbenchListModel(input: {
         { label: "Claimed", value: String(filtered.filter((ticket) => ticket.claimed).length), tone: "success" }
       ]
     },
+    bulkActions: input.readsSupported && input.writesSupported
+      ? {
+          returnTo: currentHref,
+          claimSelfAction: joinBasePath(input.basePath, "admin/tickets/bulk/claim-self"),
+          unclaimAction: joinBasePath(input.basePath, "admin/tickets/bulk/unclaim"),
+          closeAction: joinBasePath(input.basePath, "admin/tickets/bulk/close"),
+          reopenAction: joinBasePath(input.basePath, "admin/tickets/bulk/reopen")
+        }
+      : null,
     options: lookups.options
       .filter((option) => normalizeString(option.type) === "ticket")
       .map((option) => ({ id: normalizeString(option.id), label: labelFromRecord(option, normalizeString(option.id)) }))
@@ -475,6 +503,7 @@ export function buildTicketWorkbenchListModel(input: {
       const teamLabel = resolveTeamLabel(lookups.teamById, ticket.assignedTeamId)
       const assigneeLabel = unknownUserLabel(ticket.assignedStaffUserId)
       const creatorLabel = unknownUserLabel(ticket.creatorId)
+      const channelNameLabel = normalizeString(ticket.channelName) || normalizeString(ticket.channelSuffix) || ticket.id
       const detailHref = `${joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(ticket.id)}`)}?returnTo=${encodeURIComponent(currentHref)}`
       return {
         id: ticket.id,
@@ -484,12 +513,14 @@ export function buildTicketWorkbenchListModel(input: {
         teamLabel,
         assigneeLabel,
         transportLabel: transportLabel(ticket.transportMode),
+        channelNameLabel,
         statusBadge: statusBadge(ticket),
         openedLabel: formatDate(ticket.openedOn),
         activityLabel: formatDate(activityTime(ticket) || null),
         detailHref,
         searchText: [
           ticket.id,
+          channelNameLabel,
           optionLabel,
           panel.panelLabel,
           creatorLabel,

@@ -67,6 +67,7 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         category:"",
         closedCategory:"",
         backupCategory:"",
+        overflowCategories:[],
         claimedCategory:[],
         topic:""
     },
