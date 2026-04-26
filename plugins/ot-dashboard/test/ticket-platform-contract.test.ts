@@ -275,6 +275,18 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.equal(localRuntimeSource.includes("eligibleOptionIds:[WHITELIST_OPTION_ID]"), false)
 })
 
+test("ticket integration service executes provider enrichment through the generic service path", () => {
+  const root = process.cwd()
+  const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")
+
+  assert.match(ticketIntegrationSource, /async getTicketIntegrationEnrichment/)
+  assert.match(ticketIntegrationSource, /provider\.capabilities\.includes\("enrichment"\)/)
+  assert.match(ticketIntegrationSource, /await provider\.enrichment\(\{/)
+  assert.match(ticketIntegrationSource, /profile,\s+settings: profile\.settings,\s+ticket: input\.ticket,\s+channel: input\.channel \?\? null,\s+guild: input\.guild \?\? null/s)
+  assert.match(ticketIntegrationSource, /catch \(error\) \{\s+safeLogIntegrationFailure\("Ticket integration enrichment is unavailable\.", error, profile\)\s+return \{summary:null, details:\{\}, degradedReason:PROVIDER_UNAVAILABLE_REASON\}/s)
+  assert.match(ticketIntegrationSource, /export async function resolveTicketIntegrationEnrichment/)
+})
+
 test("executable ticket platform providers can register before the startup window seals", () => {
   clearTicketPlatformRuntimeApiForTests()
   const runtime = installTicketPlatformRuntimeApi()

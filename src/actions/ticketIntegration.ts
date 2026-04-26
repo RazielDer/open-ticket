@@ -31,6 +31,10 @@ export interface TicketIntegrationActionLockResult {
     summary: TicketIntegrationSummary | null
 }
 
+export interface TicketIntegrationEnrichmentResolution extends api.TicketIntegrationEnrichmentResult {
+    degradedReason: string | null
+}
+
 function normalizeString(value: unknown): string {
     return typeof value == "string" ? value.trim() : ""
 }
@@ -134,6 +138,25 @@ function normalizeActionResult(result: Partial<api.TicketIntegrationActionResult
         ok: result?.ok === true,
         message: normalizeString(result?.message),
         degradedReason: normalizeString(result?.degradedReason) || null
+    }
+}
+
+function normalizeStringRecord(value: unknown): Record<string,string> {
+    if (!value || typeof value != "object" || Array.isArray(value)) return {}
+    const normalized: Record<string,string> = {}
+    Object.entries(value as Record<string,unknown>).forEach(([key,entry]) => {
+        const normalizedKey = normalizeString(key)
+        const normalizedValue = normalizeString(entry)
+        if (!normalizedKey || !normalizedValue) return
+        normalized[normalizedKey] = normalizedValue
+    })
+    return normalized
+}
+
+function normalizeEnrichmentResult(result: Partial<api.TicketIntegrationEnrichmentResult> | null | undefined): api.TicketIntegrationEnrichmentResult {
+    return {
+        summary: normalizeString(result?.summary) || null,
+        details: normalizeStringRecord(result?.details)
     }
 }
 
@@ -323,6 +346,32 @@ export class TicketIntegrationService extends api.ODManagerData {
             return {ok:false, message:PROVIDER_UNAVAILABLE_REASON, degradedReason:PROVIDER_UNAVAILABLE_REASON}
         }
     }
+
+    async getTicketIntegrationEnrichment(input: {
+        ticket: api.ODTicket
+        channel?: discord.GuildTextBasedChannel | null
+        guild?: discord.Guild | null
+    }): Promise<TicketIntegrationEnrichmentResolution | null> {
+        const profile = this.getProfileForTicket(input.ticket)
+        if (!profile || !profile.enabled) return null
+        const provider = this.getProvider(profile)
+        if (!provider || !provider.capabilities.includes("enrichment") || typeof provider.enrichment != "function") return null
+        try {
+            return {
+                ...normalizeEnrichmentResult(await provider.enrichment({
+                    profile,
+                    settings: profile.settings,
+                    ticket: input.ticket,
+                    channel: input.channel ?? null,
+                    guild: input.guild ?? null
+                })),
+                degradedReason: null
+            }
+        } catch (error) {
+            safeLogIntegrationFailure("Ticket integration enrichment is unavailable.", error, profile)
+            return {summary:null, details:{}, degradedReason:PROVIDER_UNAVAILABLE_REASON}
+        }
+    }
 }
 
 function getTicketIntegrationService(): TicketIntegrationService {
@@ -340,6 +389,17 @@ export async function resolveTicketIntegrationActionLock(ticket: api.ODTicket, a
     return await getTicketIntegrationService().resolveStockActionLock({
         ticket,
         actionId,
+        channel: context.channel ?? null,
+        guild: context.guild ?? null
+    })
+}
+
+export async function resolveTicketIntegrationEnrichment(ticket: api.ODTicket, context: {
+    channel?: discord.GuildTextBasedChannel | null
+    guild?: discord.Guild | null
+} = {}): Promise<TicketIntegrationEnrichmentResolution | null> {
+    return await getTicketIntegrationService().getTicketIntegrationEnrichment({
+        ticket,
         channel: context.channel ?? null,
         guild: context.guild ?? null
     })
