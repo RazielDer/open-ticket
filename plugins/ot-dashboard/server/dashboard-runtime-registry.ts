@@ -184,6 +184,7 @@ type RuntimeManagerLike<T = unknown> = {
 export interface DashboardRuntimeSource {
   processStartupDate?: Date | null
   readyStartupDate?: Date | null
+  log?: (message: string, type?: string, details?: Array<{ key: string; value: string; hidden?: boolean }>) => unknown
   plugins?: RuntimeManagerLike<any> & {
     classes?: { get?: (id: string) => unknown | null }
     unknownCrashedPlugins?: Array<{ name?: string; description?: string }>
@@ -236,6 +237,7 @@ const registryState = {
   ticketLoadInProgress: false,
   ticketListenersAttached: false
 }
+const loggedCategoryCapacityWarnings = new Set<string>()
 
 function toIso(value: Date | number | null | undefined): string | null {
   if (value == null) return null
@@ -553,6 +555,18 @@ function findCachedCategory(runtime: any, categoryId: string) {
   return valuesFromCollection(channels).find((channel: any) => String(channel?.id || "") === categoryId) || null
 }
 
+function logCategoryCapacityWarning(runtime: DashboardRuntimeSource | null, warning: string, optionId: string, categoryId: string, childCount: number) {
+  if (typeof runtime?.log !== "function") return
+  const logKey = `${optionId}:${categoryId}:${childCount}`
+  if (loggedCategoryCapacityWarnings.has(logKey)) return
+  loggedCategoryCapacityWarnings.add(logKey)
+  runtime.log(warning, "warning", [
+    { key: "option", value: optionId },
+    { key: "categoryid", value: categoryId, hidden: true },
+    { key: "children", value: String(childCount) }
+  ])
+}
+
 function collectCategoryCapacityWarnings(runtime: DashboardRuntimeSource | null) {
   const warnings: string[] = []
   const runtimeAny = runtime as any
@@ -572,7 +586,9 @@ function collectCategoryCapacityWarnings(runtime: DashboardRuntimeSource | null)
       const category = findCachedCategory(runtimeAny, categoryId)
       const count = categoryChildCount(category)
       if (category && count >= 45) {
-        warnings.push(`Ticket option ${optionId} category ${categoryId} is near Discord channel capacity (${count}/50).`)
+        const warning = `Ticket option ${optionId} category ${categoryId} is near Discord channel capacity (${count}/50).`
+        warnings.push(warning)
+        logCategoryCapacityWarning(runtime, warning, optionId, categoryId, count)
       }
     }
   }
@@ -920,4 +936,5 @@ export function clearDashboardRuntimeRegistry() {
   registryState.recentTicketActivity = []
   registryState.ticketLoadInProgress = false
   registryState.ticketListenersAttached = false
+  loggedCategoryCapacityWarnings.clear()
 }

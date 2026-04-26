@@ -286,9 +286,13 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
 
 test("dashboard runtime snapshot warns when ticket categories are near Discord capacity", () => {
   clearDashboardRuntimeRegistry()
+  const logCalls: any[][] = []
 
   registerDashboardRuntime({
     readyStartupDate: new Date("2026-04-26T12:00:00.000Z"),
+    log(...args: any[]) {
+      logCalls.push(args)
+    },
     configs: {
       get(id: string) {
         if (id !== "opendiscord:options") return null
@@ -343,6 +347,14 @@ test("dashboard runtime snapshot warns when ticket categories are near Discord c
   assert.match(snapshot.warnings.join("\n"), /intake category category-overflow is near Discord channel capacity \(45\/50\)/)
   assert.doesNotMatch(snapshot.warnings.join("\n"), /thread-intake/)
   assert.doesNotMatch(snapshot.warnings.join("\n"), /explicit-empty-overflow/)
+  assert.equal(logCalls.length, 1)
+  assert.match(String(logCalls[0][0]), /intake category category-overflow is near Discord channel capacity \(45\/50\)/)
+  assert.equal(logCalls[0][1], "warning")
+  assert.deepEqual(logCalls[0][2], [
+    { key: "option", value: "intake" },
+    { key: "categoryid", value: "category-overflow", hidden: true },
+    { key: "children", value: "45" }
+  ])
 
   clearDashboardRuntimeRegistry()
 })
@@ -357,6 +369,7 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   const moveTicketSource = read("src/actions/moveTicket.ts")
   const reopenTicketSource = read("src/actions/reopenTicket.ts")
   const unclaimTicketSource = read("src/actions/unclaimTicket.ts")
+  const checkerLoaderSource = read("src/data/framework/checkerLoader.ts")
   const bridgeSource = read("plugins/ot-eotfs-bridge/index.ts")
   const localRuntimeSource = read("plugins/ot-local-runtime-config/index.ts")
 
@@ -388,6 +401,8 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.equal(moveTicketSource.includes('categoryMode = "backup"'), false)
   assert.equal(reopenTicketSource.includes('category-mode").value = "backup"'), false)
   assert.equal(unclaimTicketSource.includes('category-mode").value = "backup"'), false)
+  assert.doesNotMatch(checkerLoaderSource, /key:"overflowCategories"[\s\S]{0,280}allowDoubles:false/)
+  assert.match(checkerLoaderSource, /opendiscord:ticket-channel-overflow-duplicate/)
 
   assert.match(bridgeSource, /function resolveBridgeConfigForTicket/)
   assert.match(bridgeSource, /hasOwnProperty\.call\(settings,"eligibleOptionIds"\)/)
