@@ -1,4 +1,5 @@
 type FollowUpRicherMessageCandidate = {
+    content?: string
     embed: {
         enabled: boolean
         image?: string
@@ -17,10 +18,16 @@ function hasConfiguredText(value: unknown): boolean {
     return typeof value == "string" && value.trim().length > 0
 }
 
+function hasRawNotificationMention(value: unknown): boolean {
+    if (typeof value != "string") return false
+    return /(^|[^\w])@(everyone|here)\b/i.test(value) || /<@&\d+>/.test(value)
+}
+
 export function followUpHasNotificationTargets(message: FollowUpRicherMessageCandidate): boolean {
     return message.ping["@here"] === true
         || message.ping["@everyone"] === true
         || (message.ping.custom?.length ?? 0) > 0
+        || hasRawNotificationMention(message.content)
 }
 
 export function followUpHasUnsafeRicherMedia(message: FollowUpRicherMessageCandidate): boolean {

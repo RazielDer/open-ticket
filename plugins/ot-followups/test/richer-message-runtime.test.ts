@@ -55,6 +55,18 @@ test("notification-bearing followups stay on the legacy payload path", () => {
     assert.equal(followUpMessageRequiresLegacyPayload(buildMessage({
         ping: { "@here": false, "@everyone": false, custom: ["123456789012345678"] }
     })), true)
+    assert.equal(followUpMessageRequiresLegacyPayload(buildMessage({
+        content: "@everyone read this",
+        ping: { "@here": false, "@everyone": false, custom: [] }
+    })), true)
+    assert.equal(followUpMessageRequiresLegacyPayload(buildMessage({
+        content: "Staff ping: @here",
+        ping: { "@here": false, "@everyone": false, custom: [] }
+    })), true)
+    assert.equal(followUpMessageRequiresLegacyPayload(buildMessage({
+        content: "Role ping: <@&123456789012345678>",
+        ping: { "@here": false, "@everyone": false, custom: [] }
+    })), true)
 })
 
 test("media-bearing followups stay on the legacy payload path", () => {
