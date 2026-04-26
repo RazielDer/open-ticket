@@ -308,6 +308,21 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.equal(localRuntimeSource.includes("eligibleOptionIds:[WHITELIST_OPTION_ID]"), false)
 })
 
+test("slash AI assist records metadata-only ai-assist-request audit events through dashboard runtime API", () => {
+  const root = process.cwd()
+  const aiAssistSource = fs.readFileSync(path.resolve(root, "plugins/ot-ai-assist/index.ts"), "utf8")
+  const dashboardRuntimeApiSource = fs.readFileSync(path.resolve(root, "plugins/ot-dashboard/server/dashboard-runtime-api.ts"), "utf8")
+  const dashboardStartSource = fs.readFileSync(path.resolve(root, "plugins/ot-dashboard/start.ts"), "utf8")
+
+  assert.match(aiAssistSource, /eventType:\s*"ai-assist-request"/)
+  assert.match(aiAssistSource, /recordAiAssistAudit/)
+  assert.match(aiAssistSource, /recordAuditEvent/)
+  assert.match(aiAssistSource, /details\s*=\s*\{\s*action:\s*input\.action,\s*profileId:\s*input\.profileId/s)
+  assert.doesNotMatch(aiAssistSource, /details[\s\S]{0,220}(prompt|summary|answer|draft)/)
+  assert.match(dashboardRuntimeApiSource, /recordAuditEvent:\s*\(event/)
+  assert.match(dashboardStartSource, /context\.authStore\.recordAuditEvent/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")

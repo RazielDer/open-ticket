@@ -15,6 +15,7 @@ if (utilities.project != "openticket") throw new api.ODPluginError("This plugin 
 const SERVICE_ID = "ot-ai-assist:service"
 const COMMAND_ID = "ot-ai-assist:assist"
 const acot = discord.ApplicationCommandOptionType
+const DASHBOARD_RUNTIME_API_SYMBOL = Symbol.for("open-ticket.ot-dashboard")
 
 declare module "#opendiscord-types" {
   export interface ODPluginManagerIds_Default {
@@ -123,6 +124,64 @@ function resultText(result: Awaited<ReturnType<OTAiAssistService["runTicketAiAss
   return result.summary || result.answer || result.draft || result.degradedReason || "AI assist request completed."
 }
 
+async function recordAiAssistAudit(input: {
+  ticketId: string | null
+  actorUser: discord.User
+  action: TicketPlatformAiAssistCapability | "unknown"
+  outcome: string
+  profileId?: string | null
+  providerId?: string | null
+  confidence?: string | null
+  reason?: string | null
+}) {
+  const details = {
+    action: input.action,
+    profileId: input.profileId ?? null,
+    providerId: input.providerId ?? null,
+    confidence: input.confidence ?? null
+  }
+  const runtimeApi = (globalThis as Record<symbol, {
+    recordAuditEvent?: (event: {
+      eventType: string
+      sessionScope?: "admin" | "viewer" | null
+      sessionId?: string | null
+      actor?: { userId?: string | null; username?: string | null; globalName?: string | null } | null
+      target?: string | null
+      outcome?: string | null
+      reason?: string | null
+      details?: Record<string, unknown> | null
+    }) => Promise<boolean>
+  } | undefined>)[DASHBOARD_RUNTIME_API_SYMBOL]
+
+  const recorded = typeof runtimeApi?.recordAuditEvent === "function"
+    ? await runtimeApi.recordAuditEvent({
+        eventType: "ai-assist-request",
+        sessionScope: null,
+        sessionId: null,
+        actor: {
+          userId: input.actorUser.id,
+          username: input.actorUser.username,
+          globalName: input.actorUser.globalName
+        },
+        target: input.ticketId || "unknown-ticket",
+        outcome: input.outcome,
+        reason: input.reason ?? null,
+        details
+      })
+    : false
+
+  opendiscord.log("ai-assist-request", "info", [
+    { key: "ticketid", value: input.ticketId || "unknown-ticket", hidden: true },
+    { key: "userid", value: input.actorUser.id, hidden: true },
+    { key: "action", value: input.action },
+    { key: "profile", value: input.profileId || "" },
+    { key: "provider", value: input.providerId || "" },
+    { key: "outcome", value: input.outcome },
+    { key: "confidence", value: input.confidence || "" },
+    { key: "dashboardAudit", value: recorded ? "recorded" : "unavailable" }
+  ])
+}
+
 opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
   const generalConfig = opendiscord.configs.get("opendiscord:general")
   commands.add(new api.ODCommandResponder(COMMAND_ID, generalConfig.data.prefix, "assist"))
@@ -131,6 +190,7 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
       if (source !== "slash") return cancel()
       const { guild, channel, user, member } = instance
       if (!guild || !channel) {
+        await recordAiAssistAudit({ ticketId: null, actorUser: user, action: "unknown", outcome: "unavailable", reason: "AI assist is only available in a guild ticket channel." })
         await instance.reply(await quickMessage("AI assist is only available in a guild ticket channel."))
         return cancel()
       }
@@ -138,16 +198,19 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
       const action = mapAction(instance.options.getString("action", true) || "")
       const prompt = instance.options.getString("prompt", false) || ""
       if (!action) {
+        await recordAiAssistAudit({ ticketId: null, actorUser: user, action: "unknown", outcome: "unavailable", reason: "Unknown AI assist action." })
         await instance.reply(await quickMessage("Unknown AI assist action."))
         return cancel()
       }
       if (action === "answerFaq" && prompt.trim().length < 1) {
+        await recordAiAssistAudit({ ticketId: null, actorUser: user, action, outcome: "unavailable", reason: "FAQ assist requires a prompt." })
         await instance.reply(await quickMessage("FAQ assist requires a prompt."))
         return cancel()
       }
 
       const ticket = opendiscord.tickets.get(channel.id)
       if (!ticket || ticket.get("opendiscord:open")?.value !== true) {
+        await recordAiAssistAudit({ ticketId: null, actorUser: user, action, outcome: "unavailable", reason: "AI assist is only available in the current open ticket channel." })
         await instance.reply(await quickMessage("AI assist is only available in the current open ticket channel."))
         return cancel()
       }
@@ -155,6 +218,7 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
       const closePermission = generalConfig.data.system.permissions.close
       const permission = await opendiscord.permissions.checkCommandPerms(closePermission, "support", user, member, channel, guild)
       if (!permission.hasPerms) {
+        await recordAiAssistAudit({ ticketId: ticket.id.value, actorUser: user, action, outcome: "denied", reason: "Open Ticket denied this AI assist request." })
         await instance.reply(await quickMessage("Open Ticket denied this AI assist request."))
         return cancel()
       }
@@ -186,15 +250,16 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
             degradedReason: "AI assist service is unavailable."
           }
 
-      opendiscord.log("AI assist request completed.", "info", [
-        { key: "ticketid", value: ticket.id.value, hidden: true },
-        { key: "userid", value: user.id, hidden: true },
-        { key: "action", value: action },
-        { key: "profile", value: result.profileId || "" },
-        { key: "provider", value: result.providerId || "" },
-        { key: "outcome", value: result.outcome },
-        { key: "confidence", value: result.confidence || "" }
-      ])
+      await recordAiAssistAudit({
+        ticketId: ticket.id.value,
+        actorUser: user,
+        action,
+        outcome: result.outcome,
+        profileId: result.profileId,
+        providerId: result.providerId,
+        confidence: result.confidence,
+        reason: result.degradedReason
+      })
       await instance.reply(await quickMessage(resultText(result)))
     })
   )

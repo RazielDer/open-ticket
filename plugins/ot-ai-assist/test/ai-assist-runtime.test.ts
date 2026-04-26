@@ -73,7 +73,7 @@ test("reference provider registers but fails closed without host env", async () 
       enabled: true,
       knowledgeSourceIds: [],
       context: {
-        maxRecentMessages: 25,
+        maxRecentMessages: 40,
         includeTicketMetadata: true,
         includeParticipants: true,
         includeManagedFormSnapshot: true,
@@ -123,7 +123,7 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
           enabled: true,
           knowledgeSourceIds: ["faq"],
           context: {
-            maxRecentMessages: 25,
+            maxRecentMessages: 40,
             includeTicketMetadata: true,
             includeParticipants: true,
             includeManagedFormSnapshot: true,
@@ -137,7 +137,7 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
           label: "Option drift",
           enabled: false,
           knowledgeSourceIds: [],
-          context: { maxRecentMessages: 25 },
+          context: { maxRecentMessages: 40 },
           settings: {}
         }
       ]
@@ -178,9 +178,215 @@ test("AI assist service uses stored ticket profile, reads local FAQ knowledge, a
     assert.equal(result.providerId, "reference")
     assert.deepEqual(messagesSeen, [1])
     assert.equal(result.citations[0]?.sourceId, "faq")
+    assert.equal(result.citations[0]?.locator, "knowledge/faq.json#rules-password")
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
+})
+
+test("AI assist service strips low-confidence output text and citations", async () => {
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["suggestReply"],
+        suggestReply() {
+          return {
+            outcome: "low-confidence",
+            confidence: "low",
+            draft: "do not render this draft",
+            citations: [{ kind: "knowledge-source", sourceId: "faq", label: "FAQ", locator: "knowledge/faq.json#entry", excerpt: "do not render" }],
+            degradedReason: "Low confidence.",
+            warnings: []
+          }
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "suggestReply",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "low-confidence")
+  assert.equal(result.draft, null)
+  assert.deepEqual(result.citations, [])
+  assert.equal(result.degradedReason, "Low confidence.")
+})
+
+test("FAQ assist fails closed without resolved local knowledge and does not dispatch provider", async () => {
+  let called = false
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["answerFaq"],
+        answerFaq() {
+          called = true
+          return { outcome: "success", confidence: "high", answer: "ungrounded answer", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "answerFaq",
+    source: "dashboard",
+    prompt: "question"
+  })
+
+  assert.equal(called, false)
+  assert.equal(result.outcome, "unavailable")
+  assert.equal(result.answer, null)
+  assert.match(result.degradedReason || "", /enabled local knowledge source/i)
+})
+
+test("knowledge retrieval enforces excerpt budget and citation locators", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ot-ai-assist-budget-"))
+  fs.mkdirSync(path.join(root, "knowledge"), { recursive: true })
+  fs.writeFileSync(path.join(root, "knowledge", "faq.json"), JSON.stringify([
+    { id: "long-entry", question: "long faq", answer: "a".repeat(1500) }
+  ]), "utf8")
+  fs.writeFileSync(path.join(root, "knowledge", "guide.md"), [
+    "# Intro",
+    "general intro",
+    "## Install Steps",
+    "install ".repeat(500),
+    "## Other",
+    "other text"
+  ].join("\n"), "utf8")
+  fs.writeFileSync(path.join(root, "knowledge", "extra-1.md"), "# Extra One\n" + "one ".repeat(600), "utf8")
+  fs.writeFileSync(path.join(root, "knowledge", "extra-2.md"), "# Extra Two\n" + "two ".repeat(600), "utf8")
+  fs.writeFileSync(path.join(root, "knowledge", "extra-3.md"), "# Extra Three\n" + "three ".repeat(600), "utf8")
+
+  let seenKnowledge: any[] = []
+  const service = new OTAiAssistService({
+    projectRoot: root,
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: ["faq", "guide", "extra-1", "extra-2", "extra-3"],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return [
+        { id: "faq", label: "FAQ", kind: "faq-json", path: "knowledge/faq.json", enabled: true },
+        { id: "guide", label: "Guide", kind: "markdown-file", path: "knowledge/guide.md", enabled: true },
+        { id: "extra-1", label: "Extra 1", kind: "markdown-file", path: "knowledge/extra-1.md", enabled: true },
+        { id: "extra-2", label: "Extra 2", kind: "markdown-file", path: "knowledge/extra-2.md", enabled: true },
+        { id: "extra-3", label: "Extra 3", kind: "markdown-file", path: "knowledge/extra-3.md", enabled: true }
+      ]
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          seenKnowledge = input.knowledge
+          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  try {
+    const result = await service.runTicketAiAssist({
+      ticket: ticket("profile-1"),
+      channel: channel(),
+      guild: {},
+      actorUser: { id: "staff-1" },
+      action: "summarize",
+      source: "dashboard",
+      prompt: "install"
+    })
+
+    assert.equal(result.outcome, "success")
+    assert.equal(seenKnowledge.length, 4)
+    assert.ok(seenKnowledge.reduce((total, entry) => total + entry.content.length, 0) <= 6000)
+    assert.equal(seenKnowledge[0]?.locator, "knowledge/faq.json#long-entry")
+    assert.ok(seenKnowledge[0]?.content.length <= 1200)
+    assert.equal(seenKnowledge[1]?.locator, "knowledge/guide.md#install-steps")
+    assert.equal(result.citations[0]?.locator, "knowledge/faq.json#long-entry")
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("AI assist context defaults to forty messages and clamps below-contract values", async () => {
+  const seenLimits: number[] = []
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        { id: "default-profile", providerId: "probe", label: "Default", enabled: true, knowledgeSourceIds: [], context: {}, settings: {} },
+        { id: "low-profile", providerId: "probe", label: "Low", enabled: true, knowledgeSourceIds: [], context: { maxRecentMessages: 1 }, settings: {} }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          seenLimits.push(input.profile.context.maxRecentMessages)
+          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  await service.runTicketAiAssist({ ticket: ticket("default-profile"), channel: channel(), guild: {}, actorUser: { id: "staff-1" }, action: "summarize", source: "dashboard" })
+  await service.runTicketAiAssist({ ticket: ticket("low-profile"), channel: channel(), guild: {}, actorUser: { id: "staff-1" }, action: "summarize", source: "dashboard" })
+
+  assert.deepEqual(seenLimits, [40, 10])
 })
 
 test("knowledge source path guard rejects URLs, traversal, and absolute paths", () => {

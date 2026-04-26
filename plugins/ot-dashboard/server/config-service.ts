@@ -765,9 +765,9 @@ function assertNoSecretShapedSettings(settings: Record<string, unknown>, label: 
 
 function normalizeAiAssistContext(context: any) {
   const normalized = isPlainObject(context) ? context : {}
-  const maxRecentMessages = Math.floor(ensureNumber(normalized.maxRecentMessages, 25))
+  const maxRecentMessages = Math.floor(ensureNumber(normalized.maxRecentMessages, 40))
   return {
-    maxRecentMessages: Math.min(100, Math.max(1, maxRecentMessages)),
+    maxRecentMessages: Math.min(100, Math.max(10, maxRecentMessages)),
     includeTicketMetadata: normalized.includeTicketMetadata !== false,
     includeParticipants: normalized.includeParticipants !== false,
     includeManagedFormSnapshot: normalized.includeManagedFormSnapshot !== false,
@@ -784,7 +784,7 @@ function normalizeAiAssistProfile(profile: any) {
       enabled: false,
       knowledgeSourceIds: [],
       context: {
-        maxRecentMessages: 25,
+        maxRecentMessages: 40,
         includeTicketMetadata: true,
         includeParticipants: true,
         includeManagedFormSnapshot: true,

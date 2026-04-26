@@ -498,7 +498,7 @@ const sanitizeAiAssistProfilesConfig = () => {
         enabled:false,
         knowledgeSourceIds:[DEFAULT_KNOWLEDGE_SOURCE_ID],
         context:{
-            maxRecentMessages:25,
+            maxRecentMessages:40,
             includeTicketMetadata:true,
             includeParticipants:true,
             includeManagedFormSnapshot:true,

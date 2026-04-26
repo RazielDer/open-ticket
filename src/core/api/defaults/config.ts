@@ -671,7 +671,7 @@ export interface ODJsonConfig_DefaultAiAssistProfileType {
     context:{
         /**Maximum live ticket messages to include. */
         maxRecentMessages:number,
-        /**Include non-secret ticket metadata such as option, state, topic, and creator id. */
+        /**Include non-secret ticket metadata such as option, transport, assignment, state, and priority. */
         includeTicketMetadata:boolean,
         /**Include current live ticket participant labels and ids. */
         includeParticipants:boolean,

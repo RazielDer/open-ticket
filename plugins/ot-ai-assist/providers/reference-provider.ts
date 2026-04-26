@@ -73,9 +73,9 @@ export function createReferenceAiAssistProvider(env: ReferenceProviderEnv = proc
     summarize(input): TicketAiAssistSummarizeResult {
       if (!configured()) return { ...unavailableBase(), summary: null }
       const messageCount = input.context.messages.length
-      const topic = input.context.ticketMetadata?.topic
-      const summary = topic
-        ? `Ticket summary: ${topic}. Recent live messages reviewed: ${messageCount}.`
+      const optionId = input.context.ticketMetadata?.optionId
+      const summary = optionId
+        ? `Ticket summary for option ${optionId}: ${messageCount} recent live message(s) reviewed.`
         : `Ticket summary: ${messageCount} recent live message(s) reviewed.`
       return { ...baseResult(), summary }
     },

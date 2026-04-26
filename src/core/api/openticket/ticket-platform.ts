@@ -284,10 +284,11 @@ export interface TicketAiAssistMessageContext {
 export interface TicketAiAssistTicketMetadataContext {
     ticketId: string
     optionId: string | null
-    creatorUserId: string | null
-    openedAt: string | null
+    transportMode: "channel_text" | "private_thread" | null
+    assignedTeamId: string | null
+    assignedStaffUserId: string | null
     state: "open" | "closed" | "unknown"
-    topic: string | null
+    priority: number | null
 }
 
 export interface TicketAiAssistParticipantContext {

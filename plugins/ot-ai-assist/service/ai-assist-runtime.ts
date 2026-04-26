@@ -63,6 +63,14 @@ export interface AiAssistServiceDependencies {
 }
 
 const DEFAULT_UNAVAILABLE_REASON = "AI assist is unavailable for this ticket."
+const DEFAULT_MAX_RECENT_MESSAGES = 40
+const MIN_MAX_RECENT_MESSAGES = 10
+const MAX_MAX_RECENT_MESSAGES = 100
+const MAX_KNOWLEDGE_EXCERPTS = 4
+const MAX_TOTAL_KNOWLEDGE_CHARS = 6000
+const MAX_FAQ_EXCERPT_CHARS = 1200
+const MAX_MARKDOWN_EXCERPT_CHARS = 2000
+const MAX_CITATIONS = 6
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
@@ -96,7 +104,9 @@ function normalizeContext(input: any): TicketAiAssistProfile["context"] {
   const context = input && typeof input === "object" && !Array.isArray(input) ? input : {}
   const maxRecentMessages = Math.floor(Number(context.maxRecentMessages))
   return {
-    maxRecentMessages: Number.isFinite(maxRecentMessages) ? Math.min(100, Math.max(1, maxRecentMessages)) : 25,
+    maxRecentMessages: Number.isFinite(maxRecentMessages)
+      ? Math.min(MAX_MAX_RECENT_MESSAGES, Math.max(MIN_MAX_RECENT_MESSAGES, maxRecentMessages))
+      : DEFAULT_MAX_RECENT_MESSAGES,
     includeTicketMetadata: context.includeTicketMetadata !== false,
     includeParticipants: context.includeParticipants !== false,
     includeManagedFormSnapshot: context.includeManagedFormSnapshot !== false,
@@ -202,16 +212,18 @@ async function buildMessageContext(channel: any, profile: TicketAiAssistProfile)
 }
 
 function buildTicketMetadata(ticket: any): TicketAiAssistTicketMetadataContext {
-  const openedValue = runtimeDataValue(ticket, "opendiscord:opened-on")
   const open = runtimeDataValue(ticket, "opendiscord:open")
   const closed = runtimeDataValue(ticket, "opendiscord:closed")
+  const transportMode = normalizeString(runtimeDataValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.transportMode))
+  const priorityValue = Number(runtimeDataValue(ticket, "opendiscord:priority"))
   return {
     ticketId: entityId(ticket),
     optionId: entityId(ticket?.option) || null,
-    creatorUserId: normalizeString(runtimeDataValue(ticket, "opendiscord:opened-by")) || null,
-    openedAt: Number.isFinite(Number(openedValue)) ? new Date(Number(openedValue)).toISOString() : null,
+    transportMode: transportMode === "channel_text" || transportMode === "private_thread" ? transportMode : null,
+    assignedTeamId: normalizeString(runtimeDataValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedTeamId)) || null,
+    assignedStaffUserId: normalizeString(runtimeDataValue(ticket, ODTICKET_PLATFORM_METADATA_IDS.assignedStaffUserId)) || null,
     state: closed === true ? "closed" : open === true ? "open" : "unknown",
-    topic: normalizeString(runtimeDataValue(ticket, "opendiscord:topic")) || null
+    priority: Number.isFinite(priorityValue) ? priorityValue : null
   }
 }
 
@@ -244,7 +256,10 @@ async function buildManagedFormAnswers(ticket: any, getFormsDrafts?: () => Promi
 }
 
 function clip(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value
+  if (maxLength <= 0) return ""
+  if (value.length <= maxLength) return value
+  if (maxLength <= 3) return value.slice(0, maxLength)
+  return `${value.slice(0, maxLength - 3)}...`
 }
 
 function selectFaqEntry(entries: any[], prompt: string | null) {
@@ -258,11 +273,71 @@ function selectFaqEntry(entries: any[], prompt: string | null) {
   }) || entries[0] || null
 }
 
+function normalizeKnowledgeLocatorPath(sourcePath: string) {
+  return normalizeString(sourcePath).replace(/\\/g, "/")
+}
+
+function slugifyHeading(value: string) {
+  const slug = normalizeString(value)
+    .toLowerCase()
+    .replace(/[`*_~[\]()]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return slug || "section"
+}
+
+function promptTokens(prompt: string | null) {
+  return [...new Set(normalizeString(prompt).toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 3))]
+}
+
+function scoreTextForPrompt(text: string, tokens: string[]) {
+  const haystack = text.toLowerCase()
+  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0)
+}
+
+function selectMarkdownSection(raw: string, requestPrompt: string | null) {
+  const sections: Array<{ heading: string; slug: string; text: string }> = []
+  let currentHeading = "Document"
+  let currentSlug = "document"
+  let currentLines: string[] = []
+
+  const flush = () => {
+    const text = currentLines.join("\n").trim()
+    if (!text && currentHeading === "Document") return
+    if (!text && sections.length > 0) return
+    sections.push({
+      heading: currentHeading,
+      slug: currentSlug,
+      text: [currentHeading, text].filter(Boolean).join("\n").trim()
+    })
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    const headingMatch = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    if (headingMatch) {
+      flush()
+      currentHeading = normalizeString(headingMatch[2]) || "Section"
+      currentSlug = slugifyHeading(currentHeading)
+      currentLines = []
+      continue
+    }
+    currentLines.push(line)
+  }
+  flush()
+
+  const tokens = promptTokens(requestPrompt)
+  if (tokens.length < 1) return sections[0] || null
+  return sections
+    .map((section, index) => ({ section, index, score: scoreTextForPrompt(`${section.heading}\n${section.text}`, tokens) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.section || sections[0] || null
+}
+
 function readKnowledgeContent(projectRoot: string, source: TicketAiAssistKnowledgeSource, requestPrompt: string | null): TicketAiAssistKnowledgeContext | null {
   if (!source.enabled) return null
   const filePath = resolveKnowledgeSourcePath(projectRoot, source.path)
   if (!fs.existsSync(filePath)) return null
   const raw = fs.readFileSync(filePath, "utf8")
+  const locatorPath = normalizeKnowledgeLocatorPath(source.path)
   if (source.kind === "faq-json") {
     const parsed = JSON.parse(raw)
     const entries = Array.isArray(parsed) ? parsed : []
@@ -270,32 +345,48 @@ function readKnowledgeContent(projectRoot: string, source: TicketAiAssistKnowled
     if (!entry) return null
     const question = normalizeString(entry.question || entry.id || source.label)
     const answer = normalizeString(entry.answer)
+    const entryId = normalizeString(entry.id) || slugifyHeading(question)
     if (!answer) return null
     return {
       sourceId: source.id,
       label: `${source.label}: ${question}`,
       kind: source.kind,
-      content: clip(answer, 2000),
-      locator: normalizeString(entry.id) || question || null
+      content: clip(answer, MAX_FAQ_EXCERPT_CHARS),
+      locator: `${locatorPath}#${entryId}`
     }
   }
+  const section = selectMarkdownSection(raw, requestPrompt)
+  if (!section) return null
   return {
     sourceId: source.id,
-    label: source.label,
+    label: `${source.label}: ${section.heading}`,
     kind: source.kind,
-    content: clip(raw.replace(/\s+/g, " ").trim(), 2000),
-    locator: source.path
+    content: clip(section.text.replace(/\s+/g, " ").trim(), MAX_MARKDOWN_EXCERPT_CHARS),
+    locator: `${locatorPath}#${section.slug}`
   }
 }
 
 function buildCitations(knowledge: TicketAiAssistKnowledgeContext[]): TicketAiAssistCitation[] {
-  return knowledge.map((entry) => ({
+  return knowledge.slice(0, MAX_CITATIONS).map((entry) => ({
     kind: "knowledge-source",
     sourceId: entry.sourceId,
     label: entry.label,
     locator: entry.locator,
     excerpt: clip(entry.content, 240)
   }))
+}
+
+function applyKnowledgeBudget(entries: TicketAiAssistKnowledgeContext[]) {
+  const final: TicketAiAssistKnowledgeContext[] = []
+  let remaining = MAX_TOTAL_KNOWLEDGE_CHARS
+  for (const entry of entries) {
+    if (final.length >= MAX_KNOWLEDGE_EXCERPTS || remaining <= 0) break
+    const content = clip(entry.content, remaining)
+    if (!content) continue
+    final.push({ ...entry, content })
+    remaining -= content.length
+  }
+  return final
 }
 
 function normalizeOutcome(value: unknown): TicketAiAssistOutcome {
@@ -313,11 +404,31 @@ function normalizeConfidence(value: unknown): TicketAiAssistConfidence | null {
   return value === "high" || value === "medium" || value === "low" ? value : null
 }
 
+function normalizeCitation(value: any): TicketAiAssistCitation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const kind = value.kind === "ticket-message" || value.kind === "knowledge-source" || value.kind === "managed-form"
+    ? value.kind
+    : null
+  if (!kind) return null
+  const sourceId = normalizeString(value.sourceId)
+  const label = normalizeString(value.label)
+  if (!sourceId || !label) return null
+  return {
+    kind,
+    sourceId,
+    label,
+    locator: normalizeString(value.locator) || null,
+    excerpt: normalizeString(value.excerpt) ? clip(normalizeString(value.excerpt), 240) : null
+  }
+}
+
 function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: TicketAiAssistHookResult): AiAssistRunResult {
   let outcome = normalizeOutcome(result?.outcome)
   const confidence = normalizeConfidence(result?.confidence)
   const degradedReason = normalizeString(result?.degradedReason) || null
-  const citations = Array.isArray(result?.citations) ? result.citations : []
+  let citations = Array.isArray(result?.citations)
+    ? result.citations.map(normalizeCitation).filter(Boolean).slice(0, MAX_CITATIONS) as TicketAiAssistCitation[]
+    : []
   const warnings = Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
 
   let summary = action === "summarize" ? normalizeString((result as any).summary) || null : null
@@ -326,9 +437,12 @@ function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: T
 
   if (outcome === "success" && confidence === "low") {
     outcome = "low-confidence"
+  }
+  if (outcome !== "success" || confidence === "low") {
     summary = null
     answer = null
     draft = null
+    citations = []
   }
 
   return {
@@ -425,11 +539,27 @@ export class OTAiAssistService {
       }
 
       const sourceById = new Map(readSources(this.dependencies.getConfigData("opendiscord:knowledge-sources")).map((source) => [source.id, source]))
-      const knowledge = profile.knowledgeSourceIds
+      const knowledge = applyKnowledgeBudget(profile.knowledgeSourceIds
         .map((sourceId) => sourceById.get(sourceId) || null)
         .filter((source): source is TicketAiAssistKnowledgeSource => Boolean(source))
         .map((source) => readKnowledgeContent(this.dependencies.projectRoot, source, input.prompt || null))
-        .filter((entry): entry is TicketAiAssistKnowledgeContext => Boolean(entry))
+        .filter((entry): entry is TicketAiAssistKnowledgeContext => Boolean(entry)))
+
+      if (input.action === "answerFaq" && knowledge.length < 1) {
+        return {
+          profileId: profile.id,
+          providerId: profile.providerId,
+          action: input.action,
+          outcome: "unavailable",
+          confidence: null,
+          summary: null,
+          answer: null,
+          draft: null,
+          citations: [],
+          warnings: [],
+          degradedReason: "FAQ assist requires at least one enabled local knowledge source."
+        }
+      }
 
       const context: TicketAiAssistRequestContext = {
         messages: await buildMessageContext(input.channel, profile),
@@ -460,7 +590,9 @@ export class OTAiAssistService {
         ...normalized,
         profileId: profile.id,
         providerId: profile.providerId,
-        citations: normalized.citations.length > 0 ? normalized.citations : buildCitations(knowledge)
+        citations: normalized.outcome === "success"
+          ? normalized.citations.length > 0 ? normalized.citations : buildCitations(knowledge)
+          : []
       }
     } catch (error) {
       return {

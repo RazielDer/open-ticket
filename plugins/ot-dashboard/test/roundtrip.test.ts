@@ -227,7 +227,7 @@ function createFixtureRoot() {
       enabled: true,
       knowledgeSourceIds: ["faq-1"],
       context: {
-        maxRecentMessages: 25,
+        maxRecentMessages: 40,
         includeTicketMetadata: true,
         includeParticipants: true,
         includeManagedFormSnapshot: true,
@@ -491,7 +491,7 @@ test("AI assist profiles and knowledge sources reject secret settings and guarde
           label: "Reference assist",
           enabled: true,
           knowledgeSourceIds: ["faq-1"],
-          context: { maxRecentMessages: 25 },
+          context: { maxRecentMessages: 40 },
           settings: { apiKey: "must-not-be-here" }
         }
       ]))

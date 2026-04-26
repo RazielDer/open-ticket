@@ -614,7 +614,7 @@ export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure(
     {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-profile-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this AI assist profile."})},
     {key:"knowledgeSourceIds",checker:new api.ODCheckerArrayStructure("opendiscord:ai-assist-profile-knowledge-sources",{allowDoubles:false,allowedTypes:["string"],cliDisplayPropertyName:"knowledge source id",propertyChecker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-knowledge-source-id",{maxLength:128,cliDisplayName:"Knowledge Source ID",cliDisplayDescription:"A knowledge source id from knowledge-sources.json."}),cliDisplayName:"Knowledge Sources",cliDisplayDescription:"Knowledge source ids available to this profile."})},
     {key:"context",checker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile-context",{children:[
-        {key:"maxRecentMessages",checker:new api.ODCheckerNumberStructure("opendiscord:ai-assist-context-max-messages",{min:1,max:100,negativeAllowed:false,floatAllowed:false,cliInitDefaultValue:25,cliDisplayName:"Max Recent Messages",cliDisplayDescription:"Maximum live ticket messages to include."})},
+        {key:"maxRecentMessages",checker:new api.ODCheckerNumberStructure("opendiscord:ai-assist-context-max-messages",{min:10,max:100,negativeAllowed:false,floatAllowed:false,cliInitDefaultValue:40,cliDisplayName:"Max Recent Messages",cliDisplayDescription:"Maximum live ticket messages to include."})},
         {key:"includeTicketMetadata",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-ticket-metadata",{cliInitDefaultValue:true,cliDisplayName:"Include Ticket Metadata",cliDisplayDescription:"Include non-secret ticket metadata."})},
         {key:"includeParticipants",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-participants",{cliInitDefaultValue:true,cliDisplayName:"Include Participants",cliDisplayDescription:"Include current live ticket participants."})},
         {key:"includeManagedFormSnapshot",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-managed-form",{cliInitDefaultValue:true,cliDisplayName:"Include Managed Form Snapshot",cliDisplayDescription:"Include current ticket-managed form answers when available."})},
@@ -940,7 +940,7 @@ function normalizeAiAssistProfile(profile:any): api.TicketAiAssistProfile | null
         enabled:profile.enabled === true,
         knowledgeSourceIds:Array.isArray(profile.knowledgeSourceIds) ? profile.knowledgeSourceIds.map((value:any) => String(value || "").trim()).filter(Boolean) : [],
         context:{
-            maxRecentMessages:Number.isFinite(Number(context.maxRecentMessages)) ? Number(context.maxRecentMessages) : 25,
+            maxRecentMessages:Number.isFinite(Number(context.maxRecentMessages)) ? Math.min(100,Math.max(10,Number(context.maxRecentMessages))) : 40,
             includeTicketMetadata:context.includeTicketMetadata !== false,
             includeParticipants:context.includeParticipants !== false,
             includeManagedFormSnapshot:context.includeManagedFormSnapshot !== false,
