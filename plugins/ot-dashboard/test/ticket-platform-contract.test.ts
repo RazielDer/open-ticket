@@ -371,6 +371,18 @@ test("AI assist provider hook result shape does not expose internal run outcomes
   assert.doesNotMatch(platformSource, /TicketAiAssistProviderUnavailableResult/)
 })
 
+test("AI assist provider hooks keep action-specific result contracts", () => {
+  const root = process.cwd()
+  const platformSource = fs.readFileSync(path.resolve(root, "src/core/api/openticket/ticket-platform.ts"), "utf8")
+
+  assert.match(platformSource, /summarize\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistSummarizeResult>/)
+  assert.match(platformSource, /answerFaq\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistAnswerFaqResult>/)
+  assert.match(platformSource, /suggestReply\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistSuggestReplyResult>/)
+  assert.doesNotMatch(platformSource, /summarize\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>/)
+  assert.doesNotMatch(platformSource, /answerFaq\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>/)
+  assert.doesNotMatch(platformSource, /suggestReply\?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")

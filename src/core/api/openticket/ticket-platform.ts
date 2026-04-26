@@ -392,9 +392,9 @@ export interface TicketPlatformAiAssistProvider {
     pluginId?: string
     capabilities: readonly TicketPlatformAiAssistCapability[]
     validateProfileSettings?: TicketPlatformHookHandler<TicketAiAssistValidateProfileSettingsInput, void>
-    summarize?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
-    answerFaq?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
-    suggestReply?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
+    summarize?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistSummarizeResult>
+    answerFaq?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistAnswerFaqResult>
+    suggestReply?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistSuggestReplyResult>
 }
 
 export interface TicketPlatformRuntimeApi {
