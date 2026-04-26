@@ -1,5 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import fs from "fs"
+import path from "path"
 
 import {
   ODTICKET_PLATFORM_METADATA_DEFAULTS,
@@ -10,6 +12,7 @@ import {
   createDefaultTicketPlatformMetadata,
   createTicketPlatformMetadataEntries,
   installTicketPlatformRuntimeApi,
+  resolveTicketIntegrationProfileState,
   sealTicketPlatformRuntimeApi
 } from "../../../src/core/api/openticket/ticket-platform.js"
 import {
@@ -127,6 +130,36 @@ test("new ticket metadata entries seed every additive field with the locked defa
   })
 })
 
+test("ticket integration profile state treats explicit blanks as stored values", () => {
+  const source = (value: unknown, present = true) => ({
+    get(id: string) {
+      assert.equal(id, ODTICKET_PLATFORM_METADATA_IDS.integrationProfileId)
+      return present ? { value } : null
+    }
+  })
+
+  assert.deepEqual(resolveTicketIntegrationProfileState(source(" profile-1 ")), {
+    hasStoredValue: true,
+    profileId: "profile-1"
+  })
+  assert.deepEqual(resolveTicketIntegrationProfileState(source("   ")), {
+    hasStoredValue: true,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketIntegrationProfileState(source(null)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketIntegrationProfileState(source(undefined)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketIntegrationProfileState(source("", false)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+})
+
 test("dashboard runtime registry mirrors the additive ticket platform fields", () => {
   clearDashboardRuntimeRegistry()
 
@@ -215,6 +248,31 @@ test("dashboard runtime registry mirrors the additive ticket platform fields", (
   })
 
   clearDashboardRuntimeRegistry()
+})
+
+test("slice 013 profile source contracts preserve stored ticket and canonical whitelist ownership", () => {
+  const root = process.cwd()
+  const read = (relativePath: string) => fs.readFileSync(path.resolve(root, relativePath), "utf8")
+  const configLoaderSource = read("src/data/framework/configLoader.ts")
+  const ticketIntegrationSource = read("src/actions/ticketIntegration.ts")
+  const createTicketSource = read("src/actions/createTicket.ts")
+  const bridgeSource = read("plugins/ot-eotfs-bridge/index.ts")
+  const localRuntimeSource = read("plugins/ot-local-runtime-config/index.ts")
+
+  assert.match(configLoaderSource, /fileName == "integration-profiles\.json" && !fs\.existsSync/)
+  assert.match(configLoaderSource, /return "\.\/config\/"/)
+
+  assert.match(ticketIntegrationSource, /resolveTicketIntegrationProfileState\(ticket\)/)
+  assert.equal(ticketIntegrationSource.includes("return stored || getTicketOptionIntegrationProfileId(ticket.option)"), false)
+  assert.match(ticketIntegrationSource, /ticket\.get\("opendiscord:integration-profile"\)\.value = profileId/)
+  assert.equal(createTicketSource.includes("integrationProfileId:getTicketOptionIntegrationProfileId(option) || null"), false)
+
+  assert.match(bridgeSource, /function resolveBridgeConfigForTicket/)
+  assert.match(bridgeSource, /hasOwnProperty\.call\(settings,"eligibleOptionIds"\)/)
+  assert.equal(bridgeSource.includes("parseStringArraySetting(settings.eligibleOptionIds).length > 0"), false)
+  assert.match(bridgeSource, /return Boolean\(resolveBridgeConfigForTicket\(entry\)\)/)
+
+  assert.equal(localRuntimeSource.includes("eligibleOptionIds:[WHITELIST_OPTION_ID]"), false)
 })
 
 test("executable ticket platform providers can register before the startup window seals", () => {

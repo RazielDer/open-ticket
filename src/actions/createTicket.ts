@@ -239,7 +239,7 @@ export const registerActions = async () => {
                 ...api.createTicketPlatformMetadataEntries({
                     ...buildTicketTransportMetadata(option,transportParentChannelId),
                     ...routingMetadata,
-                    integrationProfileId:getTicketOptionIntegrationProfileId(option) || null
+                    integrationProfileId:getTicketOptionIntegrationProfileId(option)
                 })
             ])
 

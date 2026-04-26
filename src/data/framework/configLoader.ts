@@ -1,5 +1,7 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as fjs from "formatted-json-stringify"
+import fs from "fs"
+import path from "path"
 
 /** (CONTRIBUTOR GUIDE) HOW TO ADD NEW CONFIG VARIABLES?
  * - Make the change to the config file in (./config/) and be aware of the following things:
@@ -24,14 +26,19 @@ import * as fjs from "formatted-json-stringify"
 export const loadAllConfigs = async () => {
     const devconfigFlag = opendiscord.flags.get("opendiscord:dev-config")
     const isDevconfig = devconfigFlag ? devconfigFlag.value : false
+    const getConfigPath = (fileName: string) => {
+        if (!isDevconfig) return "./config/"
+        if (fileName == "integration-profiles.json" && !fs.existsSync(path.join("./devconfig/",fileName))) return "./config/"
+        return "./devconfig/"
+    }
     
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:general","general.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultGeneralFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:questions","questions.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultQuestionsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultOptionsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultPanelsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultSupportTeamsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:integration-profiles","integration-profiles.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultIntegrationProfilesFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultTranscriptsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:general","general.json",getConfigPath("general.json"),defaultGeneralFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:questions","questions.json",getConfigPath("questions.json"),defaultQuestionsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",getConfigPath("options.json"),defaultOptionsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",getConfigPath("panels.json"),defaultPanelsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",getConfigPath("support-teams.json"),defaultSupportTeamsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:integration-profiles","integration-profiles.json",getConfigPath("integration-profiles.json"),defaultIntegrationProfilesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",getConfigPath("transcripts.json"),defaultTranscriptsFormatter))
 }
 
 //FORMATTERS

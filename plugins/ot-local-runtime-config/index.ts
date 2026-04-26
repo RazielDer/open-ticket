@@ -463,7 +463,6 @@ const sanitizeIntegrationProfilesConfig = () => {
             integrationId:typeof bridge.integrationId == "string" ? bridge.integrationId : "local-whitelist-intake",
             endpointBaseUrl:typeof bridge.endpointBaseUrl == "string" ? bridge.endpointBaseUrl : "",
             sharedSecret:typeof bridge.sharedSecret == "string" ? bridge.sharedSecret : "",
-            eligibleOptionIds:[WHITELIST_OPTION_ID],
             formId:typeof bridge.formId == "string" ? bridge.formId : "whitelist-review-form",
             targetGroupKey:typeof bridge.targetGroupKey == "string" ? bridge.targetGroupKey : "community_mirror",
             authorizedRoleIds:Array.isArray(bridge.authorizedRoleIds) ? bridge.authorizedRoleIds.filter((value) => typeof value == "string") : [],

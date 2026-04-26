@@ -62,6 +62,11 @@ export interface ODTicketPlatformMetadataSource {
     get?: (id: string) => { value?: unknown } | null
 }
 
+export interface ODTicketIntegrationProfileState {
+    hasStoredValue: boolean
+    profileId: string
+}
+
 export function createDefaultTicketPlatformMetadata(): ODTicketPlatformMetadata {
     return {
         ...ODTICKET_PLATFORM_METADATA_DEFAULTS
@@ -95,6 +100,15 @@ export function appendMissingTicketPlatformMetadataFields(ticketData: Array<{ id
     }
 
     return changed
+}
+
+export function resolveTicketIntegrationProfileState(source: ODTicketPlatformMetadataSource | null | undefined): ODTicketIntegrationProfileState {
+    const data = source?.get?.(ODTICKET_PLATFORM_METADATA_IDS.integrationProfileId)
+    if (!data || data.value === null || data.value === undefined) return { hasStoredValue: false, profileId: "" }
+    return {
+        hasStoredValue: true,
+        profileId: typeof data.value == "string" ? data.value.trim() : ""
+    }
 }
 
 export function readTicketPlatformMetadataFromTicket(ticket: ODTicketPlatformMetadataSource): ODTicketPlatformMetadata {

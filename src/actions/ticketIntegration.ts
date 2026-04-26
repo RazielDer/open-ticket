@@ -110,13 +110,14 @@ export function getTicketOptionIntegrationProfileId(option: api.ODTicketOption |
 
 export function getTicketIntegrationProfileId(ticket: api.ODTicket | null | undefined): string {
     if (!ticket) return ""
-    const stored = normalizeString(ticket.get("opendiscord:integration-profile")?.value)
-    return stored || getTicketOptionIntegrationProfileId(ticket.option)
+    const stored = api.resolveTicketIntegrationProfileState(ticket)
+    if (stored.hasStoredValue) return stored.profileId
+    return getTicketOptionIntegrationProfileId(ticket.option)
 }
 
 export function setTicketIntegrationProfileIdFromOption(ticket: api.ODTicket, option: api.ODTicketOption = ticket.option) {
     const profileId = getTicketOptionIntegrationProfileId(option)
-    ticket.get("opendiscord:integration-profile").value = profileId || null
+    ticket.get("opendiscord:integration-profile").value = profileId
     return profileId
 }
 
@@ -196,8 +197,11 @@ export class TicketIntegrationService extends api.ODManagerData {
 
     getProfileForTicket(ticket: api.ODTicket | null | undefined): api.TicketIntegrationProfile | null {
         if (!ticket) return null
-        const profileId = getTicketIntegrationProfileId(ticket)
+        const stored = api.resolveTicketIntegrationProfileState(ticket)
+        const optionProfileId = getTicketOptionIntegrationProfileId(ticket.option)
+        const profileId = stored.hasStoredValue ? stored.profileId : optionProfileId
         if (profileId) return this.getProfile(profileId)
+        if (stored.hasStoredValue && optionProfileId) return null
         return buildLegacyBridgeProfile(ticket.option.id.value)
     }
 

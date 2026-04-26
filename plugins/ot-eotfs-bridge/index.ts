@@ -227,11 +227,15 @@ function isBridgeIntegrationProfile(profileId: string): boolean {
     return profile?.providerId == BRIDGE_PROVIDER_ID
 }
 
-function resolveBridgeProfileForOption(optionId: string): api.TicketIntegrationProfile | null {
-    const profileId = getRuntimeOptionIntegrationProfileId(optionId)
+function resolveBridgeProfile(profileId: string): api.TicketIntegrationProfile | null {
     if (!profileId) return null
     const profile = getIntegrationProfilesConfig().find((entry) => entry.id == profileId) ?? null
     return profile?.providerId == BRIDGE_PROVIDER_ID ? profile : null
+}
+
+function resolveBridgeProfileForOption(optionId: string): api.TicketIntegrationProfile | null {
+    const profileId = getRuntimeOptionIntegrationProfileId(optionId)
+    return resolveBridgeProfile(profileId)
 }
 
 function parseStringArraySetting(value: unknown): string[] {
@@ -267,9 +271,7 @@ function bridgeConfigFromSettings(settings: Record<string, unknown>, referencedO
         integrationId: typeof settings.integrationId == "string" && settings.integrationId.trim().length > 0 ? settings.integrationId.trim() : fallback.integrationId,
         endpointBaseUrl: normalizeEndpointBaseUrl(typeof settings.endpointBaseUrl == "string" ? settings.endpointBaseUrl : fallback.endpointBaseUrl),
         sharedSecret: typeof settings.sharedSecret == "string" && settings.sharedSecret.trim().length > 0 ? settings.sharedSecret.trim() : fallback.sharedSecret,
-        eligibleOptionIds: parseStringArraySetting(settings.eligibleOptionIds).length > 0
-            ? parseStringArraySetting(settings.eligibleOptionIds)
-            : referencedOptionIds.length > 0 ? referencedOptionIds : fallback.eligibleOptionIds,
+        eligibleOptionIds: referencedOptionIds.length > 0 ? referencedOptionIds : fallback.eligibleOptionIds,
         formId: typeof settings.formId == "string" && settings.formId.trim().length > 0 ? settings.formId.trim() : fallback.formId,
         targetGroupKey: typeof settings.targetGroupKey == "string" && settings.targetGroupKey.trim().length > 0 ? settings.targetGroupKey.trim() : fallback.targetGroupKey,
         authorizedRoleIds: parseStringArraySetting(settings.authorizedRoleIds).length > 0 ? parseStringArraySetting(settings.authorizedRoleIds) : fallback.authorizedRoleIds,
@@ -285,7 +287,24 @@ function resolveBridgeConfigForOption(optionId: string): BridgeConfigData | null
     return isEligibleOptionId(legacy.eligibleOptionIds, optionId) ? legacy : null
 }
 
+function resolveBridgeConfigForTicket(ticket: api.ODTicket): BridgeConfigData | null {
+    const optionId = ticket.option.id.value
+    const stored = api.resolveTicketIntegrationProfileState(ticket)
+    if (stored.hasStoredValue) {
+        if (stored.profileId) {
+            const profile = resolveBridgeProfile(stored.profileId)
+            return profile ? bridgeConfigFromSettings(profile.settings, [optionId]) : null
+        }
+        if (getRuntimeOptionIntegrationProfileId(optionId)) return null
+        const legacy = getBridgeConfig()
+        return isEligibleOptionId(legacy.eligibleOptionIds, optionId) ? legacy : null
+    }
+    return resolveBridgeConfigForOption(optionId)
+}
+
 function ticketHasCanonicalBridgeProfile(ticket: api.ODTicket): boolean {
+    const stored = api.resolveTicketIntegrationProfileState(ticket)
+    if (stored.hasStoredValue) return Boolean(stored.profileId && resolveBridgeProfile(stored.profileId))
     return Boolean(resolveBridgeProfileForOption(ticket.option.id.value))
 }
 
@@ -298,6 +317,9 @@ function registerTicketPlatformProvider() {
         capabilities: ["eligibility","status","action","enrichment"],
         secretSettingKeys: ["sharedSecret"],
         validateProfileSettings({settings, referencedByOptionIds}) {
+            if (Object.prototype.hasOwnProperty.call(settings,"eligibleOptionIds")) {
+                throw new Error("Whitelist bridge integration profiles bind ticket options through integrationProfileId, not settings.eligibleOptionIds.")
+            }
             const config = bridgeConfigFromSettings(settings, referencedByOptionIds)
             if (!config.endpointBaseUrl) throw new Error("Whitelist bridge integration profile requires endpointBaseUrl.")
             if (!config.sharedSecret) throw new Error("Whitelist bridge integration profile requires sharedSecret.")
@@ -1585,12 +1607,13 @@ async function performBridgeAction(
 }
 
 async function repairEligibleTicketControls(): Promise<void> {
-    const config = getBridgeConfig()
     const now = new Date().toISOString()
     for (const ticket of opendiscord.tickets.getFiltered((entry) => {
         if (entry.get("opendiscord:closed").value) return false
-        return Boolean(resolveBridgeConfigForOption(entry.option.id.value))
+        return Boolean(resolveBridgeConfigForTicket(entry))
     })) {
+        const config = resolveBridgeConfigForTicket(ticket)
+        if (!config) continue
         const channel = await opendiscord.tickets.getTicketChannel(ticket)
         if (!channel) continue
 
@@ -1853,7 +1876,7 @@ opendiscord.events.get("afterCodeExecuted").listen(async () => {
 })
 
 opendiscord.events.get("afterTicketCreated").listen(async (ticket, creator, channel) => {
-    const config = resolveBridgeConfigForOption(ticket.option.id.value)
+    const config = resolveBridgeConfigForTicket(ticket)
     if (!config) return
 
     const now = new Date().toISOString()
