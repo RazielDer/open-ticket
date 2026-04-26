@@ -492,7 +492,7 @@ async function findApplicantStartFormMessage(
     return null
 }
 
-function buildControlMessage(state: BridgeHandoffState): Pick<discord.MessageCreateOptions, "content" | "embeds" | "components"> {
+function buildControlMessage(state: BridgeHandoffState): discord.MessageCreateOptions {
     const descriptor = buildBridgeControlDescriptor(state)
     const presentation = buildBridgeControlEmbedPresentation(state)
     const row = new discord.ActionRowBuilder<discord.ButtonBuilder>()
@@ -514,11 +514,16 @@ function buildControlMessage(state: BridgeHandoffState): Pick<discord.MessageCre
         embed.addFields(...presentation.fields)
     }
 
-    return {
+    const legacyPayload: Pick<discord.MessageCreateOptions, "content" | "embeds" | "components"> = {
         content: "",
         embeds: [embed],
         components: descriptor.buttons.length > 0 ? [row] : []
     }
+    return api.buildRicherMessagePayload({
+        surfaceId: "ot-eotfs-bridge:whitelist-staff-review",
+        embeds: [embed],
+        actionRows: descriptor.buttons.length > 0 ? [row] : []
+    }) ?? legacyPayload
 }
 
 function buildRetryModal(ticketChannelId: string, retryWarning: string | null): discord.ModalBuilder {
@@ -1390,13 +1395,13 @@ async function ensureControlMessage(
 ): Promise<discord.Message> {
     const messagePayload = buildControlMessage(state)
     if (currentMessage && currentMessage.editable) {
-        await currentMessage.edit(messagePayload)
+        await currentMessage.edit(messagePayload as discord.MessageEditOptions)
         return currentMessage
     }
     if (state.controlMessageId) {
         const existingMessage = await channel.messages.fetch(state.controlMessageId).catch(() => null)
         if (existingMessage && existingMessage.editable) {
-            await existingMessage.edit(messagePayload)
+            await existingMessage.edit(messagePayload as discord.MessageEditOptions)
             return existingMessage
         }
     }

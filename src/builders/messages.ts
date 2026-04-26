@@ -799,6 +799,7 @@ const ticketMessages = () => {
                 instance.addComponent(await buttons.getSafe("opendiscord:approve-close-request").build("close-request-message",{guild,channel,user,ticket}))
                 instance.addComponent(await buttons.getSafe("opendiscord:dismiss-close-request").build("close-request-message",{guild,channel,user,ticket}))
             }
+            api.applyRicherMessageSurface(instance,{surfaceId:"opendiscord:close-request-message"})
         })
     )
 
@@ -808,6 +809,7 @@ const ticketMessages = () => {
         new api.ODWorker("opendiscord:awaiting-user-message",0,async (instance,params,source) => {
             const {guild,channel,user,ticket,reason} = params
             instance.addEmbed(await embeds.getSafe("opendiscord:awaiting-user-message").build(source as any,{guild,channel,user,ticket,reason}))
+            api.applyRicherMessageSurface(instance,{surfaceId:"opendiscord:awaiting-user-message"})
         })
     )
 

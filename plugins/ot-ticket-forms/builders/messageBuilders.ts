@@ -53,6 +53,9 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
                     })
                 );
             }
+            api.applyRicherMessageSurface(instance, {
+                surfaceId: "ot-ticket-forms:start-form-message"
+            });
         })
     );
 
