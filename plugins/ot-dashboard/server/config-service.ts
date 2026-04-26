@@ -877,6 +877,39 @@ function normalizeKnowledgeSource(source: any, projectRoot: string) {
   return normalized
 }
 
+function validateFaqKnowledgeRecord(record: any, index: number): string | null {
+  if (!isPlainObject(record)) return `FAQ knowledge entry ${index + 1} must be an object.`
+  if (!ensureString(record.id, "").trim()) return `FAQ knowledge entry ${index + 1} must include an id.`
+  if (!ensureString(record.question, "").trim()) return `FAQ knowledge entry ${index + 1} must include a question.`
+  if (!ensureString(record.answer, "").trim()) return `FAQ knowledge entry ${index + 1} must include an answer.`
+  if (record.aliases !== undefined && (!Array.isArray(record.aliases) || record.aliases.some((alias: any) => typeof alias !== "string"))) {
+    return `FAQ knowledge entry ${index + 1} aliases must be strings.`
+  }
+  return null
+}
+
+function validateKnowledgeSourceContent(source: any, projectRoot: string) {
+  if (source.kind !== "faq-json" || source.enabled !== true) return
+  const filePath = path.resolve(projectRoot, source.path)
+  if (!fs.existsSync(filePath)) return
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"))
+  } catch {
+    throw new Error(`FAQ knowledge source "${source.id}" must contain valid JSON.`)
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`FAQ knowledge source "${source.id}" must contain an array of records.`)
+  }
+
+  for (let index = 0; index < parsed.length; index += 1) {
+    const error = validateFaqKnowledgeRecord(parsed[index], index)
+    if (error) throw new Error(error)
+  }
+}
+
 function normalizeRoleOption(option: any) {
   const normalized: any = deepMerge(
     {
@@ -1515,6 +1548,7 @@ export function createConfigService(
         }
       }
       const normalized = parsed.map((source: any) => normalizeKnowledgeSource(source, projectRoot))
+      normalized.forEach((source: any) => validateKnowledgeSourceContent(source, projectRoot))
       writeManagedJson(id, normalized)
       return normalized
     }

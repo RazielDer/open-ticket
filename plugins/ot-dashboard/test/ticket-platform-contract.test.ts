@@ -330,6 +330,19 @@ test("AI assist managed-config secret predicates include bearer keys", () => {
   assert.match(checkerLoaderSource, /secret\|token\|password\|api\[_-\]\?key\|authorization\|credential\|bearer/)
 })
 
+test("AI assist catalogs keep dev-config reload fallback and FAQ content validation", () => {
+  const root = process.cwd()
+  const configReloadSource = fs.readFileSync(path.resolve(root, "plugins/ot-config-reload/index.ts"), "utf8")
+  const checkerLoaderSource = fs.readFileSync(path.resolve(root, "src/data/framework/checkerLoader.ts"), "utf8")
+
+  assert.match(configReloadSource, /DEVCONFIG_FALLBACK_TARGETS[\s\S]*"ai-assist-profiles"[\s\S]*"knowledge-sources"/)
+  assert.match(configReloadSource, /fs\.existsSync\(`\.\/devconfig\/\$\{target\}\.json`\)/)
+  assert.match(configReloadSource, /fs\.existsSync\(`\.\/config\/\$\{target\}\.json`\)/)
+  assert.match(checkerLoaderSource, /function validateKnowledgeSourceFileContent/)
+  assert.match(checkerLoaderSource, /JSON\.parse\(fs\.readFileSync\(absolutePath,"utf8"\)\)/)
+  assert.match(checkerLoaderSource, /opendiscord:knowledge-source-content-invalid/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")

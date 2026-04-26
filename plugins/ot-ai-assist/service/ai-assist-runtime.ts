@@ -71,6 +71,20 @@ const MAX_TOTAL_KNOWLEDGE_CHARS = 6000
 const MAX_FAQ_EXCERPT_CHARS = 1200
 const MAX_MARKDOWN_EXCERPT_CHARS = 2000
 const MAX_CITATIONS = 6
+const PROVIDER_ERROR_REASON = "AI assist provider returned an error."
+const KNOWLEDGE_SOURCE_UNAVAILABLE_REASON = "One or more configured knowledge sources could not be read."
+const FAQ_QUESTION_REQUIRED_REASON = "FAQ assist requires a question."
+const FAQ_KNOWLEDGE_REQUIRED_REASON = "FAQ assist requires at least one usable enabled local knowledge source."
+const FAQ_NO_MATCH_REASON = "FAQ assist could not find a matching knowledge entry."
+
+class AiAssistRuntimeError extends Error {
+  constructor(
+    readonly outcome: TicketAiAssistOutcome,
+    reason: string
+  ) {
+    super(reason)
+  }
+}
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
@@ -223,6 +237,13 @@ function providerValidationReason(
   }
 }
 
+function sanitizedErrorResult(error: unknown): { outcome: TicketAiAssistOutcome; reason: string } {
+  if (error instanceof AiAssistRuntimeError) {
+    return { outcome: error.outcome, reason: error.message }
+  }
+  return { outcome: "provider-error", reason: PROVIDER_ERROR_REASON }
+}
+
 function actionPrompt(action: TicketPlatformAiAssistCapability, value: unknown) {
   return action === "answerFaq" ? normalizeString(value) || null : null
 }
@@ -305,13 +326,13 @@ function clip(value: string, maxLength: number) {
 
 function selectFaqEntry(entries: any[], prompt: string | null) {
   const normalizedPrompt = normalizeString(prompt).toLowerCase()
-  if (!normalizedPrompt) return entries[0] || null
+  if (!normalizedPrompt) return null
   return entries.find((entry) => {
     const candidates = [entry?.question, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
       .map((candidate) => normalizeString(candidate).toLowerCase())
       .filter(Boolean)
     return candidates.some((candidate) => normalizedPrompt.includes(candidate) || candidate.includes(normalizedPrompt))
-  }) || entries[0] || null
+  }) || null
 }
 
 function normalizeKnowledgeLocatorPath(sourcePath: string) {
@@ -373,15 +394,40 @@ function selectMarkdownSection(raw: string, requestPrompt: string | null) {
     .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.section || sections[0] || null
 }
 
+function parseFaqEntries(raw: string) {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error("FAQ knowledge source is malformed.")
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("FAQ knowledge source must be an array.")
+  }
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("FAQ knowledge source is malformed.")
+    const record = entry as Record<string, unknown>
+    if (!normalizeString(record.id) || !normalizeString(record.question) || !normalizeString(record.answer)) {
+      throw new Error("FAQ knowledge source is malformed.")
+    }
+    if (
+      typeof record.aliases !== "undefined"
+      && (!Array.isArray(record.aliases) || record.aliases.some((alias) => typeof alias !== "string"))
+    ) {
+      throw new Error("FAQ knowledge source is malformed.")
+    }
+    return record
+  })
+}
+
 function readKnowledgeContent(projectRoot: string, source: TicketAiAssistKnowledgeSource, requestPrompt: string | null): TicketAiAssistKnowledgeContext | null {
   if (!source.enabled) return null
   const filePath = resolveKnowledgeSourcePath(projectRoot, source.path)
-  if (!fs.existsSync(filePath)) return null
+  if (!fs.existsSync(filePath)) throw new Error("Knowledge source file is unavailable.")
   const raw = fs.readFileSync(filePath, "utf8")
   const locatorPath = normalizeKnowledgeLocatorPath(source.path)
   if (source.kind === "faq-json") {
-    const parsed = JSON.parse(raw)
-    const entries = Array.isArray(parsed) ? parsed : []
+    const entries = parseFaqEntries(raw)
     const entry = selectFaqEntry(entries, requestPrompt)
     if (!entry) return null
     const question = normalizeString(entry.question || entry.id || source.label)
@@ -404,6 +450,29 @@ function readKnowledgeContent(projectRoot: string, source: TicketAiAssistKnowled
     kind: source.kind,
     content: clip(section.text.replace(/\s+/g, " ").trim(), MAX_MARKDOWN_EXCERPT_CHARS),
     locator: `${locatorPath}#${section.slug}`
+  }
+}
+
+function collectKnowledgeContext(projectRoot: string, sources: TicketAiAssistKnowledgeSource[], requestPrompt: string | null) {
+  const entries: TicketAiAssistKnowledgeContext[] = []
+  const warnings: string[] = []
+  let enabledSourceCount = 0
+
+  for (const source of sources) {
+    if (!source.enabled) continue
+    enabledSourceCount += 1
+    try {
+      const entry = readKnowledgeContent(projectRoot, source, requestPrompt)
+      if (entry) entries.push(entry)
+    } catch {
+      warnings.push(KNOWLEDGE_SOURCE_UNAVAILABLE_REASON)
+    }
+  }
+
+  return {
+    knowledge: applyKnowledgeBudget(entries),
+    warnings: [...new Set(warnings)],
+    enabledSourceCount
   }
 }
 
@@ -466,7 +535,7 @@ function normalizeCitation(value: any): TicketAiAssistCitation | null {
 function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: TicketAiAssistHookResult): AiAssistRunResult {
   let outcome = normalizeOutcome(result?.outcome)
   const confidence = normalizeConfidence(result?.confidence)
-  const degradedReason = normalizeString(result?.degradedReason) || null
+  let degradedReason = normalizeString(result?.degradedReason) || null
   let citations = Array.isArray(result?.citations)
     ? result.citations.map(normalizeCitation).filter(Boolean).slice(0, MAX_CITATIONS) as TicketAiAssistCitation[]
     : []
@@ -478,6 +547,9 @@ function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: T
 
   if (outcome === "success" && confidence === "low") {
     outcome = "low-confidence"
+  }
+  if (outcome === "provider-error") {
+    degradedReason = PROVIDER_ERROR_REASON
   }
   if (outcome !== "success" || confidence === "low") {
     summary = null
@@ -559,6 +631,21 @@ export class OTAiAssistService {
         degradedReason: summary?.reason || DEFAULT_UNAVAILABLE_REASON
       }
     }
+    if (input.action === "answerFaq" && !normalizeString(input.prompt)) {
+      return {
+        profileId: summary.profileId,
+        providerId: summary.providerId,
+        action: input.action,
+        outcome: "unavailable",
+        confidence: null,
+        summary: null,
+        answer: null,
+        draft: null,
+        citations: [],
+        warnings: [],
+        degradedReason: FAQ_QUESTION_REQUIRED_REASON
+      }
+    }
 
     const inFlightKey = `${entityId(input.ticket) || "unknown"}:${input.action}`
     if (this.inFlight.has(inFlightKey)) {
@@ -584,14 +671,17 @@ export class OTAiAssistService {
       const provider = profile ? this.dependencies.getProvider(profile.providerId) : null
       const hook = provider?.[input.action]
       if (!profile || !provider || typeof hook !== "function") {
-        throw new Error(DEFAULT_UNAVAILABLE_REASON)
+        throw new AiAssistRuntimeError("unavailable", DEFAULT_UNAVAILABLE_REASON)
       }
 
       const requestPrompt = actionPrompt(input.action, input.prompt)
       const requestInstructions = actionInstructions(input.action, input.instructions)
-      const knowledge = applyKnowledgeBudget(knowledgeSourcesForProfile(profile, this.dependencies.getConfigData("opendiscord:knowledge-sources"))
-        .map((source) => readKnowledgeContent(this.dependencies.projectRoot, source, requestPrompt))
-        .filter((entry): entry is TicketAiAssistKnowledgeContext => Boolean(entry)))
+      const knowledgeResult = collectKnowledgeContext(
+        this.dependencies.projectRoot,
+        knowledgeSourcesForProfile(profile, this.dependencies.getConfigData("opendiscord:knowledge-sources")),
+        requestPrompt
+      )
+      const knowledge = knowledgeResult.knowledge
 
       if (input.action === "answerFaq" && knowledge.length < 1) {
         return {
@@ -604,8 +694,12 @@ export class OTAiAssistService {
           answer: null,
           draft: null,
           citations: [],
-          warnings: [],
-          degradedReason: "FAQ assist requires at least one enabled local knowledge source."
+          warnings: knowledgeResult.warnings,
+          degradedReason: knowledgeResult.warnings.length > 0
+            ? KNOWLEDGE_SOURCE_UNAVAILABLE_REASON
+            : knowledgeResult.enabledSourceCount > 0
+              ? FAQ_NO_MATCH_REASON
+              : FAQ_KNOWLEDGE_REQUIRED_REASON
         }
       }
 
@@ -636,6 +730,7 @@ export class OTAiAssistService {
       const normalized = normalizeHookResult(input.action, await hook(hookInput))
       return {
         ...normalized,
+        warnings: [...knowledgeResult.warnings, ...normalized.warnings],
         profileId: profile.id,
         providerId: profile.providerId,
         citations: normalized.outcome === "success"
@@ -643,18 +738,19 @@ export class OTAiAssistService {
           : []
       }
     } catch (error) {
+      const sanitized = sanitizedErrorResult(error)
       return {
         profileId: summary.profileId,
         providerId: summary.providerId,
         action: input.action,
-        outcome: "provider-error",
+        outcome: sanitized.outcome,
         confidence: null,
         summary: null,
         answer: null,
         draft: null,
         citations: [],
         warnings: [],
-        degradedReason: error instanceof Error ? error.message : DEFAULT_UNAVAILABLE_REASON
+        degradedReason: sanitized.reason
       }
     } finally {
       this.inFlight.delete(inFlightKey)

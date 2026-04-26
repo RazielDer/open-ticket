@@ -75,6 +75,11 @@ function normalizeAiAssistRouteInput(
   return { prompt: "", instructions: typeof data.instructions === "string" ? data.instructions : "" }
 }
 
+function sanitizeAiAssistReason(outcome: string | null | undefined, reason: string | null | undefined) {
+  if (outcome === "provider-error") return "AI assist provider returned an error."
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null
+}
+
 export function registerApiRoutes(app: express.Express, context: DashboardAppContext) {
   const { basePath, configService } = context
   const adminGuard = createAdminGuard(context)
@@ -99,6 +104,19 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
     }
 
     const assistInput = normalizeAiAssistRouteInput(req.body, action)
+    if (action === "answerFaq" && !assistInput.prompt.trim()) {
+      const outcome = "unavailable"
+      const reason = "FAQ assist requires a question."
+      void recordAdminAuditEvent(context, req, {
+        eventType: "ai-assist-request",
+        target: ticketId,
+        outcome,
+        reason,
+        details: { action, profileId: null, providerId: null, confidence: null }
+      })
+      return res.status(400).json({ success: false, outcome, error: reason })
+    }
+
     const result = await context.runtimeBridge.runTicketAiAssist({
       ticketId,
       action,
@@ -106,12 +124,14 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       prompt: assistInput.prompt,
       instructions: assistInput.instructions
     })
+    const safeReason = sanitizeAiAssistReason(result.outcome, result.degradedReason)
+    const responseResult = { ...result, degradedReason: safeReason }
 
     void recordAdminAuditEvent(context, req, {
       eventType: "ai-assist-request",
       target: ticketId,
       outcome: result.outcome,
-      reason: result.degradedReason,
+      reason: safeReason,
       details: {
         action,
         profileId: result.profileId,
@@ -121,11 +141,11 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
     })
 
     const status = result.ok ? 200 : result.outcome === "denied" ? 403 : result.outcome === "busy" ? 409 : 400
-    const error = result.ok ? null : result.degradedReason || result.message || "AI assist request failed."
+    const error = result.ok ? null : safeReason || result.message || "AI assist request failed."
     res.status(status).json({
       success: result.ok,
       ...(error ? { error } : {}),
-      result
+      result: responseResult
     })
   }
 

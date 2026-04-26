@@ -889,6 +889,46 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
   assert.doesNotMatch(JSON.stringify(audits[0]), /secret prompt text|FAQ answer text/)
 })
 
+test("ticket AI assist FAQ API rejects blank questions before runtime dispatch", async (t) => {
+  const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
+  const detail = enabledDetail(baseTicket)
+  detail.aiAssist = {
+    profileId: "assist-1",
+    providerId: "reference",
+    label: "Reference assist",
+    available: true,
+    actions: ["summarize", "answerFaq", "suggestReply"],
+    reason: null
+  }
+  const runtime = await startServer({ tickets: [baseTicket], detail })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie } })
+  const csrfToken = csrfFrom(await detailResponse.text())
+  const response = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/answer-faq`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken
+    },
+    body: JSON.stringify({ question: "   " })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.equal(body.success, false)
+  assert.equal(body.error, "FAQ assist requires a question.")
+  assert.equal(runtime.aiAssistRequests.length, 0)
+
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ai-assist-request" })
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].reason, "FAQ assist requires a question.")
+  assert.equal(Object.prototype.hasOwnProperty.call(audits[0].details, "prompt"), false)
+})
+
 test("ticket AI assist API strips summarize body and returns degraded reasons", async (t) => {
   const reason = "Reference AI provider is not configured on this host"
   const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
@@ -949,6 +989,65 @@ test("ticket AI assist API strips summarize body and returns degraded reasons", 
     prompt: "",
     instructions: ""
   })
+})
+
+test("ticket AI assist API sanitizes provider-error reasons before response and audit", async (t) => {
+  const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
+  const detail = enabledDetail(baseTicket)
+  detail.aiAssist = {
+    profileId: "assist-1",
+    providerId: "reference",
+    label: "Reference assist",
+    available: true,
+    actions: ["summarize", "answerFaq", "suggestReply"],
+    reason: null
+  }
+  const runtime = await startServer({
+    tickets: [baseTicket],
+    detail,
+    aiAssistResult: {
+      ok: false,
+      outcome: "provider-error",
+      action: "summarize",
+      message: "tickets.detail.actionResults.unavailable",
+      profileId: "assist-1",
+      providerId: "reference",
+      confidence: null,
+      summary: null,
+      answer: null,
+      draft: null,
+      citations: [],
+      warnings: [],
+      degradedReason: "raw provider response contained secret prompt text",
+      ticketId: "ticket-1"
+    }
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie } })
+  const csrfToken = csrfFrom(await detailResponse.text())
+  const response = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/summarize`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken
+    },
+    body: JSON.stringify({})
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.equal(body.error, "AI assist provider returned an error.")
+  assert.equal(body.result.degradedReason, "AI assist provider returned an error.")
+  assert.doesNotMatch(JSON.stringify(body), /secret prompt text|raw provider response/)
+
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ai-assist-request" })
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].reason, "AI assist provider returned an error.")
+  assert.doesNotMatch(JSON.stringify(audits[0]), /secret prompt text|raw provider response/)
 })
 
 test("ticket action route forwards every locked action id through the runtime bridge with actor context", async (t) => {

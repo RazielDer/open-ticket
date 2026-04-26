@@ -339,6 +339,49 @@ test("AI assist service strips summarize prompt and instructions before provider
   })
 })
 
+test("AI assist service sanitizes provider exceptions before returning results", async () => {
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize() {
+          throw new Error("raw provider response contained secret prompt text")
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "provider-error")
+  assert.equal(result.degradedReason, "AI assist provider returned an error.")
+  assert.doesNotMatch(JSON.stringify(result), /secret prompt text|raw provider response/)
+})
+
 test("FAQ assist fails closed without resolved local knowledge and does not dispatch provider", async () => {
   let called = false
   const service = new OTAiAssistService({
@@ -384,6 +427,148 @@ test("FAQ assist fails closed without resolved local knowledge and does not disp
   assert.equal(result.outcome, "unavailable")
   assert.equal(result.answer, null)
   assert.match(result.degradedReason || "", /enabled local knowledge source/i)
+})
+
+test("FAQ assist rejects blank and unmatched prompts without falling back to the first entry", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ot-ai-assist-faq-match-"))
+  fs.mkdirSync(path.join(root, "knowledge"), { recursive: true })
+  fs.writeFileSync(path.join(root, "knowledge", "faq.json"), JSON.stringify([
+    { id: "rules-password", question: "rules password", aliases: ["password"], answer: "The rules password is in the rules channel." }
+  ]), "utf8")
+
+  let called = false
+  const service = new OTAiAssistService({
+    projectRoot: root,
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: ["faq"],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return [
+        { id: "faq", label: "FAQ", kind: "faq-json", path: "knowledge/faq.json", enabled: true }
+      ]
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["answerFaq"],
+        answerFaq() {
+          called = true
+          return { outcome: "success", confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  try {
+    const blank = await service.runTicketAiAssist({
+      ticket: ticket("profile-1"),
+      channel: channel(),
+      guild: {},
+      actorUser: { id: "staff-1" },
+      action: "answerFaq",
+      source: "dashboard",
+      prompt: "   "
+    })
+    const unmatched = await service.runTicketAiAssist({
+      ticket: ticket("profile-1"),
+      channel: channel(),
+      guild: {},
+      actorUser: { id: "staff-1" },
+      action: "answerFaq",
+      source: "dashboard",
+      prompt: "unrelated billing question"
+    })
+
+    assert.equal(called, false)
+    assert.equal(blank.outcome, "unavailable")
+    assert.match(blank.degradedReason || "", /requires a question/i)
+    assert.equal(unmatched.outcome, "unavailable")
+    assert.equal(unmatched.answer, null)
+    assert.match(unmatched.degradedReason || "", /matching knowledge entry/i)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("malformed FAQ knowledge fails safely without breaking summarize", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ot-ai-assist-malformed-faq-"))
+  fs.mkdirSync(path.join(root, "knowledge"), { recursive: true })
+  fs.writeFileSync(path.join(root, "knowledge", "bad.json"), "{ not valid json", "utf8")
+
+  let faqCalled = false
+  const service = new OTAiAssistService({
+    projectRoot: root,
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: ["bad"],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return [
+        { id: "bad", label: "Bad FAQ", kind: "faq-json", path: "knowledge/bad.json", enabled: true }
+      ]
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize", "answerFaq"],
+        summarize() {
+          return { outcome: "success", confidence: "high", summary: "summary ok", citations: [], degradedReason: null, warnings: [] }
+        },
+        answerFaq() {
+          faqCalled = true
+          return { outcome: "success", confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null, warnings: [] }
+        }
+      }
+    }
+  })
+
+  try {
+    const summary = await service.runTicketAiAssist({
+      ticket: ticket("profile-1"),
+      channel: channel(),
+      guild: {},
+      actorUser: { id: "staff-1" },
+      action: "summarize",
+      source: "dashboard"
+    })
+    const faq = await service.runTicketAiAssist({
+      ticket: ticket("profile-1"),
+      channel: channel(),
+      guild: {},
+      actorUser: { id: "staff-1" },
+      action: "answerFaq",
+      source: "dashboard",
+      prompt: "rules password"
+    })
+
+    assert.equal(summary.outcome, "success")
+    assert.equal(summary.summary, "summary ok")
+    assert.deepEqual(summary.warnings, ["One or more configured knowledge sources could not be read."])
+    assert.equal(faqCalled, false)
+    assert.equal(faq.outcome, "unavailable")
+    assert.equal(faq.answer, null)
+    assert.equal(faq.degradedReason, "One or more configured knowledge sources could not be read.")
+    assert.doesNotMatch(JSON.stringify(faq), /not valid json|SyntaxError/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test("knowledge retrieval enforces excerpt budget and citation locators", async () => {
@@ -448,7 +633,7 @@ test("knowledge retrieval enforces excerpt budget and citation locators", async 
       actorUser: { id: "staff-1" },
       action: "answerFaq",
       source: "dashboard",
-      prompt: "install"
+      prompt: "long faq install"
     })
 
     assert.equal(result.outcome, "success")

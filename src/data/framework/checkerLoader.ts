@@ -985,6 +985,38 @@ function validateKnowledgeSourceLocalPath(sourcePath:string): string | null {
     return null
 }
 
+function validateFaqKnowledgeRecord(record:any, index:number): string | null {
+    if (!record || typeof record != "object" || Array.isArray(record)) return `FAQ knowledge entry ${index + 1} must be an object.`
+    if (typeof record.id != "string" || record.id.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include an id.`
+    if (typeof record.question != "string" || record.question.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include a question.`
+    if (typeof record.answer != "string" || record.answer.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include an answer.`
+    if (typeof record.aliases != "undefined" && (!Array.isArray(record.aliases) || record.aliases.some((alias:any) => typeof alias != "string"))) {
+        return `FAQ knowledge entry ${index + 1} aliases must be strings.`
+    }
+    return null
+}
+
+function validateKnowledgeSourceFileContent(source:api.TicketAiAssistKnowledgeSource): string | null {
+    if (!source.enabled || source.kind != "faq-json") return null
+    const normalized = source.path.replace(/\\/g,"/").trim()
+    const absolutePath = path.resolve(process.cwd(),normalized)
+    if (!fs.existsSync(absolutePath)) return null
+
+    let parsed:any
+    try {
+        parsed = JSON.parse(fs.readFileSync(absolutePath,"utf8"))
+    } catch {
+        return `FAQ knowledge source "${source.id}" must contain valid JSON.`
+    }
+
+    if (!Array.isArray(parsed)) return `FAQ knowledge source "${source.id}" must contain an array of records.`
+    for (let index = 0; index < parsed.length; index += 1) {
+        const error = validateFaqKnowledgeRecord(parsed[index],index)
+        if (error) return error
+    }
+    return null
+}
+
 export const defaultIntegrationProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
     void manager
     const profileConfig = opendiscord.configs.get("opendiscord:integration-profiles")
@@ -1113,13 +1145,30 @@ export const defaultAiAssistProfilesFunction = (manager:api.ODCheckerManager, fu
         const normalized = normalizeKnowledgeSource(source)
         if (!normalized) return
         const error = validateKnowledgeSourceLocalPath(normalized.path)
-        if (!error) return
+        if (error) {
+            final.push(functions.createMessage(
+                "opendiscord:knowledge-sources",
+                "opendiscord:knowledge-source-path-invalid",
+                knowledgeConfig.file,
+                "error",
+                error,
+                [index,"path"],
+                null,
+                [`"${normalized.path}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+            return
+        }
+
+        const contentError = validateKnowledgeSourceFileContent(normalized)
+        if (!contentError) return
         final.push(functions.createMessage(
             "opendiscord:knowledge-sources",
-            "opendiscord:knowledge-source-path-invalid",
+            "opendiscord:knowledge-source-content-invalid",
             knowledgeConfig.file,
             "error",
-            error,
+            contentError,
             [index,"path"],
             null,
             [`"${normalized.path}"`],

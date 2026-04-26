@@ -507,6 +507,27 @@ test("AI assist profiles and knowledge sources reject secret settings and guarde
       service.saveRawJson("ai-assist-profiles", JSON.stringify([]))
     }, /options still reference it/i)
 
+    fs.mkdirSync(path.join(root, "knowledge"), { recursive: true })
+    fs.writeFileSync(path.join(root, "knowledge", "bad-faq.json"), "{ not valid json", "utf8")
+    assert.throws(() => {
+      service.saveRawJson("knowledge-sources", JSON.stringify([
+        {
+          id: "faq-1",
+          label: "Staff FAQ",
+          kind: "faq-json",
+          path: "knowledge/staff-faq.json",
+          enabled: false
+        },
+        {
+          id: "bad-faq",
+          label: "Bad FAQ",
+          kind: "faq-json",
+          path: "knowledge/bad-faq.json",
+          enabled: true
+        }
+      ]))
+    }, /valid JSON/i)
+
     const backupText = service.readManagedBackupText("ai-assist-profiles")
     assert.match(backupText, /"settings": \{\s+"tone": "concise"\s+\}/)
   } finally {
