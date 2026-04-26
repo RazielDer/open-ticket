@@ -10,7 +10,8 @@ import {
   OD_RICHER_MESSAGE_DISABLE_ENV,
   applyRicherMessageSurface,
   buildRicherMessagePayload,
-  toRicherMessageEditPayload
+  toRicherMessageEditPayload,
+  withRicherMessageFlags
 } from "../../../src/core/api/openticket/richer-message.js"
 
 test("richer message helper converts embed and action row payloads to Components V2 while preserving action ids", () => {
@@ -104,12 +105,43 @@ test("ODMessage richer adoption keeps the built legacy payload as the fallback p
   }
 })
 
+test("responder payload normalization preserves Components V2 flags and clears legacy fields on edits", async () => {
+  const builder = new ODMessage<"test", Record<string, never>>("test:richer-responder", (builtInstance) => {
+    builtInstance.setContent("legacy content")
+    builtInstance.setEmbeds({
+      id: new ODId("test:compiled-embed"),
+      embed: new discord.EmbedBuilder().setTitle("Compiled Layout")
+    })
+    applyRicherMessageSurface(builtInstance, { surfaceId: "opendiscord:close-request-message" })
+  })
+
+  const built = await builder.build("test", {})
+  const createPayload = withRicherMessageFlags(built.message as discord.MessageCreateOptions, [discord.MessageFlags.Ephemeral])
+  assert.deepEqual(createPayload.flags, [discord.MessageFlags.IsComponentsV2, discord.MessageFlags.Ephemeral])
+  assert.equal(Object.hasOwn(createPayload, "content"), false)
+  assert.equal(Object.hasOwn(createPayload, "embeds"), false)
+
+  const editPayload = toRicherMessageEditPayload(built.message as discord.MessageCreateOptions, [discord.MessageFlags.Ephemeral])
+  assert.deepEqual(editPayload.flags, [discord.MessageFlags.IsComponentsV2, discord.MessageFlags.Ephemeral])
+  assert.equal(editPayload.content, null)
+  assert.deepEqual(editPayload.embeds, [])
+
+  const legacyEditPayload = toRicherMessageEditPayload({ content: "legacy" }, [discord.MessageFlags.Ephemeral])
+  assert.deepEqual(legacyEditPayload.flags, [discord.MessageFlags.Ephemeral])
+  assert.equal(legacyEditPayload.content, "legacy")
+  assert.equal(Object.hasOwn(legacyEditPayload, "embeds"), false)
+
+  assert.equal(Object.hasOwn(built.message, "content"), false)
+  assert.equal(Object.hasOwn(built.message, "embeds"), false)
+})
+
 test("SLICE-013A adoption is limited to the approved first-wave persistent surfaces", () => {
   const repoRoot = path.resolve(__dirname, "..", "..", "..", "..")
   const formsSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "builders", "messageBuilders.ts"), "utf8")
   const startFormRuntimeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "service", "start-form-runtime.ts"), "utf8")
   const coreMessageSource = fs.readFileSync(path.join(repoRoot, "src", "builders", "messages.ts"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
+  const responderSource = fs.readFileSync(path.join(repoRoot, "src", "core", "api", "modules", "responder.ts"), "utf8")
 
   const formSurfaceIds = [...formsSource.matchAll(/surfaceId:\s*"([^"]+)"/g)].map((match) => match[1])
   assert.deepEqual(formSurfaceIds, ["ot-ticket-forms:start-form-message"])
@@ -123,5 +155,8 @@ test("SLICE-013A adoption is limited to the approved first-wave persistent surfa
   assert.match(bridgeSource, /surfaceId:\s*"ot-eotfs-bridge:whitelist-staff-review"/)
   assert.match(bridgeSource, /toRicherMessageEditPayload\(messagePayload\)/)
   assert.match(startFormRuntimeSource, /toRicherMessageEditPayload\(messagePayload\)/)
+  assert.match(responderSource, /buildResponderEditPayload\(msg\)/)
+  assert.match(responderSource, /toRicherMessageEditPayload\(msg\.message as discord\.MessageCreateOptions/)
+  assert.doesNotMatch(responderSource, /Object\.assign\(msg\.message,\{flags:msgFlags\}\)/)
   assert.doesNotMatch(bridgeSource, /provider action form|generic provider action|provider-specific standalone/i)
 })

@@ -14,6 +14,7 @@ const MAX_TEXT_DISPLAY_LENGTH = 3900
 const MAX_CONTAINER_COMPONENTS = 10
 
 type MessageTopLevelComponent = NonNullable<discord.MessageCreateOptions["components"]>[number]
+type MessageFlagValue = number|string
 
 export interface ODRicherMessagePayloadInput {
     surfaceId: string
@@ -29,11 +30,49 @@ export interface ODRicherMessageSurfaceOptions {
 
 function hasComponentsV2Flag(flags: unknown): boolean {
     if (Array.isArray(flags)) {
-        return flags.includes(discord.MessageFlags.IsComponentsV2) || flags.includes("IsComponentsV2")
+        return flags.some((flag) => hasComponentsV2Flag(flag))
     }
     if (typeof flags == "number") return (flags & discord.MessageFlags.IsComponentsV2) != 0
     if (typeof flags == "string") return flags == "IsComponentsV2"
     return false
+}
+
+function collectMessageFlags(flags: unknown): MessageFlagValue[] {
+    if (Array.isArray(flags)) {
+        return flags.filter((flag): flag is MessageFlagValue => typeof flag == "number" || typeof flag == "string")
+    }
+    if (typeof flags == "number" || typeof flags == "string") return [flags]
+    return []
+}
+
+function messageFlagKey(flag: MessageFlagValue): string {
+    if (typeof flag == "number") return `number:${flag}`
+    if (flag == "IsComponentsV2") return `number:${discord.MessageFlags.IsComponentsV2}`
+    if (flag == "Ephemeral") return `number:${discord.MessageFlags.Ephemeral}`
+    if (flag == "SuppressEmbeds") return `number:${discord.MessageFlags.SuppressEmbeds}`
+    if (flag == "SuppressNotifications") return `number:${discord.MessageFlags.SuppressNotifications}`
+    return `string:${flag}`
+}
+
+export function withRicherMessageFlags<T extends discord.MessageCreateOptions|discord.MessageEditOptions>(
+    payload: T,
+    extraFlags: readonly MessageFlagValue[] = []
+): T {
+    const next = { ...payload } as Record<string, unknown>
+    const uniqueFlags: MessageFlagValue[] = []
+    const seen = new Set<string>()
+
+    for (const flag of [...collectMessageFlags((payload as { flags?: unknown }).flags), ...extraFlags]) {
+        const key = messageFlagKey(flag)
+        if (seen.has(key)) continue
+        seen.add(key)
+        uniqueFlags.push(flag)
+    }
+
+    if (uniqueFlags.length > 0) next.flags = uniqueFlags
+    else delete next.flags
+
+    return next as T
 }
 
 function richerMessagesDisabled(): boolean {
@@ -197,10 +236,14 @@ export function buildRicherMessagePayload(input: ODRicherMessagePayloadInput): d
     }
 }
 
-export function toRicherMessageEditPayload(payload: discord.MessageCreateOptions): discord.MessageEditOptions {
-    if (!hasComponentsV2Flag(payload.flags)) return payload as discord.MessageEditOptions
+export function toRicherMessageEditPayload(
+    payload: discord.MessageCreateOptions,
+    extraFlags: readonly MessageFlagValue[] = []
+): discord.MessageEditOptions {
+    const withFlags = withRicherMessageFlags(payload, extraFlags)
+    if (!hasComponentsV2Flag(withFlags.flags)) return withFlags as discord.MessageEditOptions
     return {
-        ...payload,
+        ...withFlags,
         content: null,
         embeds: []
     } as discord.MessageEditOptions

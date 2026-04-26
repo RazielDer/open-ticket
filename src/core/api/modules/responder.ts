@@ -7,6 +7,19 @@ import { ODWorkerManager, ODWorkerCallback, ODWorker } from "./worker"
 import { ODDebugger } from "./console"
 import { ODClientManager, ODContextMenu, ODSlashCommand, ODTextCommand, ODTextCommandInteractionOption } from "./client"
 import { ODDropdownData, ODMessageBuildResult, ODMessageBuildSentResult, ODModalBuildResult } from "./builder"
+import { toRicherMessageEditPayload, withRicherMessageFlags } from "../openticket/richer-message"
+
+function getResponderMessageFlags(ephemeral: boolean): number[] {
+    return ephemeral ? [discord.MessageFlags.Ephemeral] : []
+}
+
+function buildResponderCreatePayload(msg: ODMessageBuildResult): discord.InteractionReplyOptions {
+    return withRicherMessageFlags(msg.message as discord.MessageCreateOptions, getResponderMessageFlags(msg.ephemeral)) as discord.InteractionReplyOptions
+}
+
+function buildResponderEditPayload(msg: ODMessageBuildResult): discord.MessageEditOptions {
+    return toRicherMessageEditPayload(msg.message as discord.MessageCreateOptions, getResponderMessageFlags(msg.ephemeral))
+}
 
 /**## ODResponderImplementation `class`
  * This is an Open Ticket responder implementation.
@@ -394,14 +407,13 @@ export class ODCommandResponderInstance {
     /**Reply to this command. */
     async reply(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try {
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.type == "interaction" && this.interaction instanceof discord.ChatInputCommandInteraction){
                 if (this.interaction.replied || this.interaction.deferred){
-                    const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                    const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                     this.didReply = true
                     return {success:true,message:sent}
                 }else{
-                    const sent = await this.interaction.reply(Object.assign(msg.message,{flags:msgFlags}))
+                    const sent = await this.interaction.reply(buildResponderCreatePayload(msg))
                     this.didReply = true
                     return {success:true,message:await sent.fetch()}
                 }
@@ -557,13 +569,12 @@ export class ODButtonResponderInstance {
     /**Reply to this button. */
     async reply(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:sent}
             }else{
-                const sent = await this.interaction.reply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.reply(buildResponderCreatePayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -574,13 +585,12 @@ export class ODButtonResponderInstance {
     /**Update the message of this button. */
     async update(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }else{
-                const sent = await this.interaction.update(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.update(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -846,13 +856,12 @@ export class ODDropdownResponderInstance {
     /**Reply to this dropdown. */
     async reply(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try {
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:sent}
             }else{
-                const sent = await this.interaction.reply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.reply(buildResponderCreatePayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -863,13 +872,12 @@ export class ODDropdownResponderInstance {
     /**Update the message of this dropdown. */
     async update(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }else{
-                const sent = await this.interaction.update(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.update(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -1169,8 +1177,7 @@ export class ODModalResponderInstance {
     /**Reply to this modal. */
     async reply(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
-            const sent = await this.interaction.followUp(Object.assign(msg.message,{flags:msgFlags}))
+            const sent = await this.interaction.followUp(buildResponderCreatePayload(msg))
             this.didReply = true
             return {success:true,message:sent}
         }catch{
@@ -1180,13 +1187,12 @@ export class ODModalResponderInstance {
     /**Update the message of this modal. */
     async update(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }else{
-                const sent = await this.interaction.reply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.reply(buildResponderCreatePayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -1322,13 +1328,12 @@ export class ODContextMenuResponderInstance {
     /**Reply to this context menu. */
     async reply(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:sent}
             }else{
-                const sent = await this.interaction.reply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.reply(buildResponderCreatePayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }
@@ -1339,9 +1344,8 @@ export class ODContextMenuResponderInstance {
     /**Update the message of this context menu. */
     async update(msg:ODMessageBuildResult): Promise<ODMessageBuildSentResult<boolean>> {
         try{
-            const msgFlags: number[] = msg.ephemeral ? [discord.MessageFlags.Ephemeral] : []
             if (this.interaction.replied || this.interaction.deferred){
-                const sent = await this.interaction.editReply(Object.assign(msg.message,{flags:msgFlags}))
+                const sent = await this.interaction.editReply(buildResponderEditPayload(msg))
                 this.didReply = true
                 return {success:true,message:await sent.fetch()}
             }else throw new ODSystemError("Unable to update context menu interaction!")
