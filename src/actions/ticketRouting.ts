@@ -78,6 +78,11 @@ function getTicketOptionString(option:OptionDataSource, id:string): string {
     return typeof value == "string" ? value.trim() : ""
 }
 
+function hasTicketOptionData(option:OptionDataSource, id:string): boolean {
+    if (typeof option.exists == "function") return option.exists(id)
+    return option.get?.(id)?.value !== undefined
+}
+
 function getTicketOptionClaimedCategoryIds(option:OptionDataSource): string[] {
     if (typeof option.exists == "function" && !option.exists(TICKET_OPTION_CHANNEL_CLAIMED_CATEGORIES_ID)) return []
     const value = option.get?.(TICKET_OPTION_CHANNEL_CLAIMED_CATEGORIES_ID)?.value
@@ -90,10 +95,11 @@ export function getTicketOptionOverflowCategoryIds(option:OptionDataSource): str
     const backupCategoryId = getTicketOptionString(option,TICKET_OPTION_CHANNEL_BACKUP_CATEGORY_ID)
     const closedCategoryId = getTicketOptionString(option,TICKET_OPTION_CHANNEL_CLOSED_CATEGORY_ID)
     const claimedCategoryIds = new Set(getTicketOptionClaimedCategoryIds(option))
-    const rawOverflow = typeof option.exists == "function" && !option.exists(TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)
-        ? []
-        : normalizeStringList(option.get?.(TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)?.value)
-    const source = rawOverflow.length > 0 ? rawOverflow : (backupCategoryId ? [backupCategoryId] : [])
+    const hasOverflowCategories = hasTicketOptionData(option,TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)
+    const rawOverflow = hasOverflowCategories
+        ? normalizeStringList(option.get?.(TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID)?.value)
+        : []
+    const source = hasOverflowCategories ? rawOverflow : (backupCategoryId ? [backupCategoryId] : [])
     const seen = new Set<string>()
     const result: string[] = []
     source.forEach((categoryId) => {
@@ -134,16 +140,27 @@ export async function resolveTicketOpenCategoryRoute(input:{
     logPrefix: string
 }): Promise<ODTicketOpenCategoryRoute> {
     const primaryCategoryId = getTicketOptionString(input.option,TICKET_OPTION_CHANNEL_CATEGORY_ID)
-    if (!primaryCategoryId) {
-        return {ok:true,categoryId:null,categoryMode:null,warnings:[]}
-    }
-
     const warnings: string[] = []
+    if (!primaryCategoryId) {
+        const message = "Skipping primary ticket category because it is not configured."
+        warnings.push(message)
+        opendiscord.log(`${input.logPrefix}: ${message}`,"warning",[
+            {key:"mode",value:"normal"}
+        ])
+    }
     const candidates: Array<{categoryId:string, mode:Exclude<ODTicketOpenCategoryMode,null>}> = [
-        {categoryId:primaryCategoryId,mode:"normal"},
+        ...(primaryCategoryId ? [{categoryId:primaryCategoryId,mode:"normal" as const}] : []),
         ...getTicketOptionOverflowCategoryIds(input.option).map((categoryId) => ({categoryId,mode:"overflow" as const}))
     ]
     const seen = new Set<string>()
+    if (candidates.length < 1) {
+        const reason = "No configured ticket category has capacity for this ticket."
+        opendiscord.log(`${input.logPrefix}: ${reason}`,"error",[
+            {key:"primary",value:primaryCategoryId || "/",hidden:true},
+            {key:"overflowCount",value:"0"}
+        ])
+        return {ok:false,reason,warnings}
+    }
 
     for (const candidate of candidates) {
         if (!candidate.categoryId || seen.has(candidate.categoryId)) continue
@@ -175,8 +192,8 @@ export async function resolveTicketOpenCategoryRoute(input:{
 
     const reason = "No configured ticket category has capacity for this ticket."
     opendiscord.log(`${input.logPrefix}: ${reason}`,"error",[
-        {key:"primary",value:primaryCategoryId,hidden:true},
-        {key:"overflowCount",value:String(Math.max(0,candidates.length - 1))}
+        {key:"primary",value:primaryCategoryId || "/",hidden:true},
+        {key:"overflowCount",value:String(candidates.filter((candidate) => candidate.mode == "overflow").length)}
     ])
     return {ok:false,reason,warnings}
 }

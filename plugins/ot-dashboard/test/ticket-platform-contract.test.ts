@@ -297,8 +297,26 @@ test("dashboard runtime snapshot warns when ticket categories are near Discord c
             id: "intake",
             type: "ticket",
             channel: {
+              transportMode: "channel_text",
               category: "category-primary",
               overflowCategories: ["category-overflow"]
+            }
+          }, {
+            id: "thread-intake",
+            type: "ticket",
+            channel: {
+              transportMode: "private_thread",
+              category: "category-thread",
+              overflowCategories: ["category-thread-overflow"]
+            }
+          }, {
+            id: "explicit-empty-overflow",
+            type: "ticket",
+            channel: {
+              transportMode: "channel_text",
+              category: "category-calm",
+              backupCategory: "category-backup",
+              overflowCategories: []
             }
           }]
         }
@@ -309,7 +327,11 @@ test("dashboard runtime snapshot warns when ticket categories are near Discord c
         channels: {
           cache: new Map([
             ["category-primary", { id: "category-primary", children: { cache: { size: 44 } } }],
-            ["category-overflow", { id: "category-overflow", children: { cache: { size: 45 } } }]
+            ["category-overflow", { id: "category-overflow", children: { cache: { size: 45 } } }],
+            ["category-thread", { id: "category-thread", children: { cache: { size: 49 } } }],
+            ["category-thread-overflow", { id: "category-thread-overflow", children: { cache: { size: 49 } } }],
+            ["category-calm", { id: "category-calm", children: { cache: { size: 0 } } }],
+            ["category-backup", { id: "category-backup", children: { cache: { size: 49 } } }]
           ])
         }
       }
@@ -319,6 +341,8 @@ test("dashboard runtime snapshot warns when ticket categories are near Discord c
   const snapshot = getDashboardRuntimeSnapshot({ projectRoot: process.cwd() })
   assert.equal(snapshot.availability, "degraded")
   assert.match(snapshot.warnings.join("\n"), /intake category category-overflow is near Discord channel capacity \(45\/50\)/)
+  assert.doesNotMatch(snapshot.warnings.join("\n"), /thread-intake/)
+  assert.doesNotMatch(snapshot.warnings.join("\n"), /explicit-empty-overflow/)
 
   clearDashboardRuntimeRegistry()
 })
@@ -350,6 +374,11 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.match(ticketRoutingSource, /TICKET_OPTION_CHANNEL_OVERFLOW_CATEGORIES_ID = "opendiscord:channel-categories-overflow"/)
   assert.match(ticketRoutingSource, /TICKET_CATEGORY_NEAR_CAPACITY_CHILD_COUNT = 45/)
   assert.match(ticketRoutingSource, /resolveTicketOpenCategoryRoute/)
+  assert.match(ticketRoutingSource, /hasOverflowCategories \? rawOverflow : \(backupCategoryId \? \[backupCategoryId\] : \[\]\)/)
+  assert.doesNotMatch(ticketRoutingSource, /const source = rawOverflow\.length > 0/)
+  assert.doesNotMatch(ticketRoutingSource, /return \{ok:true,categoryId:null,categoryMode:null,warnings:\[\]\}/)
+  assert.match(ticketRoutingSource, /Skipping primary ticket category because it is not configured/)
+  assert.match(ticketRoutingSource, /if \(candidates\.length < 1\)/)
   assert.match(ticketRoutingSource, /value == "backup"\) return "overflow"/)
   assert.match(createTicketSource, /categoryMode: "normal"\|"overflow"\|null/)
   assert.match(moveTicketSource, /categoryMode: "normal"\|"overflow"\|"closed"\|"claimed"\|null/)

@@ -839,6 +839,23 @@ test("ticket bulk actions require csrf, keep return filters, and map claim-self 
   assert.equal(missingCsrf.status, 403)
   assert.equal(runtime.actionRequests.length, 0)
 
+  const emptySelection = await fetch(`${runtime.baseUrl}/dash/admin/tickets/bulk/unclaim`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?status=open&q=channel"
+    })
+  })
+  await emptySelection.arrayBuffer()
+  assert.equal(emptySelection.status, 302)
+  assert.match(String(redirectMessage(emptySelection.headers.get("location"))), /Select at least one ticket/)
+  assert.equal(runtime.actionRequests.length, 0)
+
   const claimResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/bulk/claim-self`, {
     method: "POST",
     redirect: "manual",
@@ -894,9 +911,12 @@ test("ticket bulk actions require csrf, keep return filters, and map claim-self 
 
   await new Promise((resolve) => setTimeout(resolve, 25))
   const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ticket-bulk-action" })
-  assert.equal(audits.length, 2)
+  assert.equal(audits.length, 3)
+  const emptyAudit = audits.find((event) => event.reason === "empty-selection")
   const claimAudit = audits.find((event) => event.details?.action === "claim-self")
   const closeAudit = audits.find((event) => event.details?.action === "close")
+  assert.equal(emptyAudit?.details?.action, "unclaim")
+  assert.equal(emptyAudit?.details?.requested, 0)
   assert.equal(claimAudit?.details?.succeeded, 2)
   assert.equal(closeAudit?.details?.skipped, 2)
 })

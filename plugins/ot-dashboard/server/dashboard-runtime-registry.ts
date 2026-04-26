@@ -558,9 +558,11 @@ function collectCategoryCapacityWarnings(runtime: DashboardRuntimeSource | null)
   const runtimeAny = runtime as any
   for (const option of runtimeConfigArray(runtimeAny, "options")) {
     if (String(option?.type || "") !== "ticket") continue
+    if (String(option?.channel?.transportMode || "channel_text") === "private_thread") continue
     const optionId = String(option?.id || "").trim() || "unknown"
     const primary = String(option?.channel?.category || "").trim()
-    const overflow = uniqueStringArray(option?.channel?.overflowCategories).length > 0
+    const hasOverflowCategories = Array.isArray(option?.channel?.overflowCategories)
+    const overflow = hasOverflowCategories
       ? uniqueStringArray(option?.channel?.overflowCategories)
       : uniqueStringArray(option?.channel?.backupCategory ? [option.channel.backupCategory] : [])
     const seen = new Set<string>()

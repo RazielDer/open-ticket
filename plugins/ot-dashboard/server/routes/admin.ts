@@ -1077,6 +1077,20 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
 
     if (ticketIds.length < 1) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "empty-selection",
+        details: {
+          action,
+          requested: 0,
+          succeeded: 0,
+          skipped: 0,
+          failed: 0,
+          actorUserId
+        }
+      })
       return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.emptySelection")))
     }
 
