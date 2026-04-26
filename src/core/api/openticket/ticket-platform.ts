@@ -351,11 +351,9 @@ export type TicketAiAssistOutcome = "success" | "unavailable" | "busy" | "low-co
 export type TicketAiAssistConfidence = "high" | "medium" | "low"
 
 export interface TicketAiAssistHookResultBase {
-    outcome: TicketAiAssistOutcome
     confidence: TicketAiAssistConfidence | null
     citations: TicketAiAssistCitation[]
     degradedReason: string | null
-    warnings: string[]
 }
 
 export interface TicketAiAssistSummarizeResult extends TicketAiAssistHookResultBase {
@@ -374,13 +372,6 @@ export type TicketAiAssistHookResult =
     | TicketAiAssistSummarizeResult
     | TicketAiAssistAnswerFaqResult
     | TicketAiAssistSuggestReplyResult
-
-export interface TicketAiAssistProviderUnavailableResult extends TicketAiAssistHookResultBase {
-    outcome: "success" | "unavailable" | "busy" | "low-confidence" | "provider-error" | "denied"
-    summary?: string | null
-    answer?: string | null
-    draft?: string | null
-}
 
 type TicketPlatformHookHandler<Input, Result> = (input: Input) => Result | Promise<Result>
 

@@ -1556,9 +1556,12 @@ export function createConfigService(
       if (!Array.isArray(parsed)) {
         throw new Error("options.json must be an array.")
       }
-      validateOptionRoutingReferences(parsed)
-      validateOptionIntegrationReferences(parsed)
-      validateOptionAiAssistReferences(parsed)
+      const normalized = parsed.map(normalizeOption)
+      validateOptionRoutingReferences(normalized)
+      validateOptionIntegrationReferences(normalized)
+      validateOptionAiAssistReferences(normalized)
+      writeManagedJson(id, normalized)
+      return normalized
     }
     writeManagedJson(id, parsed)
     return parsed

@@ -99,7 +99,7 @@ test("reference provider registers but fails closed without host env", async () 
     request: { action: "summarize", prompt: null, instructions: null, source: "dashboard" }
   })
 
-  assert.equal(result?.outcome, "unavailable")
+  assert.equal(result?.confidence, null)
   assert.equal(result?.degradedReason, REFERENCE_PROVIDER_MISSING_CONFIG_REASON)
 
   const service = new OTAiAssistService({
@@ -261,12 +261,10 @@ test("AI assist service strips low-confidence output text and citations", async 
         capabilities: ["suggestReply"],
         suggestReply() {
           return {
-            outcome: "low-confidence",
             confidence: "low",
             draft: "do not render this draft",
             citations: [{ kind: "knowledge-source", sourceId: "faq", label: "FAQ", locator: "knowledge/faq.json#entry", excerpt: "do not render" }],
-            degradedReason: "Low confidence.",
-            warnings: []
+            degradedReason: "Low confidence."
           }
         }
       }
@@ -286,6 +284,222 @@ test("AI assist service strips low-confidence output text and citations", async 
   assert.equal(result.draft, null)
   assert.deepEqual(result.citations, [])
   assert.equal(result.degradedReason, "Low confidence.")
+})
+
+test("AI assist service pages live channel messages before filtering and truncating context", async () => {
+  const botPage = Array.from({ length: 100 }, (_, index) => ({
+    id: `bot-${index}`,
+    content: `bot message ${index}`,
+    createdTimestamp: 1710001000000 - index,
+    author: { id: "bot-1", username: "Bot", bot: true },
+    attachments: new Map()
+  }))
+  const userPage = [
+    {
+      id: "user-old",
+      content: "first user message",
+      createdTimestamp: 1710000001000,
+      author: { id: "creator-1", username: "Creator", bot: false },
+      attachments: new Map()
+    },
+    {
+      id: "user-new",
+      content: "second user message",
+      createdTimestamp: 1710000002000,
+      author: { id: "creator-1", username: "Creator", bot: false },
+      attachments: new Map()
+    }
+  ]
+  const fetchCalls: any[] = []
+  let messagesSeen: any[] = []
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 10, includeBotMessages: false },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          messagesSeen = input.context.messages
+          return { confidence: "high", summary: "ok", citations: [], degradedReason: null }
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: {
+      messages: {
+        async fetch(options: any) {
+          fetchCalls.push(options)
+          return options?.before ? userPage : botPage
+        }
+      }
+    },
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "success")
+  assert.equal(fetchCalls.length, 2)
+  assert.deepEqual(messagesSeen.map((message) => message.messageId), ["user-old", "user-new"])
+})
+
+test("AI assist service prefers completed managed form snapshots and keeps text-only answers", async () => {
+  let formAnswersSeen: any[] = []
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 10, includeManagedFormSnapshot: true },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          formAnswersSeen = input.context.managedFormAnswers
+          return { confidence: "high", summary: "ok", citations: [], degradedReason: null }
+        }
+      }
+    },
+    async getFormsDrafts() {
+      return [{
+        ticketChannelId: "ticket-1",
+        formId: "whitelist-form",
+        updatedAt: "2024-03-09T00:00:00.000Z",
+        completedAt: null,
+        answers: [{
+          question: { position: 1, question: "Alderon Games ID" },
+          answer: "ALD-DRAFT",
+          answerData: { kind: "text", value: "ALD-DRAFT" }
+        }]
+      }]
+    },
+    async getCompletedForm(ticketChannelId, formId) {
+      assert.equal(ticketChannelId, "ticket-1")
+      assert.equal(formId, "whitelist-form")
+      return {
+        ticketChannelId: "ticket-1",
+        formId: "whitelist-form",
+        completedAt: "2024-03-10T00:00:00.000Z",
+        answers: [{
+          position: 1,
+          question: "Alderon Games ID",
+          answer: "ALD-COMPLETED",
+          answerData: { kind: "text", value: "ALD-COMPLETED" }
+        }]
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "success")
+  assert.deepEqual(formAnswersSeen, [{
+    questionId: "1",
+    questionLabel: "Alderon Games ID",
+    answer: "ALD-COMPLETED"
+  }])
+})
+
+test("AI assist service keeps nested draft question text when completed form is unavailable", async () => {
+  let formAnswersSeen: any[] = []
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 10, includeManagedFormSnapshot: true },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize(input) {
+          formAnswersSeen = input.context.managedFormAnswers
+          return { confidence: "high", summary: "ok", citations: [], degradedReason: null }
+        }
+      }
+    },
+    async getFormsDrafts() {
+      return [{
+        ticketChannelId: "ticket-1",
+        formId: "whitelist-form",
+        updatedAt: "2024-03-09T00:00:00.000Z",
+        completedAt: null,
+        answers: [{
+          question: { position: 2, question: "Rules password", type: "short" },
+          answer: "sunrise",
+          answerData: { kind: "text", value: "sunrise" }
+        }]
+      }]
+    },
+    async getCompletedForm() {
+      return null
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "success")
+  assert.deepEqual(formAnswersSeen, [{
+    questionId: "2",
+    questionLabel: "Rules password",
+    answer: "sunrise"
+  }])
 })
 
 test("AI assist service strips summarize prompt and instructions before provider dispatch", async () => {
@@ -313,7 +527,7 @@ test("AI assist service strips summarize prompt and instructions before provider
         capabilities: ["summarize"],
         summarize(input) {
           requestSeen = input.request
-          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", summary: "ok", citations: [], degradedReason: null }
         }
       }
     }
@@ -407,7 +621,7 @@ test("FAQ assist fails closed without resolved local knowledge and does not disp
         capabilities: ["answerFaq"],
         answerFaq() {
           called = true
-          return { outcome: "success", confidence: "high", answer: "ungrounded answer", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", answer: "ungrounded answer", citations: [], degradedReason: null }
         }
       }
     }
@@ -462,7 +676,7 @@ test("FAQ assist rejects blank and unmatched prompts without falling back to the
         capabilities: ["answerFaq"],
         answerFaq() {
           called = true
-          return { outcome: "success", confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null }
         }
       }
     }
@@ -529,11 +743,11 @@ test("malformed FAQ knowledge fails safely without breaking summarize", async ()
         id: "probe",
         capabilities: ["summarize", "answerFaq"],
         summarize() {
-          return { outcome: "success", confidence: "high", summary: "summary ok", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", summary: "summary ok", citations: [], degradedReason: null }
         },
         answerFaq() {
           faqCalled = true
-          return { outcome: "success", confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", answer: "should not dispatch", citations: [], degradedReason: null }
         }
       }
     }
@@ -619,7 +833,7 @@ test("knowledge retrieval enforces excerpt budget and citation locators", async 
         capabilities: ["answerFaq"],
         answerFaq(input) {
           seenKnowledge = input.knowledge
-          return { outcome: "success", confidence: "high", answer: "ok", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", answer: "ok", citations: [], degradedReason: null }
         }
       }
     }
@@ -666,7 +880,7 @@ test("AI assist context defaults to forty messages and clamps below-contract val
         capabilities: ["summarize"],
         summarize(input) {
           seenLimits.push(input.profile.context.maxRecentMessages)
-          return { outcome: "success", confidence: "high", summary: "ok", citations: [], degradedReason: null, warnings: [] }
+          return { confidence: "high", summary: "ok", citations: [], degradedReason: null }
         }
       }
     }

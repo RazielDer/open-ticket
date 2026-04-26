@@ -444,6 +444,62 @@ test("ticket option integration and AI assist profile bindings roundtrip, strip 
   }
 })
 
+test("raw options saves strip integration and AI assist profile bindings from non-ticket options", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    const saved = service.saveRawJson("options", JSON.stringify([
+      {
+        id: "ticket-raw",
+        name: "Raw Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { emoji: "", label: "Raw Ticket", color: "green" },
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1"
+      },
+      {
+        id: "role-raw",
+        name: "Raw Role",
+        description: "Assign a role.",
+        type: "role",
+        button: { emoji: "", label: "Raw Role", color: "blue" },
+        roles: ["9"],
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1"
+      },
+      {
+        id: "website-raw",
+        name: "Raw Website",
+        description: "Open docs.",
+        type: "website",
+        button: { emoji: "", label: "Raw Website" },
+        url: "https://example.com/docs",
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1"
+      }
+    ])) as any[]
+
+    assert.equal(saved[0].integrationProfileId, "profile-1")
+    assert.equal(saved[0].aiAssistProfileId, "assist-1")
+    assert.equal("integrationProfileId" in saved[1], false)
+    assert.equal("aiAssistProfileId" in saved[1], false)
+    assert.equal("integrationProfileId" in saved[2], false)
+    assert.equal("aiAssistProfileId" in saved[2], false)
+
+    const options = service.readManagedJson<any[]>("options")
+    assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
+    assert.equal("integrationProfileId" in options[1], false)
+    assert.equal("aiAssistProfileId" in options[1], false)
+    assert.equal("integrationProfileId" in options[2], false)
+    assert.equal("aiAssistProfileId" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test("integration profile backups redact provider secrets and restore preserves existing redacted secrets", () => {
   clearTicketPlatformRuntimeApiForTests()
   const runtime = installTicketPlatformRuntimeApi()

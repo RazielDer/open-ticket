@@ -355,6 +355,20 @@ test("AI assist request source type stays limited to dashboard and slash", () =>
   assert.doesNotMatch(runtimeSource, /AiAssistRequestSource = "dashboard" \| "slash" \| string/)
 })
 
+test("AI assist provider hook result shape does not expose internal run outcomes or warnings", () => {
+  const root = process.cwd()
+  const platformSource = fs.readFileSync(path.resolve(root, "src/core/api/openticket/ticket-platform.ts"), "utf8")
+  const baseMatch = /export interface TicketAiAssistHookResultBase \{([\s\S]*?)\n\}/.exec(platformSource)
+
+  assert.ok(baseMatch)
+  assert.match(baseMatch[1], /confidence: TicketAiAssistConfidence \| null/)
+  assert.match(baseMatch[1], /citations: TicketAiAssistCitation\[\]/)
+  assert.match(baseMatch[1], /degradedReason: string \| null/)
+  assert.doesNotMatch(baseMatch[1], /\boutcome\b/)
+  assert.doesNotMatch(baseMatch[1], /\bwarnings\b/)
+  assert.doesNotMatch(platformSource, /TicketAiAssistProviderUnavailableResult/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")
@@ -388,12 +402,10 @@ test("executable ticket platform providers can register before the startup windo
     capabilities: ["summarize"],
     summarize() {
       return {
-        outcome: "success",
         confidence: "medium",
         summary: "summary",
         citations: [],
-        degradedReason: null,
-        warnings: []
+        degradedReason: null
       }
     }
   })

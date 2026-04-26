@@ -61,12 +61,15 @@ export interface AiAssistServiceDependencies {
   getConfigData(id: string): unknown
   getProvider(id: string): TicketPlatformAiAssistProvider | null
   getFormsDrafts?(): Promise<unknown[]>
+  getCompletedForm?(ticketChannelId: string, formId: string): Promise<unknown | null>
 }
 
 const DEFAULT_UNAVAILABLE_REASON = "AI assist is unavailable for this ticket."
 const DEFAULT_MAX_RECENT_MESSAGES = 40
 const MIN_MAX_RECENT_MESSAGES = 10
 const MAX_MAX_RECENT_MESSAGES = 100
+const MESSAGE_FETCH_PAGE_SIZE = 100
+const MAX_MESSAGE_FETCH_PAGES = 10
 const MAX_KNOWLEDGE_EXCERPTS = 4
 const MAX_TOTAL_KNOWLEDGE_CHARS = 6000
 const MAX_FAQ_EXCERPT_CHARS = 1200
@@ -253,17 +256,71 @@ function actionInstructions(action: TicketPlatformAiAssistCapability, value: unk
   return action === "suggestReply" ? normalizeString(value) || null : null
 }
 
-async function fetchRecentMessages(channel: any, maxRecentMessages: number) {
-  const fetched = typeof channel?.messages?.fetch === "function"
-    ? await channel.messages.fetch({ limit: maxRecentMessages }).catch(() => null)
-    : channel?.messages?.cache
-  return valuesFromCollection(fetched).slice(0, maxRecentMessages)
+function messageTimestamp(message: any) {
+  if (message?.createdAt instanceof Date) return message.createdAt.getTime()
+  const createdTimestamp = Number(message?.createdTimestamp)
+  return Number.isFinite(createdTimestamp) ? createdTimestamp : 0
+}
+
+function sortMessagesNewestFirst(messages: any[]) {
+  return [...messages].sort((left, right) => messageTimestamp(right) - messageTimestamp(left))
+}
+
+function filterMessageForProfile(message: any, profile: TicketAiAssistProfile) {
+  return profile.context.includeBotMessages || !Boolean(message?.author?.bot)
+}
+
+function messageCursor(messages: any[]) {
+  const oldest = [...messages]
+    .filter((message) => normalizeString(message?.id))
+    .sort((left, right) => messageTimestamp(left) - messageTimestamp(right))[0]
+  return normalizeString(oldest?.id)
+}
+
+async function fetchRecentMessages(channel: any, profile: TicketAiAssistProfile) {
+  const maxRecentMessages = profile.context.maxRecentMessages
+  const collected: any[] = []
+  const seenIds = new Set<string>()
+
+  if (typeof channel?.messages?.fetch === "function") {
+    let before: string | undefined
+    for (let page = 0; page < MAX_MESSAGE_FETCH_PAGES && collected.length < maxRecentMessages; page += 1) {
+      const fetched = await channel.messages.fetch(before
+        ? { limit: MESSAGE_FETCH_PAGE_SIZE, before }
+        : { limit: MESSAGE_FETCH_PAGE_SIZE }
+      ).catch(() => null)
+      const messages = sortMessagesNewestFirst(valuesFromCollection(fetched))
+      if (messages.length < 1) break
+
+      let addedAny = false
+      for (const message of messages) {
+        const id = normalizeString(message?.id)
+        const dedupeKey = id || `${messageTimestamp(message)}:${normalizeString(message?.content)}`
+        if (seenIds.has(dedupeKey)) continue
+        seenIds.add(dedupeKey)
+        addedAny = true
+        if (filterMessageForProfile(message, profile)) collected.push(message)
+        if (collected.length >= maxRecentMessages) break
+      }
+
+      before = messageCursor(messages)
+      if (!addedAny || !before || messages.length < MESSAGE_FETCH_PAGE_SIZE) break
+    }
+  } else {
+    for (const message of sortMessagesNewestFirst(valuesFromCollection(channel?.messages?.cache))) {
+      if (filterMessageForProfile(message, profile)) collected.push(message)
+      if (collected.length >= maxRecentMessages) break
+    }
+  }
+
+  return sortMessagesNewestFirst(collected)
+    .slice(0, maxRecentMessages)
+    .sort((left, right) => messageTimestamp(left) - messageTimestamp(right))
 }
 
 async function buildMessageContext(channel: any, profile: TicketAiAssistProfile) {
-  const messages = await fetchRecentMessages(channel, profile.context.maxRecentMessages)
+  const messages = await fetchRecentMessages(channel, profile)
   return messages
-    .filter((message) => profile.context.includeBotMessages || !Boolean(message?.author?.bot))
     .map((message): TicketAiAssistRequestContext["messages"][number] => ({
       messageId: normalizeString(message?.id),
       authorUserId: normalizeString(message?.author?.id),
@@ -302,20 +359,79 @@ function buildParticipants(ticket: any): TicketAiAssistParticipantContext[] {
   return participants
 }
 
-async function buildManagedFormAnswers(ticket: any, getFormsDrafts?: () => Promise<unknown[]>) {
+function nestedQuestionValue(answer: any, key: string) {
+  const question = answer?.question
+  return question && typeof question === "object" && !Array.isArray(question)
+    ? (question as Record<string, unknown>)[key]
+    : undefined
+}
+
+function normalizeFormIdentifier(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  return normalizeString(value)
+}
+
+function normalizeManagedFormAnswer(answer: any) {
+  const questionId = [
+    answer?.questionId,
+    answer?.id,
+    nestedQuestionValue(answer, "id"),
+    nestedQuestionValue(answer, "position"),
+    answer?.position
+  ].map(normalizeFormIdentifier).find(Boolean) || ""
+  const questionLabel = normalizeString(answer?.questionLabel)
+    || normalizeString(nestedQuestionValue(answer, "question"))
+    || normalizeString(nestedQuestionValue(answer, "label"))
+    || normalizeString(answer?.question)
+    || normalizeString(answer?.label)
+    || questionId
+    || "Question"
+  return {
+    questionId,
+    questionLabel,
+    answer: normalizeString(answer?.answer ?? answer?.value)
+  }
+}
+
+function snapshotTimestamp(snapshot: any) {
+  const timestamp = Date.parse(normalizeString(snapshot?.completedAt || snapshot?.updatedAt))
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function latestSnapshot(snapshots: any[]) {
+  return [...snapshots].sort((left, right) => snapshotTimestamp(right) - snapshotTimestamp(left))[0] || null
+}
+
+function snapshotAnswers(snapshot: any) {
+  return valuesFromCollection(snapshot?.answers || snapshot?.answerRecords)
+    .map(normalizeManagedFormAnswer)
+    .filter((answer) => answer.questionId || answer.answer)
+}
+
+async function buildManagedFormAnswers(
+  ticket: any,
+  getFormsDrafts?: () => Promise<unknown[]>,
+  getCompletedForm?: (ticketChannelId: string, formId: string) => Promise<unknown | null>
+) {
   if (!getFormsDrafts) return []
   const ticketId = entityId(ticket)
   if (!ticketId) return []
   const drafts = await getFormsDrafts().catch(() => [])
-  return drafts
-    .filter((draft: any) => normalizeString(draft?.ticketChannelId) === ticketId)
-    .flatMap((draft: any) => valuesFromCollection(draft?.answers || draft?.answerRecords))
-    .map((answer: any) => ({
-      questionId: normalizeString(answer?.questionId || answer?.id),
-      questionLabel: normalizeString(answer?.questionLabel || answer?.question || answer?.label) || normalizeString(answer?.questionId || answer?.id) || "Question",
-      answer: normalizeString(answer?.answer || answer?.value)
-    }))
-    .filter((answer) => answer.questionId || answer.answer)
+  const ticketDrafts = drafts.filter((draft: any) => normalizeString(draft?.ticketChannelId) === ticketId)
+
+  if (getCompletedForm) {
+    const completed: unknown[] = []
+    const formIds = [...new Set(ticketDrafts.map((draft: any) => normalizeString(draft?.formId)).filter(Boolean))]
+    for (const formId of formIds) {
+      const snapshot = await getCompletedForm(ticketId, formId).catch(() => null)
+      if (snapshot && normalizeString((snapshot as any)?.ticketChannelId) === ticketId) completed.push(snapshot)
+    }
+    const latestCompleted = latestSnapshot(completed)
+    if (latestCompleted) return snapshotAnswers(latestCompleted)
+  }
+
+  const latestDraft = latestSnapshot(ticketDrafts)
+  return latestDraft ? snapshotAnswers(latestDraft) : []
 }
 
 function clip(value: string, maxLength: number) {
@@ -500,17 +616,6 @@ function applyKnowledgeBudget(entries: TicketAiAssistKnowledgeContext[]) {
   return final
 }
 
-function normalizeOutcome(value: unknown): TicketAiAssistOutcome {
-  return value === "success"
-    || value === "unavailable"
-    || value === "busy"
-    || value === "low-confidence"
-    || value === "provider-error"
-    || value === "denied"
-    ? value
-    : "provider-error"
-}
-
 function normalizeConfidence(value: unknown): TicketAiAssistConfidence | null {
   return value === "high" || value === "medium" || value === "low" ? value : null
 }
@@ -534,25 +639,27 @@ function normalizeCitation(value: any): TicketAiAssistCitation | null {
 }
 
 function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: TicketAiAssistHookResult): AiAssistRunResult {
-  let outcome = normalizeOutcome(result?.outcome)
   const confidence = normalizeConfidence(result?.confidence)
   let degradedReason = normalizeString(result?.degradedReason) || null
   let citations = Array.isArray(result?.citations)
     ? result.citations.map(normalizeCitation).filter(Boolean).slice(0, MAX_CITATIONS) as TicketAiAssistCitation[]
     : []
-  const warnings = Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
 
   let summary = action === "summarize" ? normalizeString((result as any).summary) || null : null
   let answer = action === "answerFaq" ? normalizeString((result as any).answer) || null : null
   let draft = action === "suggestReply" ? normalizeString((result as any).draft) || null : null
+  const actionOutput = action === "summarize" ? summary : action === "answerFaq" ? answer : draft
+  let outcome: TicketAiAssistOutcome = "success"
 
-  if (outcome === "success" && confidence === "low") {
+  if (confidence === "low") {
     outcome = "low-confidence"
+  } else if (!confidence) {
+    outcome = "unavailable"
+  } else if (!actionOutput) {
+    outcome = "unavailable"
+    degradedReason ||= DEFAULT_UNAVAILABLE_REASON
   }
-  if (outcome === "provider-error") {
-    degradedReason = PROVIDER_ERROR_REASON
-  }
-  if (outcome !== "success" || confidence === "low") {
+  if (outcome !== "success") {
     summary = null
     answer = null
     draft = null
@@ -569,7 +676,7 @@ function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: T
     answer,
     draft,
     citations,
-    warnings,
+    warnings: [],
     degradedReason
   }
 }
@@ -708,7 +815,9 @@ export class OTAiAssistService {
         messages: await buildMessageContext(input.channel, profile),
         ticketMetadata: profile.context.includeTicketMetadata ? buildTicketMetadata(input.ticket) : null,
         participants: profile.context.includeParticipants ? buildParticipants(input.ticket) : [],
-        managedFormAnswers: profile.context.includeManagedFormSnapshot ? await buildManagedFormAnswers(input.ticket, this.dependencies.getFormsDrafts) : []
+        managedFormAnswers: profile.context.includeManagedFormSnapshot
+          ? await buildManagedFormAnswers(input.ticket, this.dependencies.getFormsDrafts, this.dependencies.getCompletedForm)
+          : []
       }
 
       const hookInput: TicketAiAssistHookInput = {

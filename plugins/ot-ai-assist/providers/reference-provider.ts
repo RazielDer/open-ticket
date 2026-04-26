@@ -26,21 +26,17 @@ export function isReferenceAiAssistConfigured(env: ReferenceProviderEnv = proces
 
 function baseResult() {
   return {
-    outcome: "success" as const,
     confidence: "medium" as const,
     citations: [],
-    degradedReason: null,
-    warnings: []
+    degradedReason: null
   }
 }
 
 function unavailableBase() {
   return {
-    outcome: "unavailable" as const,
     confidence: null,
     citations: [],
-    degradedReason: REFERENCE_PROVIDER_MISSING_CONFIG_REASON,
-    warnings: []
+    degradedReason: REFERENCE_PROVIDER_MISSING_CONFIG_REASON
   }
 }
 

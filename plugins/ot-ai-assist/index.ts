@@ -48,6 +48,12 @@ class OTAiAssistPluginService extends api.ODManagerData {
       async getFormsDrafts() {
         const formsService = opendiscord.plugins.classes.get("ot-ticket-forms:service") as any
         return typeof formsService?.listTicketDrafts === "function" ? await formsService.listTicketDrafts() : []
+      },
+      async getCompletedForm(ticketChannelId, formId) {
+        const formsService = opendiscord.plugins.classes.get("ot-ticket-forms:service") as any
+        return typeof formsService?.getCompletedTicketForm === "function"
+          ? await formsService.getCompletedTicketForm(ticketChannelId, formId)
+          : null
       }
     })
   }
