@@ -80,6 +80,9 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
                     await opendiscord.builders.buttons.getSafe("ot-ticket-forms:continue-button").build(source, { formInstanceId, sessionId })
                 );
             }
+            api.applyRicherMessageSurface(instance, {
+                surfaceId: "ot-ticket-forms:continue-message"
+            });
         })
     );
 
@@ -120,6 +123,9 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
                 }
             }
             instance.setEphemeral(true);
+            api.applyRicherMessageSurface(instance, {
+                surfaceId: "ot-ticket-forms:question-message"
+            });
         }
     ));
 
@@ -145,6 +151,9 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
             } else {
                 instance.removeComponent("ot-ticket-forms:delete-answers-button");
             }
+            api.applyRicherMessageSurface(instance, {
+                surfaceId: "ot-ticket-forms:answers-message"
+            });
         })
     );
 

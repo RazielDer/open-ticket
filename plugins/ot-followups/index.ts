@@ -1,6 +1,7 @@
 import {api, opendiscord, utilities} from "#opendiscord"
 import * as discord from "discord.js"
 import ansis from "ansis"
+import { followUpMessageRequiresLegacyPayload } from "./richer-message-runtime"
 
 if (utilities.project != "openticket") throw new api.ODPluginError("This plugin only works in Open Ticket!")
 
@@ -194,6 +195,12 @@ opendiscord.events.get("onMessageBuilderLoad").listen((messages) => {
 
             if (message.content !== "") instance.setContent(pingText + message.content)
             else if (pings.length > 0) instance.setContent(pingText)
+
+            if (!followUpMessageRequiresLegacyPayload(message)) {
+                api.applyRicherMessageSurface(instance, {
+                    surfaceId: "ot-followups:message"
+                })
+            }
         })
     )
 })

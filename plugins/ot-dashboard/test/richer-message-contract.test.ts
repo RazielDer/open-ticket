@@ -135,16 +135,25 @@ test("responder payload normalization preserves Components V2 flags and clears l
   assert.equal(Object.hasOwn(built.message, "embeds"), false)
 })
 
-test("SLICE-013A adoption is limited to the approved first-wave persistent surfaces", () => {
+test("richer message adoption is limited to the approved SLICE-013A and SLICE-013B surfaces", () => {
   const repoRoot = path.resolve(__dirname, "..", "..", "..", "..")
   const formsSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "builders", "messageBuilders.ts"), "utf8")
   const startFormRuntimeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "service", "start-form-runtime.ts"), "utf8")
+  const sessionMessageRuntimeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "service", "session-message-runtime.ts"), "utf8")
+  const answersManagerSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-ticket-forms", "classes", "AnswersManager.ts"), "utf8")
+  const followupsSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-followups", "index.ts"), "utf8")
   const coreMessageSource = fs.readFileSync(path.join(repoRoot, "src", "builders", "messages.ts"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(repoRoot, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
   const responderSource = fs.readFileSync(path.join(repoRoot, "src", "core", "api", "modules", "responder.ts"), "utf8")
 
   const formSurfaceIds = [...formsSource.matchAll(/surfaceId:\s*"([^"]+)"/g)].map((match) => match[1])
-  assert.deepEqual(formSurfaceIds, ["ot-ticket-forms:start-form-message"])
+  assert.deepEqual(formSurfaceIds, [
+    "ot-ticket-forms:start-form-message",
+    "ot-ticket-forms:continue-message",
+    "ot-ticket-forms:question-message",
+    "ot-ticket-forms:answers-message"
+  ])
+  assert.equal(formSurfaceIds.includes("ot-ticket-forms:success-message"), false)
 
   const coreSurfaceIds = [...coreMessageSource.matchAll(/surfaceId:"([^"]+)"/g)].map((match) => match[1])
   assert.equal(coreSurfaceIds.includes("opendiscord:close-request-message"), true)
@@ -155,6 +164,11 @@ test("SLICE-013A adoption is limited to the approved first-wave persistent surfa
   assert.match(bridgeSource, /surfaceId:\s*"ot-eotfs-bridge:whitelist-staff-review"/)
   assert.match(bridgeSource, /toRicherMessageEditPayload\(messagePayload\)/)
   assert.match(startFormRuntimeSource, /toRicherMessageEditPayload\(messagePayload\)/)
+  assert.match(sessionMessageRuntimeSource, /withRicherMessageFlags\(/)
+  assert.match(answersManagerSource, /toRicherMessageEditPayload\(builtMessage\.message as discord\.MessageCreateOptions\)/)
+  assert.match(followupsSource, /surfaceId:\s*"ot-followups:message"/)
+  assert.match(followupsSource, /followUpMessageRequiresLegacyPayload\(message\)/)
+  assert.doesNotMatch(followupsSource, /builders\.buttons|builders\.dropdowns|addComponent\(/)
   assert.match(responderSource, /buildResponderEditPayload\(msg\)/)
   assert.match(responderSource, /toRicherMessageEditPayload\(msg\.message as discord\.MessageCreateOptions/)
   assert.doesNotMatch(responderSource, /Object\.assign\(msg\.message,\{flags:msgFlags\}\)/)
