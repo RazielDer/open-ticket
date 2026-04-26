@@ -6,11 +6,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const availableQuestions = ui.readJson("available-questions-data", []);
   const supportTeams = ui.readJson("support-teams-data", []);
   const integrationProfiles = ui.readJson("integration-profiles-data", []);
+  const aiAssistProfiles = ui.readJson("ai-assist-profiles-data", []);
   const dependencyGraph = ui.readJson("dependency-graph-data", {
     optionPanels: {},
     questionOptions: {},
     supportTeamOptions: {},
-    integrationProfileOptions: {}
+    integrationProfileOptions: {},
+    aiAssistProfileOptions: {},
+    knowledgeSourceProfiles: {}
   });
   const messages = ui.readJson("page-messages", {});
   const form = document.getElementById("optionForm");
@@ -58,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
     routingSupportTeamId: document.getElementById("routingSupportTeamId"),
     routingEscalationTargetIds: document.getElementById("routingEscalationTargetIds"),
     integrationProfileId: document.getElementById("integrationProfileId"),
+    aiAssistProfileId: document.getElementById("aiAssistProfileId"),
     workflowCloseRequestEnabled: document.getElementById("workflowCloseRequestEnabled"),
     workflowAwaitingUserEnabled: document.getElementById("workflowAwaitingUserEnabled"),
     workflowAwaitingUserReminderEnabled: document.getElementById("workflowAwaitingUserReminderEnabled"),
@@ -101,6 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const roleModes = Array.from(fields.roleMode?.options || []).map((option) => option.value);
   const supportTeamIds = new Set(supportTeams.map((team) => String(team.id || "")));
   const integrationProfileIds = new Set(integrationProfiles.map((profile) => String(profile.id || "")));
+  const aiAssistProfileIds = new Set(aiAssistProfiles.map((profile) => String(profile.id || "")));
   const questionCheckboxes = Array.from(document.querySelectorAll("[data-question-id]"));
   const questionById = new Map(availableQuestions.map((question) => [String(question.id), question]));
   const inventoryButtons = Array.from(document.querySelectorAll("[data-option-select]"));
@@ -347,6 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.routingSupportTeamId.value = "";
     fields.routingEscalationTargetIds.value = "[]";
     fields.integrationProfileId.value = "";
+    fields.aiAssistProfileId.value = "";
     fields.workflowCloseRequestEnabled.checked = false;
     fields.workflowAwaitingUserEnabled.checked = false;
     fields.workflowAwaitingUserReminderEnabled.checked = false;
@@ -400,6 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.routingSupportTeamId.value = option.routing?.supportTeamId || "";
     fields.routingEscalationTargetIds.value = ui.stringifyList(option.routing?.escalationTargetOptionIds || []);
     fields.integrationProfileId.value = option.integrationProfileId || "";
+    fields.aiAssistProfileId.value = option.aiAssistProfileId || "";
     fields.workflowCloseRequestEnabled.checked = Boolean(option.workflow?.closeRequest?.enabled);
     fields.workflowAwaitingUserEnabled.checked = Boolean(option.workflow?.awaitingUser?.enabled);
     fields.workflowAwaitingUserReminderEnabled.checked = Boolean(option.workflow?.awaitingUser?.reminderEnabled);
@@ -506,6 +513,11 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(messages["options.flash.validationIntegrationProfile"] || "Choose an existing integration profile.");
       }
       option.integrationProfileId = integrationProfileId;
+      const aiAssistProfileId = fields.aiAssistProfileId.value.trim();
+      if (aiAssistProfileId && !aiAssistProfileIds.has(aiAssistProfileId)) {
+        throw new Error(messages["options.flash.validationAiAssistProfile"] || "Choose an existing AI assist profile.");
+      }
+      option.aiAssistProfileId = aiAssistProfileId;
       option.workflow = {
         closeRequest: {
           enabled: fields.workflowCloseRequestEnabled.checked

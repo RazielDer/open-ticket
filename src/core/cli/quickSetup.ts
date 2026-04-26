@@ -1388,6 +1388,7 @@ async function saveQuickSetupConfig(){
             allowCreationByBlacklistedUsers:false,
             questions:[],
             integrationProfileId:"",
+            aiAssistProfileId:"",
 
             channel:{
                 prefix:ticket.channelPrefix,

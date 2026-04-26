@@ -1,0 +1,483 @@
+import fs from "fs"
+import path from "path"
+
+import {
+  ODTICKET_PLATFORM_METADATA_IDS,
+  type TicketAiAssistCitation,
+  type TicketAiAssistConfidence,
+  type TicketAiAssistHookInput,
+  type TicketAiAssistHookResult,
+  type TicketAiAssistKnowledgeContext,
+  type TicketAiAssistKnowledgeSource,
+  type TicketAiAssistOutcome,
+  type TicketAiAssistParticipantContext,
+  type TicketAiAssistProfile,
+  type TicketAiAssistRequestContext,
+  type TicketAiAssistTicketMetadataContext,
+  type TicketPlatformAiAssistCapability,
+  type TicketPlatformAiAssistProvider,
+  resolveTicketAiAssistProfileState
+} from "../../../src/core/api/openticket/ticket-platform.js"
+
+export type AiAssistRequestSource = "dashboard" | "slash" | string
+
+export interface AiAssistSummary {
+  profileId: string
+  providerId: string
+  label: string
+  available: boolean
+  actions: TicketPlatformAiAssistCapability[]
+  reason: string | null
+}
+
+export interface AiAssistRunInput {
+  ticket: unknown
+  channel: unknown
+  guild: unknown
+  actorUser: unknown
+  action: TicketPlatformAiAssistCapability
+  source: AiAssistRequestSource
+  prompt?: string | null
+  instructions?: string | null
+}
+
+export interface AiAssistRunResult {
+  profileId: string | null
+  providerId: string | null
+  action: TicketPlatformAiAssistCapability
+  outcome: TicketAiAssistOutcome
+  confidence: TicketAiAssistConfidence | null
+  summary: string | null
+  answer: string | null
+  draft: string | null
+  citations: TicketAiAssistCitation[]
+  warnings: string[]
+  degradedReason: string | null
+}
+
+export interface AiAssistServiceDependencies {
+  projectRoot: string
+  getConfigData(id: string): unknown
+  getProvider(id: string): TicketPlatformAiAssistProvider | null
+  getFormsDrafts?(): Promise<unknown[]>
+}
+
+const DEFAULT_UNAVAILABLE_REASON = "AI assist is unavailable for this ticket."
+
+function normalizeString(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function normalizeStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? [...new Set(value.map((entry) => normalizeString(entry)).filter(Boolean))]
+    : []
+}
+
+function valuesFromCollection(value: any): any[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value.values === "function") return Array.from(value.values())
+  if (typeof value === "object") return Object.values(value)
+  return []
+}
+
+function runtimeDataValue(source: any, id: string) {
+  if (!source || typeof source.get !== "function") return undefined
+  if (typeof source.exists === "function" && !source.exists(id)) return undefined
+  return source.get(id)?.value
+}
+
+function entityId(entity: any) {
+  return normalizeString(entity?.id?.value || entity?.id)
+}
+
+function normalizeContext(input: any): TicketAiAssistProfile["context"] {
+  const context = input && typeof input === "object" && !Array.isArray(input) ? input : {}
+  const maxRecentMessages = Math.floor(Number(context.maxRecentMessages))
+  return {
+    maxRecentMessages: Number.isFinite(maxRecentMessages) ? Math.min(100, Math.max(1, maxRecentMessages)) : 25,
+    includeTicketMetadata: context.includeTicketMetadata !== false,
+    includeParticipants: context.includeParticipants !== false,
+    includeManagedFormSnapshot: context.includeManagedFormSnapshot !== false,
+    includeBotMessages: context.includeBotMessages === true
+  }
+}
+
+export function normalizeAiAssistProfile(value: unknown): TicketAiAssistProfile | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const profile = value as Record<string, unknown>
+  const id = normalizeString(profile.id)
+  const providerId = normalizeString(profile.providerId)
+  if (!id || !providerId) return null
+  return {
+    id,
+    providerId,
+    label: normalizeString(profile.label) || id,
+    enabled: profile.enabled === true,
+    knowledgeSourceIds: normalizeStringArray(profile.knowledgeSourceIds),
+    context: normalizeContext(profile.context),
+    settings: profile.settings && typeof profile.settings === "object" && !Array.isArray(profile.settings)
+      ? profile.settings as Record<string, unknown>
+      : {}
+  }
+}
+
+export function normalizeKnowledgeSource(value: unknown): TicketAiAssistKnowledgeSource | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const source = value as Record<string, unknown>
+  const id = normalizeString(source.id)
+  const kind = source.kind === "markdown-file" || source.kind === "faq-json" ? source.kind : null
+  const sourcePath = normalizeString(source.path)
+  if (!id || !kind || !sourcePath) return null
+  return {
+    id,
+    label: normalizeString(source.label) || id,
+    kind,
+    path: sourcePath,
+    enabled: source.enabled === true
+  }
+}
+
+export function resolveKnowledgeSourcePath(projectRoot: string, sourcePath: string) {
+  const normalized = normalizeString(sourcePath).replace(/\\/g, "/")
+  if (!normalized) throw new Error("Knowledge source path is required.")
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) throw new Error("Knowledge sources must be local files, not URLs.")
+  if (path.isAbsolute(normalized)) throw new Error("Knowledge source paths must be relative.")
+  if (normalized.split("/").includes("..")) throw new Error("Knowledge source paths may not contain '..'.")
+  if (!(normalized.startsWith("knowledge/") || normalized.startsWith(".docs/"))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+
+  const absolutePath = path.resolve(projectRoot, normalized)
+  const allowedRoots = [path.resolve(projectRoot, "knowledge"), path.resolve(projectRoot, ".docs")]
+  if (!allowedRoots.some((root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+  if (!fs.existsSync(absolutePath)) return absolutePath
+
+  const stats = fs.lstatSync(absolutePath)
+  if (stats.isSymbolicLink()) throw new Error("Knowledge source files may not be symbolic links.")
+  const realPath = fs.realpathSync(absolutePath)
+  const realAllowedRoots = allowedRoots.map((root) => fs.existsSync(root) ? fs.realpathSync(root) : root)
+  if (!realAllowedRoots.some((root) => realPath === root || realPath.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Knowledge source files may not escape knowledge/ or .docs/.")
+  }
+  return absolutePath
+}
+
+function readTicketProfileId(ticket: any) {
+  const stored = resolveTicketAiAssistProfileState(ticket)
+  if (stored.hasStoredValue) return stored.profileId
+  return normalizeString(runtimeDataValue(ticket?.option, ODTICKET_PLATFORM_METADATA_IDS.aiAssistProfileId))
+}
+
+function readProfiles(data: unknown) {
+  return Array.isArray(data) ? data.map(normalizeAiAssistProfile).filter(Boolean) as TicketAiAssistProfile[] : []
+}
+
+function readSources(data: unknown) {
+  return Array.isArray(data) ? data.map(normalizeKnowledgeSource).filter(Boolean) as TicketAiAssistKnowledgeSource[] : []
+}
+
+async function fetchRecentMessages(channel: any, maxRecentMessages: number) {
+  const fetched = typeof channel?.messages?.fetch === "function"
+    ? await channel.messages.fetch({ limit: maxRecentMessages }).catch(() => null)
+    : channel?.messages?.cache
+  return valuesFromCollection(fetched).slice(0, maxRecentMessages)
+}
+
+async function buildMessageContext(channel: any, profile: TicketAiAssistProfile) {
+  const messages = await fetchRecentMessages(channel, profile.context.maxRecentMessages)
+  return messages
+    .filter((message) => profile.context.includeBotMessages || !Boolean(message?.author?.bot))
+    .map((message): TicketAiAssistRequestContext["messages"][number] => ({
+      messageId: normalizeString(message?.id),
+      authorUserId: normalizeString(message?.author?.id),
+      authorLabel: normalizeString(message?.member?.displayName || message?.author?.globalName || message?.author?.username) || normalizeString(message?.author?.id) || "Unknown",
+      createdAt: message?.createdAt instanceof Date ? message.createdAt.toISOString() : new Date(Number(message?.createdTimestamp || Date.now())).toISOString(),
+      content: normalizeString(message?.content),
+      attachmentFilenames: valuesFromCollection(message?.attachments).map((attachment) => normalizeString(attachment?.name || attachment?.attachment)).filter(Boolean)
+    }))
+}
+
+function buildTicketMetadata(ticket: any): TicketAiAssistTicketMetadataContext {
+  const openedValue = runtimeDataValue(ticket, "opendiscord:opened-on")
+  const open = runtimeDataValue(ticket, "opendiscord:open")
+  const closed = runtimeDataValue(ticket, "opendiscord:closed")
+  return {
+    ticketId: entityId(ticket),
+    optionId: entityId(ticket?.option) || null,
+    creatorUserId: normalizeString(runtimeDataValue(ticket, "opendiscord:opened-by")) || null,
+    openedAt: Number.isFinite(Number(openedValue)) ? new Date(Number(openedValue)).toISOString() : null,
+    state: closed === true ? "closed" : open === true ? "open" : "unknown",
+    topic: normalizeString(runtimeDataValue(ticket, "opendiscord:topic")) || null
+  }
+}
+
+function buildParticipants(ticket: any): TicketAiAssistParticipantContext[] {
+  const participants: TicketAiAssistParticipantContext[] = []
+  const creatorUserId = normalizeString(runtimeDataValue(ticket, "opendiscord:opened-by"))
+  if (creatorUserId) participants.push({ userId: creatorUserId, label: creatorUserId, role: "creator" })
+  for (const participant of valuesFromCollection(runtimeDataValue(ticket, "opendiscord:participants"))) {
+    const userId = normalizeString(participant?.id)
+    if (!userId || participants.some((entry) => entry.userId === userId)) continue
+    participants.push({ userId, label: userId, role: participant?.type === "staff" ? "staff" : "participant" })
+  }
+  return participants
+}
+
+async function buildManagedFormAnswers(ticket: any, getFormsDrafts?: () => Promise<unknown[]>) {
+  if (!getFormsDrafts) return []
+  const ticketId = entityId(ticket)
+  if (!ticketId) return []
+  const drafts = await getFormsDrafts().catch(() => [])
+  return drafts
+    .filter((draft: any) => normalizeString(draft?.ticketChannelId) === ticketId)
+    .flatMap((draft: any) => valuesFromCollection(draft?.answers || draft?.answerRecords))
+    .map((answer: any) => ({
+      questionId: normalizeString(answer?.questionId || answer?.id),
+      questionLabel: normalizeString(answer?.questionLabel || answer?.question || answer?.label) || normalizeString(answer?.questionId || answer?.id) || "Question",
+      answer: normalizeString(answer?.answer || answer?.value)
+    }))
+    .filter((answer) => answer.questionId || answer.answer)
+}
+
+function clip(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value
+}
+
+function selectFaqEntry(entries: any[], prompt: string | null) {
+  const normalizedPrompt = normalizeString(prompt).toLowerCase()
+  if (!normalizedPrompt) return entries[0] || null
+  return entries.find((entry) => {
+    const candidates = [entry?.question, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
+      .map((candidate) => normalizeString(candidate).toLowerCase())
+      .filter(Boolean)
+    return candidates.some((candidate) => normalizedPrompt.includes(candidate) || candidate.includes(normalizedPrompt))
+  }) || entries[0] || null
+}
+
+function readKnowledgeContent(projectRoot: string, source: TicketAiAssistKnowledgeSource, requestPrompt: string | null): TicketAiAssistKnowledgeContext | null {
+  if (!source.enabled) return null
+  const filePath = resolveKnowledgeSourcePath(projectRoot, source.path)
+  if (!fs.existsSync(filePath)) return null
+  const raw = fs.readFileSync(filePath, "utf8")
+  if (source.kind === "faq-json") {
+    const parsed = JSON.parse(raw)
+    const entries = Array.isArray(parsed) ? parsed : []
+    const entry = selectFaqEntry(entries, requestPrompt)
+    if (!entry) return null
+    const question = normalizeString(entry.question || entry.id || source.label)
+    const answer = normalizeString(entry.answer)
+    if (!answer) return null
+    return {
+      sourceId: source.id,
+      label: `${source.label}: ${question}`,
+      kind: source.kind,
+      content: clip(answer, 2000),
+      locator: normalizeString(entry.id) || question || null
+    }
+  }
+  return {
+    sourceId: source.id,
+    label: source.label,
+    kind: source.kind,
+    content: clip(raw.replace(/\s+/g, " ").trim(), 2000),
+    locator: source.path
+  }
+}
+
+function buildCitations(knowledge: TicketAiAssistKnowledgeContext[]): TicketAiAssistCitation[] {
+  return knowledge.map((entry) => ({
+    kind: "knowledge-source",
+    sourceId: entry.sourceId,
+    label: entry.label,
+    locator: entry.locator,
+    excerpt: clip(entry.content, 240)
+  }))
+}
+
+function normalizeOutcome(value: unknown): TicketAiAssistOutcome {
+  return value === "success"
+    || value === "unavailable"
+    || value === "busy"
+    || value === "low-confidence"
+    || value === "provider-error"
+    || value === "denied"
+    ? value
+    : "provider-error"
+}
+
+function normalizeConfidence(value: unknown): TicketAiAssistConfidence | null {
+  return value === "high" || value === "medium" || value === "low" ? value : null
+}
+
+function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: TicketAiAssistHookResult): AiAssistRunResult {
+  let outcome = normalizeOutcome(result?.outcome)
+  const confidence = normalizeConfidence(result?.confidence)
+  const degradedReason = normalizeString(result?.degradedReason) || null
+  const citations = Array.isArray(result?.citations) ? result.citations : []
+  const warnings = Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
+
+  let summary = action === "summarize" ? normalizeString((result as any).summary) || null : null
+  let answer = action === "answerFaq" ? normalizeString((result as any).answer) || null : null
+  let draft = action === "suggestReply" ? normalizeString((result as any).draft) || null : null
+
+  if (outcome === "success" && confidence === "low") {
+    outcome = "low-confidence"
+    summary = null
+    answer = null
+    draft = null
+  }
+
+  return {
+    profileId: null,
+    providerId: null,
+    action,
+    outcome,
+    confidence,
+    summary,
+    answer,
+    draft,
+    citations,
+    warnings,
+    degradedReason
+  }
+}
+
+export class OTAiAssistService {
+  private readonly inFlight = new Set<string>()
+
+  constructor(private readonly dependencies: AiAssistServiceDependencies) {}
+
+  getTicketAiAssistSummary(input: { ticket: unknown; channel?: unknown; guild?: unknown }): AiAssistSummary | null {
+    void input.channel
+    void input.guild
+    const ticket = input.ticket as any
+    const profileId = readTicketProfileId(ticket)
+    if (!profileId) return null
+
+    const profile = readProfiles(this.dependencies.getConfigData("opendiscord:ai-assist-profiles")).find((candidate) => candidate.id === profileId) || null
+    if (!profile) {
+      return { profileId, providerId: "", label: profileId, available: false, actions: [], reason: "AI assist profile is missing." }
+    }
+    const provider = this.dependencies.getProvider(profile.providerId)
+    if (!profile.enabled) {
+      return { profileId: profile.id, providerId: profile.providerId, label: profile.label, available: false, actions: [], reason: "AI assist profile is disabled." }
+    }
+    if (!provider) {
+      return { profileId: profile.id, providerId: profile.providerId, label: profile.label, available: false, actions: [], reason: "AI assist provider is unavailable." }
+    }
+    return {
+      profileId: profile.id,
+      providerId: profile.providerId,
+      label: profile.label,
+      available: true,
+      actions: provider.capabilities.filter((capability) => typeof provider[capability] === "function"),
+      reason: null
+    }
+  }
+
+  async runTicketAiAssist(input: AiAssistRunInput): Promise<AiAssistRunResult> {
+    const summary = this.getTicketAiAssistSummary(input)
+    if (!summary?.available || !summary.actions.includes(input.action)) {
+      return {
+        profileId: summary?.profileId ?? null,
+        providerId: summary?.providerId ?? null,
+        action: input.action,
+        outcome: "unavailable",
+        confidence: null,
+        summary: null,
+        answer: null,
+        draft: null,
+        citations: [],
+        warnings: [],
+        degradedReason: summary?.reason || DEFAULT_UNAVAILABLE_REASON
+      }
+    }
+
+    const inFlightKey = `${entityId(input.ticket) || "unknown"}:${input.action}`
+    if (this.inFlight.has(inFlightKey)) {
+      return {
+        profileId: summary.profileId,
+        providerId: summary.providerId,
+        action: input.action,
+        outcome: "busy",
+        confidence: null,
+        summary: null,
+        answer: null,
+        draft: null,
+        citations: [],
+        warnings: [],
+        degradedReason: "AI assist is already running for this ticket action."
+      }
+    }
+
+    this.inFlight.add(inFlightKey)
+    try {
+      const profiles = readProfiles(this.dependencies.getConfigData("opendiscord:ai-assist-profiles"))
+      const profile = profiles.find((candidate) => candidate.id === summary.profileId)
+      const provider = profile ? this.dependencies.getProvider(profile.providerId) : null
+      const hook = provider?.[input.action]
+      if (!profile || !provider || typeof hook !== "function") {
+        throw new Error(DEFAULT_UNAVAILABLE_REASON)
+      }
+
+      const sourceById = new Map(readSources(this.dependencies.getConfigData("opendiscord:knowledge-sources")).map((source) => [source.id, source]))
+      const knowledge = profile.knowledgeSourceIds
+        .map((sourceId) => sourceById.get(sourceId) || null)
+        .filter((source): source is TicketAiAssistKnowledgeSource => Boolean(source))
+        .map((source) => readKnowledgeContent(this.dependencies.projectRoot, source, input.prompt || null))
+        .filter((entry): entry is TicketAiAssistKnowledgeContext => Boolean(entry))
+
+      const context: TicketAiAssistRequestContext = {
+        messages: await buildMessageContext(input.channel, profile),
+        ticketMetadata: profile.context.includeTicketMetadata ? buildTicketMetadata(input.ticket) : null,
+        participants: profile.context.includeParticipants ? buildParticipants(input.ticket) : [],
+        managedFormAnswers: profile.context.includeManagedFormSnapshot ? await buildManagedFormAnswers(input.ticket, this.dependencies.getFormsDrafts) : []
+      }
+
+      const hookInput: TicketAiAssistHookInput = {
+        profile,
+        settings: profile.settings,
+        ticket: input.ticket,
+        channel: input.channel ?? null,
+        guild: input.guild ?? null,
+        actorUser: input.actorUser,
+        context,
+        knowledge,
+        request: {
+          action: input.action,
+          prompt: normalizeString(input.prompt) || null,
+          instructions: normalizeString(input.instructions) || null,
+          source: input.source
+        }
+      }
+
+      const normalized = normalizeHookResult(input.action, await hook(hookInput))
+      return {
+        ...normalized,
+        profileId: profile.id,
+        providerId: profile.providerId,
+        citations: normalized.citations.length > 0 ? normalized.citations : buildCitations(knowledge)
+      }
+    } catch (error) {
+      return {
+        profileId: summary.profileId,
+        providerId: summary.providerId,
+        action: input.action,
+        outcome: "provider-error",
+        confidence: null,
+        summary: null,
+        answer: null,
+        draft: null,
+        citations: [],
+        warnings: [],
+        degradedReason: error instanceof Error ? error.message : DEFAULT_UNAVAILABLE_REASON
+      }
+    } finally {
+      this.inFlight.delete(inFlightKey)
+    }
+  }
+}

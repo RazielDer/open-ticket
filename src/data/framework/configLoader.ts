@@ -28,7 +28,14 @@ export const loadAllConfigs = async () => {
     const isDevconfig = devconfigFlag ? devconfigFlag.value : false
     const getConfigPath = (fileName: string) => {
         if (!isDevconfig) return "./config/"
-        if (fileName == "integration-profiles.json" && !fs.existsSync(path.join("./devconfig/",fileName))) return "./config/"
+        if (
+            (
+                fileName == "integration-profiles.json"
+                || fileName == "ai-assist-profiles.json"
+                || fileName == "knowledge-sources.json"
+            )
+            && !fs.existsSync(path.join("./devconfig/",fileName))
+        ) return "./config/"
         return "./devconfig/"
     }
     
@@ -38,6 +45,8 @@ export const loadAllConfigs = async () => {
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",getConfigPath("panels.json"),defaultPanelsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",getConfigPath("support-teams.json"),defaultSupportTeamsFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:integration-profiles","integration-profiles.json",getConfigPath("integration-profiles.json"),defaultIntegrationProfilesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:ai-assist-profiles","ai-assist-profiles.json",getConfigPath("ai-assist-profiles.json"),defaultAiAssistProfilesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:knowledge-sources","knowledge-sources.json",getConfigPath("knowledge-sources.json"),defaultKnowledgeSourcesFormatter))
     opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",getConfigPath("transcripts.json"),defaultTranscriptsFormatter))
 }
 
@@ -217,6 +226,7 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.PropertyFormatter("allowCreationByBlacklistedUsers"),
         new fjs.ArrayFormatter("questions",false,new fjs.PropertyFormatter(null)),
         new fjs.PropertyFormatter("integrationProfileId"),
+        new fjs.PropertyFormatter("aiAssistProfileId"),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("channel",true,[
             new fjs.PropertyFormatter("transportMode"),
@@ -365,6 +375,30 @@ export const defaultIntegrationProfilesFormatter = new fjs.ArrayFormatter(null,t
     new fjs.PropertyFormatter("label"),
     new fjs.PropertyFormatter("enabled"),
     new fjs.DefaultFormatter("settings",true),
+]))
+
+export const defaultAiAssistProfilesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("providerId"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("enabled"),
+    new fjs.ArrayFormatter("knowledgeSourceIds",false,new fjs.PropertyFormatter(null)),
+    new fjs.ObjectFormatter("context",true,[
+        new fjs.PropertyFormatter("maxRecentMessages"),
+        new fjs.PropertyFormatter("includeTicketMetadata"),
+        new fjs.PropertyFormatter("includeParticipants"),
+        new fjs.PropertyFormatter("includeManagedFormSnapshot"),
+        new fjs.PropertyFormatter("includeBotMessages"),
+    ]),
+    new fjs.DefaultFormatter("settings",true),
+]))
+
+export const defaultKnowledgeSourcesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("kind"),
+    new fjs.PropertyFormatter("path"),
+    new fjs.PropertyFormatter("enabled"),
 ]))
 
 export const defaultPanelsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[

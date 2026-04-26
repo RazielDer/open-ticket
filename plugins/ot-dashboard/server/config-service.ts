@@ -569,6 +569,7 @@ function normalizeTicketOption(option: any) {
     allowCreationByBlacklistedUsers: false,
     questions: [],
     integrationProfileId: "",
+    aiAssistProfileId: "",
     channel: {
       prefix: "ticket-",
       suffix: "user-name",
@@ -665,6 +666,7 @@ function normalizeTicketOption(option: any) {
   normalized.readonlyAdmins = parseStringArray(normalized.readonlyAdmins)
   normalized.questions = parseStringArray(normalized.questions)
   normalized.integrationProfileId = ensureString(normalized.integrationProfileId, "").trim()
+  normalized.aiAssistProfileId = ensureString(normalized.aiAssistProfileId, "").trim()
   normalized.allowCreationByBlacklistedUsers = ensureBoolean(normalized.allowCreationByBlacklistedUsers)
 
   assertPlainObject(normalized.channel, "Ticket channel")
@@ -752,6 +754,129 @@ function normalizeIntegrationProfile(profile: any) {
   return normalized
 }
 
+const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential/i
+
+function assertNoSecretShapedSettings(settings: Record<string, unknown>, label: string) {
+  const secretKey = Object.keys(settings).find((key) => SECRET_SHAPED_KEY_REGEX.test(key))
+  if (secretKey) {
+    throw new Error(`${label} settings must not contain secret-shaped key "${secretKey}". Use host environment variables for provider secrets.`)
+  }
+}
+
+function normalizeAiAssistContext(context: any) {
+  const normalized = isPlainObject(context) ? context : {}
+  const maxRecentMessages = Math.floor(ensureNumber(normalized.maxRecentMessages, 25))
+  return {
+    maxRecentMessages: Math.min(100, Math.max(1, maxRecentMessages)),
+    includeTicketMetadata: normalized.includeTicketMetadata !== false,
+    includeParticipants: normalized.includeParticipants !== false,
+    includeManagedFormSnapshot: normalized.includeManagedFormSnapshot !== false,
+    includeBotMessages: ensureBoolean(normalized.includeBotMessages)
+  }
+}
+
+function normalizeAiAssistProfile(profile: any) {
+  const normalized: any = deepMerge(
+    {
+      id: profile.id || slugify(profile.label || `ai-assist-profile-${Date.now()}`),
+      providerId: "reference",
+      label: profile.label || "",
+      enabled: false,
+      knowledgeSourceIds: [],
+      context: {
+        maxRecentMessages: 25,
+        includeTicketMetadata: true,
+        includeParticipants: true,
+        includeManagedFormSnapshot: true,
+        includeBotMessages: false
+      },
+      settings: {}
+    },
+    profile
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.providerId = ensureString(normalized.providerId, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.enabled = ensureBoolean(normalized.enabled)
+  normalized.knowledgeSourceIds = normalizeUniqueStringEntries(normalized.knowledgeSourceIds)
+  normalized.context = normalizeAiAssistContext(normalized.context)
+  normalized.settings = isPlainObject(normalized.settings) ? normalized.settings : {}
+  assertNoSecretShapedSettings(normalized.settings, "AI assist profile")
+
+  if (!normalized.id) {
+    throw new Error("AI assist profile ID is required.")
+  }
+  if (!normalized.providerId) {
+    throw new Error("AI assist profile providerId is required.")
+  }
+
+  return normalized
+}
+
+function normalizeKnowledgeSourcePath(sourcePath: string, projectRoot: string) {
+  const normalized = ensureString(sourcePath, "").trim().replace(/\\/g, "/")
+  if (!normalized) throw new Error("Knowledge source path is required.")
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    throw new Error("Knowledge sources must be local files, not URLs.")
+  }
+  if (path.isAbsolute(normalized)) {
+    throw new Error("Knowledge source paths must be relative.")
+  }
+  if (normalized.split("/").includes("..")) {
+    throw new Error("Knowledge source paths may not contain '..'.")
+  }
+  if (!(normalized.startsWith("knowledge/") || normalized.startsWith(".docs/"))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+
+  const absolutePath = path.resolve(projectRoot, normalized)
+  const allowedRoots = [path.resolve(projectRoot, "knowledge"), path.resolve(projectRoot, ".docs")]
+  if (!allowedRoots.some((root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+
+  if (fs.existsSync(absolutePath)) {
+    const stats = fs.lstatSync(absolutePath)
+    if (stats.isSymbolicLink()) {
+      throw new Error("Knowledge source files may not be symbolic links.")
+    }
+    const realPath = fs.realpathSync(absolutePath)
+    const realAllowedRoots = allowedRoots.map((root) => fs.existsSync(root) ? fs.realpathSync(root) : root)
+    if (!realAllowedRoots.some((root) => realPath === root || realPath.startsWith(`${root}${path.sep}`))) {
+      throw new Error("Knowledge source files may not escape knowledge/ or .docs/.")
+    }
+  }
+
+  return normalized
+}
+
+function normalizeKnowledgeSource(source: any, projectRoot: string) {
+  const normalized: any = deepMerge(
+    {
+      id: source.id || slugify(source.label || `knowledge-source-${Date.now()}`),
+      label: source.label || "",
+      kind: source.kind || "markdown-file",
+      path: source.path || "knowledge/example.md",
+      enabled: false
+    },
+    source
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.kind = ensureString(normalized.kind, "markdown-file")
+  assertOneOf(normalized.kind, ["markdown-file", "faq-json"], "Knowledge source kind")
+  normalized.path = normalizeKnowledgeSourcePath(normalized.path, projectRoot)
+  normalized.enabled = ensureBoolean(normalized.enabled)
+
+  if (!normalized.id) {
+    throw new Error("Knowledge source ID is required.")
+  }
+
+  return normalized
+}
+
 function normalizeRoleOption(option: any) {
   const normalized: any = deepMerge(
     {
@@ -773,6 +898,7 @@ function normalizeRoleOption(option: any) {
   delete normalized.routing
   delete normalized.workflow
   delete normalized.integrationProfileId
+  delete normalized.aiAssistProfileId
 
   return normalized
 }
@@ -791,6 +917,7 @@ function normalizeWebsiteOption(option: any) {
   delete normalized.routing
   delete normalized.workflow
   delete normalized.integrationProfileId
+  delete normalized.aiAssistProfileId
 
   return normalized
 }
@@ -943,6 +1070,8 @@ export interface DashboardEditorDependencyGraph {
   questionOptions: Record<string, DashboardReferenceItem[]>
   supportTeamOptions: Record<string, DashboardReferenceItem[]>
   integrationProfileOptions: Record<string, DashboardReferenceItem[]>
+  aiAssistProfileOptions: Record<string, DashboardReferenceItem[]>
+  knowledgeSourceProfiles: Record<string, DashboardReferenceItem[]>
 }
 
 export class DashboardConfigOperationError extends Error {
@@ -1056,7 +1185,49 @@ function buildIntegrationProfileOptionReferences(options: any[]): Record<string,
   return references
 }
 
-function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team" | "integration profile", duplicateId: string) {
+function buildAiAssistProfileOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const aiAssistProfileId = ensureString(option.aiAssistProfileId, "").trim()
+    if (!aiAssistProfileId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[aiAssistProfileId] = references[aiAssistProfileId] || []
+    references[aiAssistProfileId].push(reference)
+  })
+
+  return references
+}
+
+function buildKnowledgeSourceProfileReferences(profiles: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  profiles.forEach((profile, index) => {
+    normalizeUniqueStringEntries(profile?.knowledgeSourceIds).forEach((sourceId) => {
+      const reference = {
+        id: String(profile.id || `profile-${index + 1}`),
+        name: String(profile.label || profile.id || `Profile ${index + 1}`),
+        index,
+        type: "ai-assist-profile"
+      }
+
+      references[sourceId] = references[sourceId] || []
+      references[sourceId].push(reference)
+    })
+  })
+
+  return references
+}
+
+function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source", duplicateId: string) {
   const codeKind = kind.toUpperCase().replace(/\s+/g, "_")
   return new DashboardConfigOperationError(
     `${kind[0].toUpperCase()}${kind.slice(1)} ID "${duplicateId}" already exists.`,
@@ -1066,14 +1237,18 @@ function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support 
 }
 
 function buildReferenceGuardError(
-  kind: "option" | "question" | "support team" | "integration profile",
+  kind: "option" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source",
   action: "delete" | "rename",
   currentId: string,
   references: DashboardReferenceItem[],
   nextId = ""
 ) {
   const labels = references.map((reference) => `${reference.name} (${reference.id})`).join(", ")
-  const targetLabel = kind === "option" ? "panels" : "options"
+  const targetLabel = kind === "option"
+    ? "panels"
+    : kind === "knowledge source"
+      ? "AI assist profiles"
+      : "options"
   const actionText = action === "delete"
     ? `delete ${kind} "${currentId}"`
     : `change ${kind} "${currentId}" to "${nextId}"`
@@ -1084,10 +1259,14 @@ function buildReferenceGuardError(
     kind === "option"
       ? "Remove this option from the listed panels first, then try again."
       : kind === "question"
-        ? "Remove this question from the listed options first, then try again."
-        : kind === "support team"
-          ? "Remove this support team from the listed ticket option routes first, then try again."
-          : "Remove this integration profile from the listed ticket options first, then try again.",
+          ? "Remove this question from the listed options first, then try again."
+          : kind === "support team"
+            ? "Remove this support team from the listed ticket option routes first, then try again."
+            : kind === "knowledge source"
+              ? "Remove this knowledge source from the listed AI assist profiles first, then try again."
+              : kind === "AI assist profile"
+                ? "Remove this AI assist profile from the listed ticket options first, then try again."
+                : "Remove this integration profile from the listed ticket options first, then try again.",
     references
   )
 }
@@ -1109,6 +1288,7 @@ export interface DashboardConfigService {
   listAvailableQuestions: () => Array<{ id: string; name: string; type: string; required: boolean }>
   listAvailableSupportTeams: () => Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }>
   listAvailableIntegrationProfiles: () => Array<{ id: string; providerId: string; label: string; enabled: boolean }>
+  listAvailableAiAssistProfiles: () => Array<{ id: string; providerId: string; label: string; enabled: boolean }>
   getEditorDependencyGraph: () => DashboardEditorDependencyGraph
   normalizeGeneralDraft: (body: Record<string, unknown>, fallback?: Record<string, unknown> | null) => Record<string, unknown>
   inspectGeneralGlobalAdmins: (input: unknown) => DashboardGeneralGlobalAdminsDraftState
@@ -1123,11 +1303,11 @@ export interface DashboardConfigService {
   saveQuestion: (question: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   saveSupportTeam: (team: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   reorderArrayItems: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources">,
     orderedIds: string[]
   ) => { success: true; count: number; orderedIds: string[]; items: Record<string, unknown>[] }
   deleteArrayItem: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources">,
     index: number
   ) => { success: true; count: number; removedId: string; items: Record<string, unknown>[] }
   readDashboardPluginConfig: () => Partial<DashboardConfig>
@@ -1172,7 +1352,15 @@ export function createConfigService(
 
   const readManagedText = (id: ManagedConfigId): string => {
     const filePath = getFilePath(id)
-    if ((id === "support-teams" || id === "integration-profiles") && !fs.existsSync(filePath)) {
+    if (
+      (
+        id === "support-teams"
+        || id === "integration-profiles"
+        || id === "ai-assist-profiles"
+        || id === "knowledge-sources"
+      )
+      && !fs.existsSync(filePath)
+    ) {
       return "[]\n"
     }
     return fs.readFileSync(filePath, "utf8")
@@ -1226,6 +1414,12 @@ export function createConfigService(
   }
 
   const readManagedBackupText = (id: ManagedConfigId): string => {
+    if (id === "ai-assist-profiles") {
+      return JSON.stringify(readManagedJson<any[]>("ai-assist-profiles").map(normalizeAiAssistProfile), null, 2) + "\n"
+    }
+    if (id === "knowledge-sources") {
+      return JSON.stringify(readManagedJson<any[]>("knowledge-sources").map((source) => normalizeKnowledgeSource(source, projectRoot)), null, 2) + "\n"
+    }
     if (id !== "integration-profiles") return readManagedText(id)
     return JSON.stringify(redactIntegrationProfileSecrets(readManagedJson<unknown>("integration-profiles")), null, 2) + "\n"
   }
@@ -1233,7 +1427,13 @@ export function createConfigService(
   const writeManagedJson = (id: ManagedConfigId, value: unknown): void => {
     const filePath = getFilePath(id)
     const tempPath = `${filePath}.tmp`
-    const writableValue = id === "integration-profiles" ? mergeRedactedIntegrationProfileSecrets(value) : value
+    const writableValue = id === "integration-profiles"
+      ? mergeRedactedIntegrationProfileSecrets(value)
+      : id === "ai-assist-profiles"
+        ? Array.isArray(value) ? value.map(normalizeAiAssistProfile) : value
+        : id === "knowledge-sources"
+          ? Array.isArray(value) ? value.map((source) => normalizeKnowledgeSource(source, projectRoot)) : value
+          : value
     fs.writeFileSync(tempPath, JSON.stringify(writableValue, null, 2) + "\n", "utf8")
     fs.renameSync(tempPath, filePath)
   }
@@ -1281,12 +1481,50 @@ export function createConfigService(
       writeManagedJson(id, normalized)
       return normalized
     }
+    if (id === "ai-assist-profiles") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("ai-assist-profiles.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((profile: any) => String(profile?.id || "").trim()).filter(Boolean))
+      const references = buildAiAssistProfileOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("ai-assist-profiles")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("AI assist profile", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map(normalizeAiAssistProfile)
+      validateAiAssistProfileKnowledgeReferences(normalized)
+      writeManagedJson(id, normalized)
+      return normalized
+    }
+    if (id === "knowledge-sources") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("knowledge-sources.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((source: any) => String(source?.id || "").trim()).filter(Boolean))
+      const references = buildKnowledgeSourceProfileReferences(readManagedJson<any[]>("ai-assist-profiles"))
+      for (const current of readManagedJson<any[]>("knowledge-sources")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("knowledge source", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map((source: any) => normalizeKnowledgeSource(source, projectRoot))
+      writeManagedJson(id, normalized)
+      return normalized
+    }
     if (id === "options") {
       if (!Array.isArray(parsed)) {
         throw new Error("options.json must be an array.")
       }
       validateOptionRoutingReferences(parsed)
       validateOptionIntegrationReferences(parsed)
+      validateOptionAiAssistReferences(parsed)
     }
     writeManagedJson(id, parsed)
     return parsed
@@ -1565,21 +1803,34 @@ export function createConfigService(
     }))
   }
 
+  const listAvailableAiAssistProfiles = (): Array<{ id: string; providerId: string; label: string; enabled: boolean }> => {
+    const profiles = readManagedJson<any[]>("ai-assist-profiles")
+    return profiles.map((profile) => ({
+      id: String(profile.id || ""),
+      providerId: String(profile.providerId || ""),
+      label: String(profile.label || profile.id || "AI assist profile"),
+      enabled: profile.enabled === true
+    }))
+  }
+
   const getEditorDependencyGraph = (): DashboardEditorDependencyGraph => {
     const options = readManagedJson<any[]>("options")
     const panels = readManagedJson<any[]>("panels")
+    const aiAssistProfiles = readManagedJson<any[]>("ai-assist-profiles")
 
     return {
       optionPanels: buildOptionPanelReferences(panels),
       questionOptions: buildQuestionOptionReferences(options),
       supportTeamOptions: buildSupportTeamOptionReferences(options),
-      integrationProfileOptions: buildIntegrationProfileOptionReferences(options)
+      integrationProfileOptions: buildIntegrationProfileOptionReferences(options),
+      aiAssistProfileOptions: buildAiAssistProfileOptionReferences(options),
+      knowledgeSourceProfiles: buildKnowledgeSourceProfileReferences(aiAssistProfiles)
     }
   }
 
   const ensureUniqueArrayId = (
     items: any[],
-    kind: "option" | "panel" | "question" | "support team" | "integration profile",
+    kind: "option" | "panel" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source",
     candidateId: string,
     currentIndex = -1
   ) => {
@@ -1670,6 +1921,40 @@ export function createConfigService(
         [],
         400
       )
+    }
+  }
+
+  const validateOptionAiAssistReferences = (items: any[]) => {
+    const aiAssistProfileIds = new Set(readManagedJson<any[]>("ai-assist-profiles").map((profile) => String(profile.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+
+    for (const option of ticketOptions) {
+      const aiAssistProfileId = ensureString(option.aiAssistProfileId, "").trim()
+      if (!aiAssistProfileId || aiAssistProfileIds.has(aiAssistProfileId)) continue
+      throw new DashboardConfigOperationError(
+        `Ticket option "${option.id}" references unknown AI assist profile "${aiAssistProfileId}".`,
+        "OPTION_UNKNOWN_AI_ASSIST_PROFILE",
+        "Create the AI assist profile first or leave aiAssistProfileId empty.",
+        [],
+        400
+      )
+    }
+  }
+
+  const validateAiAssistProfileKnowledgeReferences = (items: any[]) => {
+    const knowledgeSourceIds = new Set(readManagedJson<any[]>("knowledge-sources").map((source) => String(source.id || "").trim()).filter(Boolean))
+
+    for (const profile of items) {
+      for (const sourceId of normalizeUniqueStringEntries(profile?.knowledgeSourceIds)) {
+        if (knowledgeSourceIds.has(sourceId)) continue
+        throw new DashboardConfigOperationError(
+          `AI assist profile "${profile.id}" references unknown knowledge source "${sourceId}".`,
+          "AI_ASSIST_PROFILE_UNKNOWN_KNOWLEDGE_SOURCE",
+          "Create the knowledge source first or remove it from knowledgeSourceIds.",
+          [],
+          400
+        )
+      }
     }
   }
 
@@ -1899,6 +2184,7 @@ export function createConfigService(
     listAvailableQuestions,
     listAvailableSupportTeams,
     listAvailableIntegrationProfiles,
+    listAvailableAiAssistProfiles,
     getEditorDependencyGraph,
     normalizeGeneralDraft,
     inspectGeneralGlobalAdmins(input) {
@@ -1933,6 +2219,7 @@ export function createConfigService(
         items[editIndex] = normalized
         validateOptionRoutingReferences(items)
         validateOptionIntegrationReferences(items)
+        validateOptionAiAssistReferences(items)
         writeManagedJson("options", items)
         return {
           success: true as const,
@@ -1951,6 +2238,7 @@ export function createConfigService(
       items.push(normalized)
       validateOptionRoutingReferences(items)
       validateOptionIntegrationReferences(items)
+      validateOptionAiAssistReferences(items)
       writeManagedJson("options", items)
       return {
         success: true as const,
@@ -2175,6 +2463,20 @@ export function createConfigService(
         const references = buildIntegrationProfileOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
         if (references.length > 0) {
           throw buildReferenceGuardError("integration profile", "delete", removedId, references)
+        }
+      }
+
+      if (id === "ai-assist-profiles") {
+        const references = buildAiAssistProfileOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("AI assist profile", "delete", removedId, references)
+        }
+      }
+
+      if (id === "knowledge-sources") {
+        const references = buildKnowledgeSourceProfileReferences(readManagedJson<any[]>("ai-assist-profiles"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("knowledge source", "delete", removedId, references)
         }
       }
 

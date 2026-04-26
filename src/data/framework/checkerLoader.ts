@@ -1,4 +1,6 @@
 import {opendiscord, api, utilities} from "../../index"
+import fs from "fs"
+import path from "path"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -29,6 +31,8 @@ export const loadAllConfigCheckers = async () => {
     opendiscord.checkers.add(new api.ODChecker("opendiscord:panels",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:panels"),defaultPanelsStructure,{cliDisplayName:"Panels Config",cliDisplayDescription:"Create, modify & delete panels which can be spawned in discord."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:support-teams",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:support-teams"),defaultSupportTeamsStructure,{cliDisplayName:"Support Teams Config",cliDisplayDescription:"Create support teams for ticket routing, assignment, and escalation."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:integration-profiles",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:integration-profiles"),defaultIntegrationProfilesStructure,{cliDisplayName:"Integration Profiles Config",cliDisplayDescription:"Create integration profiles that ticket options can bind to."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:ai-assist-profiles",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:ai-assist-profiles"),defaultAiAssistProfilesStructure,{cliDisplayName:"AI Assist Profiles Config",cliDisplayDescription:"Create AI assist profiles that ticket options can bind to."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:knowledge-sources",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:knowledge-sources"),defaultKnowledgeSourcesStructure,{cliDisplayName:"Knowledge Sources Config",cliDisplayDescription:"Create local knowledge files available to AI assist profiles."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:transcripts",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:transcripts"),defaultTranscriptsStructure,{cliDisplayName:"Transcript Config",cliDisplayDescription:"Configure everything related to transcripts."}))
 }
 
@@ -38,6 +42,7 @@ export const loadAllConfigCheckerFunctions = async () => {
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:dropdown-options",defaultDropdownOptionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:support-team-routing",defaultSupportTeamRoutingFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:integration-profiles",defaultIntegrationProfilesFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:ai-assist-profiles",defaultAiAssistProfilesFunction))
 }
 
 export const loadAllConfigCheckerTranslations = async () => {
@@ -401,6 +406,7 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
             return (idList.length > 0) ? idList : null
         }})},
         {key:"integrationProfileId",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-integration-profile-id",{maxLength:128,cliInitDefaultValue:"",cliDisplayName:"Integration Profile",cliDisplayDescription:"The integration profile id for this ticket option. Leave empty for no integration."})},
+        {key:"aiAssistProfileId",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-ai-assist-profile-id",{maxLength:128,cliInitDefaultValue:"",cliDisplayName:"AI Assist Profile",cliDisplayDescription:"The AI assist profile id for this ticket option. Leave empty for no AI assist."})},
 
         //TICKET CHANNEL
         {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory","transportMode","threadParentChannel"],children:[
@@ -600,6 +606,42 @@ export const defaultIntegrationProfilesStructure = new api.ODCheckerArrayStructu
         return true
     },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned profile settings."})},
 ],cliDisplayName:"Integration Profile",cliDisplayDescription:"A generic integration provider profile that ticket options can bind to."})})
+
+export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure("opendiscord:ai-assist-profiles",{allowedTypes:["object"],cliDisplayPropertyName:"AI assist profile",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","providerId"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:ai-assist-profile-id","openticket","ai-assist-profile-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this AI assist profile."})},
+    {key:"providerId",checker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-provider-id",{minLength:1,maxLength:128,cliDisplayName:"Provider ID",cliDisplayDescription:"The registered Open Ticket AI assist provider id."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this AI assist profile."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-profile-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this AI assist profile."})},
+    {key:"knowledgeSourceIds",checker:new api.ODCheckerArrayStructure("opendiscord:ai-assist-profile-knowledge-sources",{allowDoubles:false,allowedTypes:["string"],cliDisplayPropertyName:"knowledge source id",propertyChecker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-knowledge-source-id",{maxLength:128,cliDisplayName:"Knowledge Source ID",cliDisplayDescription:"A knowledge source id from knowledge-sources.json."}),cliDisplayName:"Knowledge Sources",cliDisplayDescription:"Knowledge source ids available to this profile."})},
+    {key:"context",checker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile-context",{children:[
+        {key:"maxRecentMessages",checker:new api.ODCheckerNumberStructure("opendiscord:ai-assist-context-max-messages",{min:1,max:100,negativeAllowed:false,floatAllowed:false,cliInitDefaultValue:25,cliDisplayName:"Max Recent Messages",cliDisplayDescription:"Maximum live ticket messages to include."})},
+        {key:"includeTicketMetadata",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-ticket-metadata",{cliInitDefaultValue:true,cliDisplayName:"Include Ticket Metadata",cliDisplayDescription:"Include non-secret ticket metadata."})},
+        {key:"includeParticipants",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-participants",{cliInitDefaultValue:true,cliDisplayName:"Include Participants",cliDisplayDescription:"Include current live ticket participants."})},
+        {key:"includeManagedFormSnapshot",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-managed-form",{cliInitDefaultValue:true,cliDisplayName:"Include Managed Form Snapshot",cliDisplayDescription:"Include current ticket-managed form answers when available."})},
+        {key:"includeBotMessages",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-bots",{cliInitDefaultValue:false,cliDisplayName:"Include Bot Messages",cliDisplayDescription:"Include bot-authored live ticket messages."})},
+    ],cliDisplayName:"Context",cliDisplayDescription:"Live ticket context available to the AI assist provider."})},
+    {key:"settings",checker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile-settings",{children:[],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+        const lt = checker.locationTraceDeref(locationTrace)
+        if (!value || typeof value != "object" || Array.isArray(value)){
+            checker.createMessage("opendiscord:ai-assist-profile-settings-object","error","AI assist profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
+            return false
+        }
+        const secretKey = Object.keys(value).find((key) => /secret|token|password|api[_-]?key|authorization|credential/i.test(key))
+        if (secretKey){
+            checker.createMessage("opendiscord:ai-assist-profile-settings-secret","error","AI assist profile settings must not contain secret-shaped keys. Use host environment variables for provider secrets.",lt,null,[secretKey],locationId,locationDocs)
+            return false
+        }
+        return true
+    },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned non-secret profile settings."})},
+],cliDisplayName:"AI Assist Profile",cliDisplayDescription:"An advisory AI assist provider profile that ticket options can bind to."})})
+
+export const defaultKnowledgeSourcesStructure = new api.ODCheckerArrayStructure("opendiscord:knowledge-sources",{allowedTypes:["object"],cliDisplayPropertyName:"knowledge source",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:knowledge-source",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","kind"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:knowledge-source-id","openticket","knowledge-source-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this knowledge source."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this knowledge source."})},
+    {key:"kind",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-kind",{choices:["markdown-file","faq-json"],cliDisplayName:"Kind",cliDisplayDescription:"The local knowledge file kind."})},
+    {key:"path",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-path",{minLength:1,maxLength:512,cliDisplayName:"Path",cliDisplayDescription:"A relative local path under knowledge/ or .docs/."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:knowledge-source-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this knowledge source."})},
+],cliDisplayName:"Knowledge Source",cliDisplayDescription:"A local file source under knowledge/ or .docs/ available to AI assist."})})
 
 export const defaultPanelsStructure = new api.ODCheckerArrayStructure("opendiscord:panels",{allowedTypes:["object"],cliDisplayPropertyName:"panel",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:panels",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","dropdown"],children:[
     {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:panel-id","openticket","panel-ids",{regex:/^[A-Za-z0-9-éèçàêâôûî]+$/,minLength:3,maxLength:40,cliDisplayName:"Id",cliDisplayDescription:"The id of this panel. Used in the /panel command."})},
@@ -854,6 +896,10 @@ function normalizeIntegrationProfileId(option:any): string {
     return typeof option?.integrationProfileId == "string" ? option.integrationProfileId.trim() : ""
 }
 
+function normalizeAiAssistProfileId(option:any): string {
+    return typeof option?.aiAssistProfileId == "string" ? option.aiAssistProfileId.trim() : ""
+}
+
 function collectIntegrationProfileReferences(options:any[]): Map<string,string[]> {
     const references = new Map<string,string[]>()
     options
@@ -866,6 +912,77 @@ function collectIntegrationProfileReferences(options:any[]): Map<string,string[]
             references.get(profileId)?.push(optionId)
         })
     return references
+}
+
+function collectAiAssistProfileReferences(options:any[]): Map<string,string[]> {
+    const references = new Map<string,string[]>()
+    options
+        .filter((option:any) => option?.type == "ticket")
+        .forEach((option:any) => {
+            const profileId = normalizeAiAssistProfileId(option)
+            if (!profileId) return
+            const optionId = typeof option?.id == "string" ? option.id : ""
+            if (!references.has(profileId)) references.set(profileId,[])
+            references.get(profileId)?.push(optionId)
+        })
+    return references
+}
+
+function normalizeAiAssistProfile(profile:any): api.TicketAiAssistProfile | null {
+    const profileId = typeof profile?.id == "string" ? profile.id.trim() : ""
+    const providerId = typeof profile?.providerId == "string" ? profile.providerId.trim() : ""
+    if (!profileId || !providerId) return null
+    const context = profile?.context && typeof profile.context == "object" && !Array.isArray(profile.context) ? profile.context : {}
+    return {
+        id:profileId,
+        providerId,
+        label:typeof profile.label == "string" && profile.label.trim().length > 0 ? profile.label.trim() : profileId,
+        enabled:profile.enabled === true,
+        knowledgeSourceIds:Array.isArray(profile.knowledgeSourceIds) ? profile.knowledgeSourceIds.map((value:any) => String(value || "").trim()).filter(Boolean) : [],
+        context:{
+            maxRecentMessages:Number.isFinite(Number(context.maxRecentMessages)) ? Number(context.maxRecentMessages) : 25,
+            includeTicketMetadata:context.includeTicketMetadata !== false,
+            includeParticipants:context.includeParticipants !== false,
+            includeManagedFormSnapshot:context.includeManagedFormSnapshot !== false,
+            includeBotMessages:context.includeBotMessages === true
+        },
+        settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {}
+    }
+}
+
+function normalizeKnowledgeSource(source:any): api.TicketAiAssistKnowledgeSource | null {
+    const sourceId = typeof source?.id == "string" ? source.id.trim() : ""
+    const kind = source?.kind == "markdown-file" || source?.kind == "faq-json" ? source.kind : null
+    if (!sourceId || !kind) return null
+    return {
+        id:sourceId,
+        label:typeof source.label == "string" && source.label.trim().length > 0 ? source.label.trim() : sourceId,
+        kind,
+        path:typeof source.path == "string" ? source.path.trim() : "",
+        enabled:source.enabled === true
+    }
+}
+
+function validateKnowledgeSourceLocalPath(sourcePath:string): string | null {
+    const normalized = sourcePath.replace(/\\/g,"/").trim()
+    if (!normalized) return "Knowledge source paths may not be blank."
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return "Knowledge sources must be local files, not URLs."
+    if (path.isAbsolute(normalized)) return "Knowledge source paths must be relative."
+    if (normalized.split("/").includes("..")) return "Knowledge source paths may not contain '..'."
+    if (!(normalized.startsWith("knowledge/") || normalized.startsWith(".docs/"))) return "Knowledge source paths must stay under knowledge/ or .docs/."
+
+    const projectRoot = process.cwd()
+    const absolutePath = path.resolve(projectRoot, normalized)
+    const allowedRoots = [path.resolve(projectRoot,"knowledge"), path.resolve(projectRoot,".docs")]
+    if (!allowedRoots.some((root) => absolutePath == root || absolutePath.startsWith(root + path.sep))) return "Knowledge source paths must stay under knowledge/ or .docs/."
+    if (!fs.existsSync(absolutePath)) return null
+
+    const stats = fs.lstatSync(absolutePath)
+    if (stats.isSymbolicLink()) return "Knowledge source files may not be symbolic links."
+    const realPath = fs.realpathSync(absolutePath)
+    const realAllowedRoots = allowedRoots.map((root) => fs.existsSync(root) ? fs.realpathSync(root) : root)
+    if (!realAllowedRoots.some((root) => realPath == root || realPath.startsWith(root + path.sep))) return "Knowledge source files may not escape knowledge/ or .docs/."
+    return null
 }
 
 export const defaultIntegrationProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
@@ -948,6 +1065,128 @@ export const defaultIntegrationProfilesFunction = (manager:api.ODCheckerManager,
                 null,
                 [`"${profileId}"`],
                 new api.ODId("opendiscord:integration-profiles"),
+                null
+            ))
+        }
+    })
+
+    return {valid:(final.every((message) => message.type != "error")),messages:final}
+}
+
+export const defaultAiAssistProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    void manager
+    const profileConfig = opendiscord.configs.get("opendiscord:ai-assist-profiles")
+    const knowledgeConfig = opendiscord.configs.get("opendiscord:knowledge-sources")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!profileConfig || !knowledgeConfig || !optionConfig || !Array.isArray(profileConfig.data) || !Array.isArray(knowledgeConfig.data) || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const final: api.ODCheckerMessage[] = []
+    const profiles = profileConfig.data
+    const profileById = new Map(
+        profiles
+            .filter((profile:any) => typeof profile?.id == "string" && profile.id.trim().length > 0)
+            .map((profile:any) => [profile.id.trim(),profile])
+    )
+    const knowledgeSources = knowledgeConfig.data.map(normalizeKnowledgeSource).filter(Boolean) as api.TicketAiAssistKnowledgeSource[]
+    const knowledgeById = new Map(knowledgeSources.map((source) => [source.id,source]))
+    const references = collectAiAssistProfileReferences(optionConfig.data)
+
+    optionConfig.data.forEach((option:any,index:number) => {
+        if (option?.type != "ticket") return
+        const profileId = normalizeAiAssistProfileId(option)
+        if (!profileId || profileById.has(profileId)) return
+        final.push(functions.createMessage(
+            "opendiscord:options",
+            "opendiscord:ticket-ai-assist-profile-missing",
+            optionConfig.file,
+            "error",
+            `Ticket option "${option.id}" references unknown AI assist profile "${profileId}".`,
+            [index,"aiAssistProfileId"],
+            null,
+            [`"${profileId}"`],
+            new api.ODId("opendiscord:ai-assist-profiles"),
+            null
+        ))
+    })
+
+    knowledgeConfig.data.forEach((source:any,index:number) => {
+        const normalized = normalizeKnowledgeSource(source)
+        if (!normalized) return
+        const error = validateKnowledgeSourceLocalPath(normalized.path)
+        if (!error) return
+        final.push(functions.createMessage(
+            "opendiscord:knowledge-sources",
+            "opendiscord:knowledge-source-path-invalid",
+            knowledgeConfig.file,
+            "error",
+            error,
+            [index,"path"],
+            null,
+            [`"${normalized.path}"`],
+            new api.ODId("opendiscord:ai-assist-profiles"),
+            null
+        ))
+    })
+
+    const runtimeApi = api.getTicketPlatformRuntimeApi()
+    profiles.forEach((profile:any,index:number) => {
+        const normalizedProfile = normalizeAiAssistProfile(profile)
+        if (!normalizedProfile) return
+        const referencedByOptionIds = references.get(normalizedProfile.id) ?? []
+        const referencedKnowledgeSources = normalizedProfile.knowledgeSourceIds.map((sourceId) => knowledgeById.get(sourceId)).filter(Boolean) as api.TicketAiAssistKnowledgeSource[]
+
+        normalizedProfile.knowledgeSourceIds.forEach((sourceId) => {
+            if (knowledgeById.has(sourceId)) return
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-knowledge-source-missing",
+                profileConfig.file,
+                "error",
+                `AI assist profile "${normalizedProfile.id}" references unknown knowledge source "${sourceId}".`,
+                [index,"knowledgeSourceIds"],
+                null,
+                [`"${sourceId}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+        })
+
+        const provider = runtimeApi?.getAiAssistProvider(normalizedProfile.providerId) ?? null
+        if (!provider){
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-profile-provider-missing",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                `AI assist profile "${normalizedProfile.id}" references unavailable provider "${normalizedProfile.providerId}".`,
+                [index,"providerId"],
+                null,
+                [`"${normalizedProfile.providerId}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+            return
+        }
+
+        if (typeof provider.validateProfileSettings != "function") return
+        try {
+            provider.validateProfileSettings({
+                profile:normalizedProfile,
+                settings:normalizedProfile.settings,
+                referencedByOptionIds,
+                knowledgeSources:referencedKnowledgeSources
+            })
+        } catch (error) {
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-profile-settings-invalid",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                error instanceof Error ? error.message : `AI assist profile "${normalizedProfile.id}" settings are invalid.`,
+                [index,"settings"],
+                null,
+                [`"${normalizedProfile.id}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
                 null
             ))
         }

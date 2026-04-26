@@ -52,6 +52,52 @@ export interface DashboardTicketIntegrationSummary {
   lockedTicketActions: DashboardTicketProviderLockedActionId[]
 }
 
+export type DashboardTicketAiAssistAction = "summarize" | "answerFaq" | "suggestReply"
+export type DashboardTicketAiAssistOutcome = "success" | "unavailable" | "busy" | "low-confidence" | "provider-error" | "denied"
+export type DashboardTicketAiAssistConfidence = "high" | "medium" | "low"
+
+export interface DashboardTicketAiAssistCitation {
+  kind: "ticket-message" | "knowledge-source" | "managed-form"
+  sourceId: string
+  label: string
+  locator: string | null
+  excerpt: string | null
+}
+
+export interface DashboardTicketAiAssistSummary {
+  profileId: string
+  providerId: string
+  label: string
+  available: boolean
+  actions: DashboardTicketAiAssistAction[]
+  reason: string | null
+}
+
+export interface DashboardTicketAiAssistResult {
+  ok: boolean
+  outcome: DashboardTicketAiAssistOutcome
+  action: DashboardTicketAiAssistAction
+  message: string
+  profileId: string | null
+  providerId: string | null
+  confidence: DashboardTicketAiAssistConfidence | null
+  summary?: string | null
+  answer?: string | null
+  draft?: string | null
+  citations: DashboardTicketAiAssistCitation[]
+  warnings: string[]
+  degradedReason: string | null
+  ticketId?: string
+}
+
+export interface DashboardTicketAiAssistRequest {
+  ticketId: string
+  action: DashboardTicketAiAssistAction
+  actorUserId: string
+  prompt?: string
+  instructions?: string
+}
+
 export interface DashboardTicketAssignableStaffChoice {
   userId: string
   label: string
@@ -115,6 +161,7 @@ export interface DashboardTicketDetailRecord {
   priorityChoices: DashboardTicketPriorityChoice[]
   providerLock: DashboardTicketProviderLock | null
   integration: DashboardTicketIntegrationSummary | null
+  aiAssist: DashboardTicketAiAssistSummary | null
 }
 
 export interface DashboardTicketActionRequest {

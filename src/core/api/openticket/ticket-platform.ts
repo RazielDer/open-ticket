@@ -67,6 +67,11 @@ export interface ODTicketIntegrationProfileState {
     profileId: string
 }
 
+export interface ODTicketAiAssistProfileState {
+    hasStoredValue: boolean
+    profileId: string
+}
+
 export function createDefaultTicketPlatformMetadata(): ODTicketPlatformMetadata {
     return {
         ...ODTICKET_PLATFORM_METADATA_DEFAULTS
@@ -104,6 +109,15 @@ export function appendMissingTicketPlatformMetadataFields(ticketData: Array<{ id
 
 export function resolveTicketIntegrationProfileState(source: ODTicketPlatformMetadataSource | null | undefined): ODTicketIntegrationProfileState {
     const data = source?.get?.(ODTICKET_PLATFORM_METADATA_IDS.integrationProfileId)
+    if (!data || data.value === null || data.value === undefined) return { hasStoredValue: false, profileId: "" }
+    return {
+        hasStoredValue: true,
+        profileId: typeof data.value == "string" ? data.value.trim() : ""
+    }
+}
+
+export function resolveTicketAiAssistProfileState(source: ODTicketPlatformMetadataSource | null | undefined): ODTicketAiAssistProfileState {
+    const data = source?.get?.(ODTICKET_PLATFORM_METADATA_IDS.aiAssistProfileId)
     if (!data || data.value === null || data.value === undefined) return { hasStoredValue: false, profileId: "" }
     return {
         hasStoredValue: true,
@@ -227,6 +241,144 @@ export interface TicketIntegrationEnrichmentResult {
     details: Record<string, string>
 }
 
+export interface TicketAiAssistProfile {
+    id: string
+    providerId: string
+    label: string
+    enabled: boolean
+    knowledgeSourceIds: string[]
+    context: {
+        maxRecentMessages: number
+        includeTicketMetadata: boolean
+        includeParticipants: boolean
+        includeManagedFormSnapshot: boolean
+        includeBotMessages: boolean
+    }
+    settings: Record<string, unknown>
+}
+
+export interface TicketAiAssistKnowledgeSource {
+    id: string
+    label: string
+    kind: "markdown-file" | "faq-json"
+    path: string
+    enabled: boolean
+}
+
+export interface TicketAiAssistValidateProfileSettingsInput {
+    profile: TicketAiAssistProfile
+    settings: Record<string, unknown>
+    referencedByOptionIds: string[]
+    knowledgeSources: TicketAiAssistKnowledgeSource[]
+}
+
+export interface TicketAiAssistMessageContext {
+    messageId: string
+    authorUserId: string
+    authorLabel: string
+    createdAt: string
+    content: string
+    attachmentFilenames: string[]
+}
+
+export interface TicketAiAssistTicketMetadataContext {
+    ticketId: string
+    optionId: string | null
+    creatorUserId: string | null
+    openedAt: string | null
+    state: "open" | "closed" | "unknown"
+    topic: string | null
+}
+
+export interface TicketAiAssistParticipantContext {
+    userId: string
+    label: string
+    role: "creator" | "participant" | "staff" | "unknown"
+}
+
+export interface TicketAiAssistFormAnswerContext {
+    questionId: string
+    questionLabel: string
+    answer: string
+}
+
+export interface TicketAiAssistKnowledgeContext {
+    sourceId: string
+    label: string
+    kind: TicketAiAssistKnowledgeSource["kind"]
+    content: string
+    locator: string | null
+}
+
+export interface TicketAiAssistRequestContext {
+    messages: TicketAiAssistMessageContext[]
+    ticketMetadata: TicketAiAssistTicketMetadataContext | null
+    participants: TicketAiAssistParticipantContext[]
+    managedFormAnswers: TicketAiAssistFormAnswerContext[]
+}
+
+export interface TicketAiAssistRequest {
+    action: TicketPlatformAiAssistCapability
+    prompt: string | null
+    instructions: string | null
+    source: "dashboard" | "slash" | string
+}
+
+export interface TicketAiAssistCitation {
+    kind: "ticket-message" | "knowledge-source" | "managed-form"
+    sourceId: string
+    label: string
+    locator: string | null
+    excerpt: string | null
+}
+
+export interface TicketAiAssistHookInput {
+    profile: TicketAiAssistProfile
+    settings: Record<string, unknown>
+    ticket: unknown
+    channel: unknown
+    guild: unknown
+    actorUser: unknown
+    context: TicketAiAssistRequestContext
+    knowledge: TicketAiAssistKnowledgeContext[]
+    request: TicketAiAssistRequest
+}
+
+export type TicketAiAssistOutcome = "success" | "unavailable" | "busy" | "low-confidence" | "provider-error" | "denied"
+export type TicketAiAssistConfidence = "high" | "medium" | "low"
+
+export interface TicketAiAssistHookResultBase {
+    outcome: TicketAiAssistOutcome
+    confidence: TicketAiAssistConfidence | null
+    citations: TicketAiAssistCitation[]
+    degradedReason: string | null
+    warnings: string[]
+}
+
+export interface TicketAiAssistSummarizeResult extends TicketAiAssistHookResultBase {
+    summary: string | null
+}
+
+export interface TicketAiAssistAnswerFaqResult extends TicketAiAssistHookResultBase {
+    answer: string | null
+}
+
+export interface TicketAiAssistSuggestReplyResult extends TicketAiAssistHookResultBase {
+    draft: string | null
+}
+
+export type TicketAiAssistHookResult =
+    | TicketAiAssistSummarizeResult
+    | TicketAiAssistAnswerFaqResult
+    | TicketAiAssistSuggestReplyResult
+
+export interface TicketAiAssistProviderUnavailableResult extends TicketAiAssistHookResultBase {
+    outcome: "success" | "unavailable" | "busy" | "low-confidence" | "provider-error" | "denied"
+    summary?: string | null
+    answer?: string | null
+    draft?: string | null
+}
+
 type TicketPlatformHookHandler<Input, Result> = (input: Input) => Result | Promise<Result>
 
 export interface TicketPlatformIntegrationProvider {
@@ -245,10 +397,10 @@ export interface TicketPlatformAiAssistProvider {
     id: string
     pluginId?: string
     capabilities: readonly TicketPlatformAiAssistCapability[]
-    validateProfileSettings?: TicketPlatformHookHandler<any, void>
-    summarize?: TicketPlatformHookHandler<any, unknown>
-    answerFaq?: TicketPlatformHookHandler<any, unknown>
-    suggestReply?: TicketPlatformHookHandler<any, unknown>
+    validateProfileSettings?: TicketPlatformHookHandler<TicketAiAssistValidateProfileSettingsInput, void>
+    summarize?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
+    answerFaq?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
+    suggestReply?: TicketPlatformHookHandler<TicketAiAssistHookInput, TicketAiAssistHookResult>
 }
 
 export interface TicketPlatformRuntimeApi {

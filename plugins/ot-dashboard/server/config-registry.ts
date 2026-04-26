@@ -1,4 +1,4 @@
-export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "transcripts"
+export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources" | "transcripts"
 
 export interface ManagedConfigDefinition {
   id: ManagedConfigId
@@ -70,6 +70,26 @@ export const MANAGED_CONFIGS: ManagedConfigDefinition[] = [
     titleKey: "admin.cards.integrationProfiles.title",
     descriptionKey: "admin.cards.integrationProfiles.description",
     icon: "plug",
+    kind: "array"
+  },
+  {
+    id: "ai-assist-profiles",
+    fileName: "ai-assist-profiles.json",
+    visualPath: "/config/ai-assist-profiles",
+    rawPath: "/config/ai-assist-profiles",
+    titleKey: "admin.cards.aiAssistProfiles.title",
+    descriptionKey: "admin.cards.aiAssistProfiles.description",
+    icon: "sparkles",
+    kind: "array"
+  },
+  {
+    id: "knowledge-sources",
+    fileName: "knowledge-sources.json",
+    visualPath: "/config/knowledge-sources",
+    rawPath: "/config/knowledge-sources",
+    titleKey: "admin.cards.knowledgeSources.title",
+    descriptionKey: "admin.cards.knowledgeSources.description",
+    icon: "book-open",
     kind: "array"
   },
   {

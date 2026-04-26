@@ -38,6 +38,8 @@ export interface ODConfigManagerIds_Default {
     "opendiscord:panels":ODJsonConfig_DefaultPanels,
     "opendiscord:support-teams":ODJsonConfig_DefaultSupportTeams,
     "opendiscord:integration-profiles":ODJsonConfig_DefaultIntegrationProfiles,
+    "opendiscord:ai-assist-profiles":ODJsonConfig_DefaultAiAssistProfiles,
+    "opendiscord:knowledge-sources":ODJsonConfig_DefaultKnowledgeSources,
     "opendiscord:transcripts":ODJsonConfig_DefaultTranscripts
 }
 
@@ -482,6 +484,8 @@ export interface ODJsonConfig_DefaultOptionTicketType extends ODJsonConfig_Defau
     questions:string[],
     /**The integration profile bound to this ticket option. Empty disables generic provider integration. */
     integrationProfileId:string,
+    /**The AI assist profile bound to this ticket option. Empty disables ticket AI assist. */
+    aiAssistProfileId:string,
     /**All settings related to the ticket channel itself. */
     channel:ODJsonConfig_DefaultOptionTicketChannelType,
     /**All settings related to support-team ownership and escalation targets. */
@@ -647,6 +651,77 @@ export type ODJsonConfig_DefaultIntegrationProfilesData = ODJsonConfig_DefaultIn
  */
 export class ODJsonConfig_DefaultIntegrationProfiles extends ODJsonConfig {
     declare data: ODJsonConfig_DefaultIntegrationProfilesData
+}
+
+/**## ODJsonConfig_DefaultAiAssistProfileType `interface`
+ * A named AI assist provider profile that ticket options can bind to.
+ */
+export interface ODJsonConfig_DefaultAiAssistProfileType {
+    /**Unique AI assist profile id. */
+    id:string,
+    /**The runtime AI assist provider id. */
+    providerId:string,
+    /**Human-readable profile label. */
+    label:string,
+    /**When disabled, bound ticket AI assist requests are unavailable. */
+    enabled:boolean,
+    /**Knowledge source ids available to this profile. */
+    knowledgeSourceIds:string[],
+    /**Context collection limits and toggles. */
+    context:{
+        /**Maximum live ticket messages to include. */
+        maxRecentMessages:number,
+        /**Include non-secret ticket metadata such as option, state, topic, and creator id. */
+        includeTicketMetadata:boolean,
+        /**Include current live ticket participant labels and ids. */
+        includeParticipants:boolean,
+        /**Include the current ticket-managed form answer snapshot when available. */
+        includeManagedFormSnapshot:boolean,
+        /**Include bot-authored live ticket messages. */
+        includeBotMessages:boolean
+    },
+    /**Provider-owned non-secret profile settings. */
+    settings:Record<string, unknown>
+}
+
+/**## ODJsonConfig_DefaultAiAssistProfilesData `type`
+ * All contents of the `ai-assist-profiles.json` config file.
+ */
+export type ODJsonConfig_DefaultAiAssistProfilesData = ODJsonConfig_DefaultAiAssistProfileType[]
+
+/**## ODJsonConfig_DefaultAiAssistProfiles `default_class`
+ * This default class is made for the `ai-assist-profiles.json` config!
+ */
+export class ODJsonConfig_DefaultAiAssistProfiles extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultAiAssistProfilesData
+}
+
+/**## ODJsonConfig_DefaultKnowledgeSourceType `interface`
+ * A local file knowledge source usable by AI assist profiles.
+ */
+export interface ODJsonConfig_DefaultKnowledgeSourceType {
+    /**Unique knowledge source id. */
+    id:string,
+    /**Human-readable source label. */
+    label:string,
+    /**The supported local source kind. */
+    kind:"markdown-file"|"faq-json",
+    /**A relative local path under knowledge/ or .docs/. */
+    path:string,
+    /**When disabled, the source is ignored at runtime. */
+    enabled:boolean
+}
+
+/**## ODJsonConfig_DefaultKnowledgeSourcesData `type`
+ * All contents of the `knowledge-sources.json` config file.
+ */
+export type ODJsonConfig_DefaultKnowledgeSourcesData = ODJsonConfig_DefaultKnowledgeSourceType[]
+
+/**## ODJsonConfig_DefaultKnowledgeSources `default_class`
+ * This default class is made for the `knowledge-sources.json` config!
+ */
+export class ODJsonConfig_DefaultKnowledgeSources extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultKnowledgeSourcesData
 }
 
 /**## ODJsonConfig_DefaultPanelEmbedSettingsType `interface`

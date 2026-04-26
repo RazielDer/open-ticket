@@ -16,6 +16,10 @@ import {
   type DashboardTicketActionId,
   type DashboardTicketActionRequest,
   type DashboardTicketActionResult,
+  type DashboardTicketAiAssistAction,
+  type DashboardTicketAiAssistRequest,
+  type DashboardTicketAiAssistResult,
+  type DashboardTicketAiAssistSummary,
   type DashboardTicketAssignableStaffChoice,
   type DashboardTicketDetailRecord,
   type DashboardTicketEscalationTargetChoice,
@@ -46,6 +50,7 @@ export interface DashboardRuntimeBridge {
   listTickets: () => DashboardTicketRecord[]
   getTicketDetail?: (ticketId: string, actorUserId: string) => Promise<DashboardTicketDetailRecord | null>
   runTicketAction?: (input: DashboardTicketActionRequest) => Promise<DashboardTicketActionResult>
+  runTicketAiAssist?: (input: DashboardTicketAiAssistRequest) => Promise<DashboardTicketAiAssistResult>
   getRuntimeSource?: () => DashboardRuntimeSource | null
   resolveGuildMember?: (userId: string) => Promise<DashboardRuntimeGuildMember | null>
   getGuildId?: () => string | null
@@ -69,6 +74,9 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async runTicketAction(input) {
     return await runRuntimeTicketAction(defaultDashboardRuntimeBridge, input)
+  },
+  async runTicketAiAssist(input) {
+    return await runRuntimeTicketAiAssist(defaultDashboardRuntimeBridge, input)
   },
   getRuntimeSource() {
     return getDashboardRuntimeSource()
@@ -161,12 +169,17 @@ const ticketActionResults = {
   dismissCloseRequestSuccess: "tickets.detail.actionResults.dismissCloseRequestSuccess",
   setAwaitingUserSuccess: "tickets.detail.actionResults.setAwaitingUserSuccess",
   clearAwaitingUserSuccess: "tickets.detail.actionResults.clearAwaitingUserSuccess",
+  aiAssistSuccess: "tickets.detail.actionResults.aiAssistSuccess",
   genericSuccess: "tickets.detail.actionResults.genericSuccess",
   genericFailure: "tickets.detail.actionResults.genericFailure"
 } as const
 
 function isDashboardTicketActionId(value: string): value is DashboardTicketActionId {
   return (DASHBOARD_TICKET_ACTION_IDS as readonly string[]).includes(value)
+}
+
+function isDashboardTicketAiAssistAction(value: string): value is DashboardTicketAiAssistAction {
+  return value === "summarize" || value === "answerFaq" || value === "suggestReply"
 }
 
 function ticketActionWarning(message: string, ticketId?: string): DashboardTicketActionResult {
@@ -193,6 +206,40 @@ function ticketActionSuccess(message: string, ticketId?: string): DashboardTicke
     status: "success",
     message,
     ...(ticketId ? { ticketId } : {})
+  }
+}
+
+function ticketAiAssistResult(input: {
+  ok: boolean
+  outcome: DashboardTicketAiAssistResult["outcome"]
+  action: DashboardTicketAiAssistAction
+  message: string
+  ticketId?: string
+  profileId?: string | null
+  providerId?: string | null
+  confidence?: DashboardTicketAiAssistResult["confidence"]
+  summary?: string | null
+  answer?: string | null
+  draft?: string | null
+  citations?: DashboardTicketAiAssistResult["citations"]
+  warnings?: string[]
+  degradedReason?: string | null
+}): DashboardTicketAiAssistResult {
+  return {
+    ok: input.ok,
+    outcome: input.outcome,
+    action: input.action,
+    message: input.message,
+    profileId: input.profileId ?? null,
+    providerId: input.providerId ?? null,
+    confidence: input.confidence ?? null,
+    summary: input.summary ?? null,
+    answer: input.answer ?? null,
+    draft: input.draft ?? null,
+    citations: input.citations ?? [],
+    warnings: input.warnings ?? [],
+    degradedReason: input.degradedReason ?? null,
+    ...(input.ticketId ? { ticketId: input.ticketId } : {})
   }
 }
 
@@ -725,6 +772,39 @@ async function resolveIntegrationSummary(runtimeBridge: DashboardRuntimeBridge, 
   }
 }
 
+async function resolveAiAssistSummary(runtimeBridge: DashboardRuntimeBridge, ticketId: string): Promise<DashboardTicketAiAssistSummary | null> {
+  const runtime = runtimeBridge.getRuntimeSource?.() as any
+  const service = runtime?.plugins?.classes?.get?.("ot-ai-assist:service")
+  if (!service || typeof service.getTicketAiAssistSummary !== "function") return null
+  const ticket = getRuntimeTicket(runtime, ticketId)
+  if (!ticket) return null
+
+  try {
+    const guild = await resolveRuntimeActionGuild(runtimeBridge, runtime)
+    const channel = guild && runtime?.client
+      ? await (
+        runtime.client.fetchGuildTextBasedChannel?.(guild, ticketId)
+        || runtime.client.fetchGuildTextChannel?.(guild, ticketId)
+        || Promise.resolve(null)
+      ).catch(() => null)
+      : null
+    const summary = await service.getTicketAiAssistSummary({ ticket, channel, guild })
+    if (!summary) return null
+    return {
+      profileId: normalizeString(summary.profileId),
+      providerId: normalizeString(summary.providerId),
+      label: normalizeString(summary.label) || normalizeString(summary.profileId) || "AI assist",
+      available: summary.available === true,
+      actions: Array.isArray(summary.actions)
+        ? summary.actions.map((action: unknown) => normalizeString(action)).filter(isDashboardTicketAiAssistAction)
+        : [],
+      reason: normalizeString(summary.reason) || null
+    }
+  } catch {
+    return null
+  }
+}
+
 async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, ticketId: string, actorUserId = ""): Promise<DashboardTicketDetailRecord | null> {
   const normalizedTicketId = normalizeString(ticketId)
   if (!normalizedTicketId) return null
@@ -746,6 +826,7 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     ? await resolveRuntimeActionContext(runtimeBridge, ticket.id, actorUserId)
     : null
   const integration = await resolveIntegrationSummary(runtimeBridge, ticket.id)
+  const aiAssist = await resolveAiAssistSummary(runtimeBridge, ticket.id)
   const providerLock = integration
     ? {
       providerId: integration.providerId,
@@ -816,7 +897,8 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     participantChoices,
     priorityChoices,
     providerLock,
-    integration
+    integration,
+    aiAssist
   }
 }
 
@@ -1113,6 +1195,157 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
     return ticketActionSuccess(ticketActionResults.genericSuccess, ticketId)
   } catch (error) {
     return ticketActionDanger(error instanceof Error ? error.message : ticketActionResults.genericFailure, ticketId)
+  }
+}
+
+async function checkRuntimeTicketAiAssistPermission(context: Awaited<ReturnType<typeof resolveRuntimeActionContext>>) {
+  const permissionMode = context.runtime?.configs?.get?.("opendiscord:general")?.data?.system?.permissions?.close
+  if (!context.runtime?.permissions?.checkCommandPerms || !permissionMode) {
+    return { allowed: true, reason: null as string | null }
+  }
+
+  const result = await context.runtime.permissions.checkCommandPerms(
+    permissionMode,
+    "support",
+    context.user,
+    context.member,
+    context.channel,
+    context.guild
+  )
+  return {
+    allowed: Boolean(result?.hasPerms),
+    reason: result?.hasPerms ? null : ticketActionResults.permissionDenied
+  }
+}
+
+async function runRuntimeTicketAiAssist(runtimeBridge: DashboardRuntimeBridge, input: DashboardTicketAiAssistRequest): Promise<DashboardTicketAiAssistResult> {
+  const ticketId = normalizeString(input.ticketId)
+  const action = normalizeString(input.action)
+  const actorUserId = normalizeString(input.actorUserId)
+  if (!ticketId || !isDashboardTicketAiAssistAction(action) || !actorUserId) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "unavailable",
+      action: isDashboardTicketAiAssistAction(action) ? action : "summarize",
+      message: ticketActionResults.requestIncomplete,
+      ticketId
+    })
+  }
+
+  const detail = await getRuntimeTicketDetail(runtimeBridge, ticketId, actorUserId)
+  if (!detail) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "unavailable",
+      action,
+      message: ticketActionResults.missingTicket,
+      ticketId
+    })
+  }
+
+  if (!detail.ticket.open || detail.ticket.closed) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "unavailable",
+      action,
+      message: ticketActionResults.unavailable,
+      ticketId,
+      profileId: detail.aiAssist?.profileId ?? null,
+      providerId: detail.aiAssist?.providerId ?? null,
+      degradedReason: ticketAvailabilityReasons.ticketNotOpen
+    })
+  }
+
+  if (!detail.aiAssist?.available || !detail.aiAssist.actions.includes(action)) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "unavailable",
+      action,
+      message: ticketActionResults.unavailable,
+      ticketId,
+      profileId: detail.aiAssist?.profileId ?? null,
+      providerId: detail.aiAssist?.providerId ?? null,
+      degradedReason: detail.aiAssist?.reason || null
+    })
+  }
+
+  const context = await resolveRuntimeActionContext(runtimeBridge, ticketId, actorUserId)
+  if (!context.runtime || !context.guild || !context.ticket || !context.channel || !context.user) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "provider-error",
+      action,
+      message: ticketActionResults.runtimeContextMissing,
+      ticketId,
+      profileId: detail.aiAssist.profileId,
+      providerId: detail.aiAssist.providerId
+    })
+  }
+
+  const permission = await checkRuntimeTicketAiAssistPermission(context)
+  if (!permission.allowed) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "denied",
+      action,
+      message: permission.reason || ticketActionResults.permissionDenied,
+      ticketId,
+      profileId: detail.aiAssist.profileId,
+      providerId: detail.aiAssist.providerId
+    })
+  }
+
+  const service = context.runtime.plugins?.classes?.get?.("ot-ai-assist:service")
+  if (!service || typeof service.runTicketAiAssist !== "function") {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "unavailable",
+      action,
+      message: ticketActionResults.unavailable,
+      ticketId,
+      profileId: detail.aiAssist.profileId,
+      providerId: detail.aiAssist.providerId
+    })
+  }
+
+  try {
+    const result = await service.runTicketAiAssist({
+      ticket: context.ticket,
+      channel: context.channel,
+      guild: context.guild,
+      actorUser: context.user,
+      action,
+      source: "dashboard",
+      prompt: normalizeString(input.prompt) || null,
+      instructions: normalizeString(input.instructions) || null
+    })
+
+    return ticketAiAssistResult({
+      ok: result?.outcome === "success",
+      outcome: ["success", "unavailable", "busy", "low-confidence", "provider-error", "denied"].includes(result?.outcome) ? result.outcome : "provider-error",
+      action,
+      message: result?.outcome === "success" ? ticketActionResults.aiAssistSuccess : result?.degradedReason || ticketActionResults.unavailable,
+      ticketId,
+      profileId: normalizeString(result?.profileId) || detail.aiAssist.profileId,
+      providerId: normalizeString(result?.providerId) || detail.aiAssist.providerId,
+      confidence: result?.confidence === "high" || result?.confidence === "medium" || result?.confidence === "low" ? result.confidence : null,
+      summary: normalizeString(result?.summary) || null,
+      answer: normalizeString(result?.answer) || null,
+      draft: normalizeString(result?.draft) || null,
+      citations: Array.isArray(result?.citations) ? result.citations : [],
+      warnings: Array.isArray(result?.warnings) ? result.warnings.map((warning: unknown) => normalizeString(warning)).filter(Boolean) : [],
+      degradedReason: normalizeString(result?.degradedReason) || null
+    })
+  } catch (error) {
+    return ticketAiAssistResult({
+      ok: false,
+      outcome: "provider-error",
+      action,
+      message: error instanceof Error ? error.message : ticketActionResults.genericFailure,
+      ticketId,
+      profileId: detail.aiAssist.profileId,
+      providerId: detail.aiAssist.providerId
+    })
   }
 }
 

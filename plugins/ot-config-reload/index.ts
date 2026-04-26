@@ -3,10 +3,10 @@ import * as discord from "discord.js";
 
 if (utilities.project != "openticket") throw new api.ODPluginError("This plugin only works in Open Ticket!")
 
-type ManagedReloadTarget = "general" | "options" | "panels" | "questions" | "transcripts"
+type ManagedReloadTarget = "general" | "options" | "panels" | "questions" | "transcripts" | "ai-assist-profiles" | "knowledge-sources"
 type DashboardReloadTarget = ManagedReloadTarget | "all"
 
-const RELOADABLE_CONFIGS: ManagedReloadTarget[] = ["general", "options", "panels", "questions", "transcripts"]
+const RELOADABLE_CONFIGS: ManagedReloadTarget[] = ["general", "options", "panels", "questions", "transcripts", "ai-assist-profiles", "knowledge-sources"]
 
 //DECLARATION
 declare module "#opendiscord-types" {
@@ -52,12 +52,12 @@ function getConfigPath(){
 
 function withTemporaryChecker(target: ManagedReloadTarget, config: api.ODJsonConfig) {
     const checker = opendiscord.checkers.get(`opendiscord:${target}`)
-    const originalConfig = checker?.config
+    const originalConfig = checker?.config ?? null
     if (checker) {
         checker.config = config
     }
     return () => {
-        if (checker) {
+        if (checker && originalConfig) {
             checker.config = originalConfig
         }
     }
@@ -121,6 +121,8 @@ opendiscord.events.get("onSlashCommandLoad").listen((slash) => {
                     { name: "panels", value: "panels" },
                     { name: "questions", value: "questions" },
                     { name: "transcripts", value: "transcripts" },
+                    { name: "ai-assist-profiles", value: "ai-assist-profiles" },
+                    { name: "knowledge-sources", value: "knowledge-sources" },
                 ],
             }
         ]
@@ -148,6 +150,8 @@ opendiscord.events.get("onTextCommandLoad").listen((text) => {
                         "panels",
                         "questions",
                         "transcripts",
+                        "ai-assist-profiles",
+                        "knowledge-sources",
                     ]
                 }
             ]

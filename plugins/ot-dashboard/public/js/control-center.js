@@ -59,4 +59,48 @@
       if (confirmed) form.submit();
     });
   });
+
+  document.querySelectorAll("[data-ai-assist-panel]").forEach((panel) => {
+    const ticketId = String(panel.getAttribute("data-ticket-id") || "").trim();
+    const resultBox = panel.querySelector("[data-ai-assist-result]");
+    const setResult = (message, tone) => {
+      if (!resultBox) return;
+      resultBox.hidden = false;
+      resultBox.className = `inline-alert ${tone || "info"}`;
+      resultBox.textContent = message;
+    };
+    const resultText = (result) => {
+      if (!result) return "";
+      return result.summary || result.answer || result.draft || result.degradedReason || result.message || "";
+    };
+
+    panel.querySelectorAll("[data-ai-assist-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const route = String(form.getAttribute("data-ai-route") || "").trim();
+        if (!ticketId || !route) return;
+
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        setResult("Working...", "info");
+        try {
+          const formData = new FormData(form);
+          const payload = {
+            prompt: String(formData.get("prompt") || ""),
+            instructions: String(formData.get("instructions") || "")
+          };
+          const response = await ui.requestJson(ui.join(`api/tickets/${encodeURIComponent(ticketId)}/ai/${route}`), {
+            method: "POST",
+            json: payload
+          });
+          const text = resultText(response.result);
+          setResult(text || response.result?.message || "AI assist request completed.", "success");
+        } catch (error) {
+          setResult(error.message || "AI assist request failed.", "warning");
+        } finally {
+          if (submit) submit.disabled = false;
+        }
+      });
+    });
+  });
 })();

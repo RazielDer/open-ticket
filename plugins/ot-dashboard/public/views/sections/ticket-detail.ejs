@@ -42,6 +42,45 @@
         </section>
       <% } %>
 
+      <% if (ticketDetail.detail.aiAssist) { %>
+        <section class="section-card" data-ai-assist-panel data-ticket-id="<%= ticketDetail.detail.ticket.id %>">
+          <div class="section-heading">
+            <h3><%= t("tickets.detail.aiAssistTitle") %></h3>
+            <span class="status-pill tone-<%= ticketDetail.detail.aiAssist.available ? 'success' : 'warning' %>">
+              <%= ticketDetail.detail.aiAssist.available ? t("common.yes") : t("common.unavailable") %>
+            </span>
+          </div>
+          <div class="plugin-fact-list">
+            <div><strong><%= t("tickets.detail.aiAssistProfile") %>:</strong> <%= ticketDetail.detail.aiAssist.label %></div>
+            <div><strong><%= t("tickets.detail.aiAssistProvider") %>:</strong> <%= ticketDetail.detail.aiAssist.providerId %></div>
+            <div><strong><%= t("tickets.detail.aiAssistReason") %>:</strong> <%= ticketDetail.detail.aiAssist.reason || t("common.notApplicable") %></div>
+          </div>
+          <div class="stack-form">
+            <form class="stack-form" data-ai-assist-form data-ai-route="summarize">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <button class="btn primary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("summarize") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistSummarize") %></button>
+            </form>
+            <form class="stack-form" data-ai-assist-form data-ai-route="answer-faq">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <label>
+                <span class="field-label"><%= t("tickets.detail.aiAssistPromptLabel") %></span>
+                <input class="text-input" type="text" name="prompt" placeholder="<%= t('tickets.detail.aiAssistPromptPlaceholder') %>" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("answerFaq") ? '' : 'disabled' %>>
+              </label>
+              <button class="btn secondary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("answerFaq") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistAnswerFaq") %></button>
+            </form>
+            <form class="stack-form" data-ai-assist-form data-ai-route="suggest-reply">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <label>
+                <span class="field-label"><%= t("tickets.detail.aiAssistPromptLabel") %></span>
+                <input class="text-input" type="text" name="instructions" placeholder="<%= t('tickets.detail.aiAssistPromptPlaceholder') %>" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("suggestReply") ? '' : 'disabled' %>>
+              </label>
+              <button class="btn secondary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("suggestReply") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistSuggestReply") %></button>
+            </form>
+          </div>
+          <div class="inline-alert" data-ai-assist-result hidden></div>
+        </section>
+      <% } %>
+
       <section class="section-card">
         <div class="section-heading">
           <h3><%= t("tickets.detail.lifecycleTitle") %></h3>

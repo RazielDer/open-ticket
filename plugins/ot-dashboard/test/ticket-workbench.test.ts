@@ -24,6 +24,7 @@ import {
   DASHBOARD_TICKET_ACTION_IDS,
   type DashboardTicketActionId,
   type DashboardTicketActionRequest,
+  type DashboardTicketAiAssistRequest,
   type DashboardTicketDetailRecord
 } from "../server/ticket-workbench-types"
 import { sanitizeTicketWorkbenchReturnTo } from "../server/ticket-workbench"
@@ -80,6 +81,8 @@ function createProjectRoot() {
     { id: "triage", name: "Triage", roleIds: ["role-editor"], assignmentStrategy: "manual" },
     { id: "lead", name: "Lead", roleIds: ["role-admin"], assignmentStrategy: "manual" }
   ])
+  writeJson(path.join(root, "config", "ai-assist-profiles.json"), [])
+  writeJson(path.join(root, "config", "knowledge-sources.json"), [])
   writeJson(path.join(root, "config", "questions.json"), [])
   writeJson(path.join(root, "config", "transcripts.json"), {
     general: { enabled: true, enableChannel: false, enableCreatorDM: false, enableParticipantDM: false, enableActiveAdminDM: false, enableEveryAdminDM: false, channel: "", mode: "html" },
@@ -372,7 +375,8 @@ function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActi
       { priorityId: "urgent", label: "Urgent" }
     ],
     providerLock: null,
-    integration: null
+    integration: null,
+    aiAssist: null
   }
 }
 
@@ -381,10 +385,12 @@ async function startServer(options: {
   detail?: DashboardTicketDetailRecord | null
   writes?: boolean
   ticketSummaryAvailable?: boolean
+  aiAssistResult?: any
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
   const actionRequests: DashboardTicketActionRequest[] = []
+  const aiAssistRequests: DashboardTicketAiAssistRequest[] = []
   const members = new Map([
     ["admin-user", member("admin-user", ["role-admin"])],
     ["editor-user", member("editor-user", ["role-editor"])],
@@ -502,7 +508,8 @@ async function startServer(options: {
           message: "Bridge-owned actions are locked.",
           lockedActions: ["close", "escalate"]
         },
-        integration: null
+        integration: null,
+        aiAssist: null
       }
     },
     ...(options.writes === false ? {} : {
@@ -516,6 +523,25 @@ async function startServer(options: {
         }
       }
     }),
+    async runTicketAiAssist(input: DashboardTicketAiAssistRequest) {
+      aiAssistRequests.push(input)
+      return options.aiAssistResult || {
+        ok: true,
+        outcome: "success" as const,
+        action: input.action,
+        message: "tickets.detail.actionResults.aiAssistSuccess",
+        profileId: "assist-1",
+        providerId: "reference",
+        confidence: "medium" as const,
+        summary: input.action === "summarize" ? "Ticket summary text" : null,
+        answer: input.action === "answerFaq" ? "FAQ answer text" : null,
+        draft: input.action === "suggestReply" ? "Draft reply text" : null,
+        citations: [],
+        warnings: [],
+        degradedReason: null,
+        ticketId: input.ticketId
+      }
+    },
     getGuildId() {
       return "guild-1"
     },
@@ -557,6 +583,7 @@ async function startServer(options: {
     connections,
     context,
     actionRequests,
+    aiAssistRequests,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   }
 }
@@ -772,6 +799,94 @@ test("ticket action POSTs require csrf and revalidate disabled provider-locked a
   await invalidAction.arrayBuffer()
   assert.equal(invalidAction.status, 302)
   assert.equal(redirectMessage(invalidAction.headers.get("location")), "Unsupported ticket action.")
+})
+
+test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {
+  const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
+  const detail = enabledDetail(baseTicket)
+  detail.aiAssist = {
+    profileId: "assist-1",
+    providerId: "reference",
+    label: "Reference assist",
+    available: true,
+    actions: ["summarize", "answerFaq", "suggestReply"],
+    reason: null
+  }
+  const runtime = await startServer({
+    tickets: [baseTicket],
+    detail,
+    aiAssistResult: {
+      ok: true,
+      outcome: "success",
+      action: "answerFaq",
+      message: "tickets.detail.actionResults.aiAssistSuccess",
+      profileId: "assist-1",
+      providerId: "reference",
+      confidence: "high",
+      summary: null,
+      answer: "FAQ answer text",
+      draft: null,
+      citations: [],
+      warnings: [],
+      degradedReason: null,
+      ticketId: "ticket-1"
+    }
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie } })
+  const detailHtml = await detailResponse.text()
+  const csrfToken = csrfFrom(detailHtml)
+  assert.match(detailHtml, /AI assist/)
+  assert.doesNotMatch(detailHtml, /send to ticket/i)
+
+  const missingCsrf = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/answer-faq`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ prompt: "secret prompt text" })
+  })
+  await missingCsrf.arrayBuffer()
+  assert.equal(missingCsrf.status, 403)
+  assert.equal(runtime.aiAssistRequests.length, 0)
+
+  const response = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/answer-faq`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken
+    },
+    body: JSON.stringify({ prompt: "secret prompt text" })
+  })
+  const body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.success, true)
+  assert.equal(body.result.answer, "FAQ answer text")
+  assert.equal(runtime.aiAssistRequests.length, 1)
+  assert.deepEqual(runtime.aiAssistRequests[0], {
+    ticketId: "ticket-1",
+    action: "answerFaq",
+    actorUserId: "admin-user",
+    prompt: "secret prompt text",
+    instructions: ""
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ai-assist-request" })
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].target, "ticket-1")
+  assert.equal(audits[0].outcome, "success")
+  assert.deepEqual(audits[0].details, {
+    action: "answerFaq",
+    profileId: "assist-1",
+    providerId: "reference",
+    confidence: "high"
+  })
+  assert.doesNotMatch(JSON.stringify(audits[0]), /secret prompt text|FAQ answer text/)
 })
 
 test("ticket action route forwards every locked action id through the runtime bridge with actor context", async (t) => {

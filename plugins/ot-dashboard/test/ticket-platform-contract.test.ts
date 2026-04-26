@@ -12,6 +12,7 @@ import {
   createDefaultTicketPlatformMetadata,
   createTicketPlatformMetadataEntries,
   installTicketPlatformRuntimeApi,
+  resolveTicketAiAssistProfileState,
   resolveTicketIntegrationProfileState,
   sealTicketPlatformRuntimeApi
 } from "../../../src/core/api/openticket/ticket-platform.js"
@@ -160,6 +161,36 @@ test("ticket integration profile state treats explicit blanks as stored values",
   })
 })
 
+test("ticket AI assist profile state treats explicit blanks as stored values", () => {
+  const source = (value: unknown, present = true) => ({
+    get(id: string) {
+      assert.equal(id, ODTICKET_PLATFORM_METADATA_IDS.aiAssistProfileId)
+      return present ? { value } : null
+    }
+  })
+
+  assert.deepEqual(resolveTicketAiAssistProfileState(source(" assist-1 ")), {
+    hasStoredValue: true,
+    profileId: "assist-1"
+  })
+  assert.deepEqual(resolveTicketAiAssistProfileState(source("   ")), {
+    hasStoredValue: true,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketAiAssistProfileState(source(null)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketAiAssistProfileState(source(undefined)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+  assert.deepEqual(resolveTicketAiAssistProfileState(source("", false)), {
+    hasStoredValue: false,
+    profileId: ""
+  })
+})
+
 test("dashboard runtime registry mirrors the additive ticket platform fields", () => {
   clearDashboardRuntimeRegistry()
 
@@ -259,7 +290,9 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   const bridgeSource = read("plugins/ot-eotfs-bridge/index.ts")
   const localRuntimeSource = read("plugins/ot-local-runtime-config/index.ts")
 
-  assert.match(configLoaderSource, /fileName == "integration-profiles\.json" && !fs\.existsSync/)
+  assert.match(configLoaderSource, /fileName == "integration-profiles\.json"[\s\S]*!fs\.existsSync/)
+  assert.match(configLoaderSource, /fileName == "ai-assist-profiles\.json"[\s\S]*!fs\.existsSync/)
+  assert.match(configLoaderSource, /fileName == "knowledge-sources\.json"[\s\S]*!fs\.existsSync/)
   assert.match(configLoaderSource, /return "\.\/config\/"/)
 
   assert.match(ticketIntegrationSource, /resolveTicketIntegrationProfileState\(ticket\)/)
@@ -307,7 +340,14 @@ test("executable ticket platform providers can register before the startup windo
     id: "descriptor-ai",
     capabilities: ["summarize"],
     summarize() {
-      return null
+      return {
+        outcome: "success",
+        confidence: "medium",
+        summary: "summary",
+        citations: [],
+        degradedReason: null,
+        warnings: []
+      }
     }
   })
 

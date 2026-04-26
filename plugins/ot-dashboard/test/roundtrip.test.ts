@@ -175,7 +175,8 @@ function createFixtureRoot() {
         enableUserLeave: false,
         disableOnClaim: true
       },
-      integrationProfileId: "profile-1"
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     },
     {
       id: "role-1",
@@ -218,6 +219,34 @@ function createFixtureRoot() {
   ], null, 2))
 
   fs.writeFileSync(path.join(configDir, "questions.json"), "[]\n")
+  fs.writeFileSync(path.join(configDir, "ai-assist-profiles.json"), JSON.stringify([
+    {
+      id: "assist-1",
+      providerId: "reference",
+      label: "Reference assist",
+      enabled: true,
+      knowledgeSourceIds: ["faq-1"],
+      context: {
+        maxRecentMessages: 25,
+        includeTicketMetadata: true,
+        includeParticipants: true,
+        includeManagedFormSnapshot: true,
+        includeBotMessages: false
+      },
+      settings: {
+        tone: "concise"
+      }
+    }
+  ], null, 2))
+  fs.writeFileSync(path.join(configDir, "knowledge-sources.json"), JSON.stringify([
+    {
+      id: "faq-1",
+      label: "Staff FAQ",
+      kind: "faq-json",
+      path: "knowledge/staff-faq.json",
+      enabled: false
+    }
+  ], null, 2))
   fs.writeFileSync(path.join(configDir, "integration-profiles.json"), JSON.stringify([
     {
       id: "profile-1",
@@ -270,7 +299,8 @@ test("visual save helpers preserve runtime-aligned values and nested option data
       description: "Edited description",
       type: "ticket",
       button: { label: "Updated option", emoji: "", color: "green" },
-      integrationProfileId: "profile-1"
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     }, 0)
 
     service.savePanel({
@@ -332,6 +362,7 @@ test("visual save helpers preserve runtime-aligned values and nested option data
     assert.equal(options[0].autoclose.enableUserLeave, true)
     assert.equal(options[0].autodelete.disableOnClaim, true)
     assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
     assert.equal(panels[0].settings.describeOptionsLayout, "normal")
     assert.equal(panels[0].embed.footer, "Retained footer")
     assert.equal(transcripts.general.mode, "text")
@@ -341,7 +372,7 @@ test("visual save helpers preserve runtime-aligned values and nested option data
   }
 })
 
-test("ticket option integration profile binding roundtrips, strips from non-ticket options, and validates references", () => {
+test("ticket option integration and AI assist profile bindings roundtrip, strip from non-ticket options, and validate references", () => {
   const root = createFixtureRoot()
   const service = createConfigService(root)
 
@@ -352,11 +383,13 @@ test("ticket option integration profile binding roundtrips, strips from non-tick
       description: "Open this ticket.",
       type: "ticket",
       button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
-      integrationProfileId: "profile-1"
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     }, 0)
 
     let options = service.readManagedJson<any[]>("options")
     assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
 
     assert.throws(() => {
       service.saveOption({
@@ -365,15 +398,29 @@ test("ticket option integration profile binding roundtrips, strips from non-tick
         description: "Open this ticket.",
         type: "ticket",
         button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
-        integrationProfileId: "missing-profile"
+        integrationProfileId: "missing-profile",
+        aiAssistProfileId: "assist-1"
       }, 0)
     }, /Unknown integration profile/i)
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        name: "Whitelist Application Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "missing-assist"
+      }, 0)
+    }, /Unknown AI assist profile/i)
 
     service.saveOption({
       id: "role-1",
       type: "role",
       button: { emoji: "", label: "Role option", color: "blue" },
-      integrationProfileId: "profile-1"
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     }, 1)
 
     service.saveOption({
@@ -383,12 +430,15 @@ test("ticket option integration profile binding roundtrips, strips from non-tick
       type: "website",
       button: { emoji: "🌐", label: "Website option" },
       url: "https://example.com/docs",
-      integrationProfileId: "profile-1"
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     }, -1)
 
     options = service.readManagedJson<any[]>("options")
     assert.equal("integrationProfileId" in options[1], false)
     assert.equal("integrationProfileId" in options[2], false)
+    assert.equal("aiAssistProfileId" in options[1], false)
+    assert.equal("aiAssistProfileId" in options[2], false)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
@@ -425,6 +475,40 @@ test("integration profile backups redact provider secrets and restore preserves 
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
     clearTicketPlatformRuntimeApiForTests()
+  }
+})
+
+test("AI assist profiles and knowledge sources reject secret settings and guarded deletes", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    assert.throws(() => {
+      service.saveRawJson("ai-assist-profiles", JSON.stringify([
+        {
+          id: "assist-1",
+          providerId: "reference",
+          label: "Reference assist",
+          enabled: true,
+          knowledgeSourceIds: ["faq-1"],
+          context: { maxRecentMessages: 25 },
+          settings: { apiKey: "must-not-be-here" }
+        }
+      ]))
+    }, /secret-shaped key/i)
+
+    assert.throws(() => {
+      service.saveRawJson("knowledge-sources", JSON.stringify([]))
+    }, /still reference it/i)
+
+    assert.throws(() => {
+      service.saveRawJson("ai-assist-profiles", JSON.stringify([]))
+    }, /options still reference it/i)
+
+    const backupText = service.readManagedBackupText("ai-assist-profiles")
+    assert.match(backupText, /"settings": \{\s+"tone": "concise"\s+\}/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
   }
 })
 

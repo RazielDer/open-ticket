@@ -326,6 +326,15 @@
                         <% }) %>
                       </select>
                     </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.aiAssistProfileId") %></span>
+                      <select class="select-input" id="aiAssistProfileId">
+                        <option value=""><%= t("options.fields.noAiAssistProfile") %></option>
+                        <% aiAssistProfiles.forEach((profile) => { %>
+                          <option value="<%= profile.id %>"><%= profile.label %> (<%= profile.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
                   </div>
                 </section>
 
@@ -534,6 +543,7 @@
       <textarea id="available-questions-data" hidden><%= JSON.stringify(availableQuestions) %></textarea>
       <textarea id="support-teams-data" hidden><%= JSON.stringify(supportTeams) %></textarea>
       <textarea id="integration-profiles-data" hidden><%= JSON.stringify(integrationProfiles) %></textarea>
+      <textarea id="ai-assist-profiles-data" hidden><%= JSON.stringify(aiAssistProfiles) %></textarea>
       <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
       <textarea id="page-messages" hidden><%= messages %></textarea>
     </main>

@@ -12,6 +12,7 @@ import {
 } from "./ticketTransport.js"
 import { buildTicketRoutingMetadata, getTicketOptionSupportTeamRoleIds } from "./ticketRouting.js"
 import { getTicketOptionIntegrationProfileId } from "./ticketIntegration.js"
+import { getTicketOptionAiAssistProfileId } from "./ticketAiAssist.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -239,7 +240,8 @@ export const registerActions = async () => {
                 ...api.createTicketPlatformMetadataEntries({
                     ...buildTicketTransportMetadata(option,transportParentChannelId),
                     ...routingMetadata,
-                    integrationProfileId:getTicketOptionIntegrationProfileId(option)
+                    integrationProfileId:getTicketOptionIntegrationProfileId(option),
+                    aiAssistProfileId:getTicketOptionAiAssistProfileId(option)
                 })
             ])
 

@@ -297,6 +297,12 @@ export function buildParityWarnings(id: ManagedConfigId) {
     "integration-profiles": [
       "Integration profile backups redact provider-declared secret settings. Restores keep existing secret values when a redacted placeholder is applied."
     ],
+    "ai-assist-profiles": [
+      "AI assist profile settings are non-secret only. Provider credentials must stay in host environment variables."
+    ],
+    "knowledge-sources": [
+      "Knowledge source paths must stay under knowledge/ or .docs/. Use raw JSON after adding or reviewing local files."
+    ],
     transcripts: [
       "Transcript styling changes can be extensive. Review the raw JSON before applying broad import or restore operations."
     ]

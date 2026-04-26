@@ -65,6 +65,50 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
   const { basePath, configService } = context
   const adminGuard = createAdminGuard(context)
 
+  const handleAiAssistRequest = async (
+    req: express.Request,
+    res: express.Response,
+    action: "summarize" | "answerFaq" | "suggestReply"
+  ) => {
+    const session = getAdminSession(req)
+    const actorUserId = String(session?.userId || "").trim()
+    const ticketId = String(req.params.ticketId || "").trim()
+    if (!actorUserId || !ticketId || typeof context.runtimeBridge.runTicketAiAssist !== "function") {
+      const outcome = "unavailable"
+      void recordAdminAuditEvent(context, req, {
+        eventType: "ai-assist-request",
+        target: ticketId || "unknown-ticket",
+        outcome,
+        details: { action, profileId: null, providerId: null, confidence: null }
+      })
+      return res.status(400).json({ success: false, outcome, error: "AI assist is unavailable for this dashboard session." })
+    }
+
+    const result = await context.runtimeBridge.runTicketAiAssist({
+      ticketId,
+      action,
+      actorUserId,
+      prompt: typeof req.body?.prompt === "string" ? req.body.prompt : typeof req.body?.question === "string" ? req.body.question : "",
+      instructions: typeof req.body?.instructions === "string" ? req.body.instructions : ""
+    })
+
+    void recordAdminAuditEvent(context, req, {
+      eventType: "ai-assist-request",
+      target: ticketId,
+      outcome: result.outcome,
+      reason: result.degradedReason,
+      details: {
+        action,
+        profileId: result.profileId,
+        providerId: result.providerId,
+        confidence: result.confidence
+      }
+    })
+
+    const status = result.ok ? 200 : result.outcome === "denied" ? 403 : result.outcome === "busy" ? 409 : 400
+    res.status(status).json({ success: result.ok, result })
+  }
+
   app.post(joinBasePath(basePath, "api/config/general"), adminGuard.form("config.write.general"), (req, res) => {
     try {
       configService.saveGeneralForm(req.body || {})
@@ -369,6 +413,30 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       res.json(result)
     } catch (error) {
       sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/summarize"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "summarize")
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/answer-faq"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "answerFaq")
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/suggest-reply"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "suggestReply")
+    } catch (error) {
+      next(error)
     }
   })
 }

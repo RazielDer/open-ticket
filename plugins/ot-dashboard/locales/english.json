@@ -120,6 +120,14 @@
         "title": "Integration profiles",
         "description": "Provider-owned ticket integration profiles, secret-aware settings, and option bindings."
       },
+      "aiAssistProfiles": {
+        "title": "AI assist profiles",
+        "description": "Advisory AI assist provider profiles, local knowledge bindings, and ticket option assignments."
+      },
+      "knowledgeSources": {
+        "title": "Knowledge sources",
+        "description": "Local markdown and FAQ files available to AI assist profiles."
+      },
       "transcripts": {
         "title": "Transcripts",
         "description": "Delivery targets, transcript modes, text layouts, HTML styling, and favicon behavior."
@@ -751,8 +759,8 @@
       "ticketAutomationBody": "Keep inactivity, limits, and cooldown controls together.",
       "workflowTitle": "Close request and awaiting user",
       "workflowBody": "Configure creator close requests and staff-controlled awaiting-user reminders.",
-      "integrationTitle": "Integration profile",
-      "integrationBody": "Bind this ticket option to one generic integration provider profile.",
+      "integrationTitle": "Integration and AI assist",
+      "integrationBody": "Bind this ticket option to generic provider profiles.",
       "questionPickerTitle": "Question assignment",
       "questionPickerBody": "Use the structured picker so coverage stays visible while you edit.",
       "questionPickerEmptyTitle": "No reusable questions yet",
@@ -793,6 +801,8 @@
       "legacyRoleRouting": "Legacy role-only routing",
       "integrationProfileId": "Integration profile",
       "noIntegrationProfile": "No integration profile",
+      "aiAssistProfileId": "AI assist profile",
+      "noAiAssistProfile": "No AI assist profile",
       "escalationTargets": "Escalation target option IDs",
       "escalationTargetsHelp": "Enter comma-separated, newline-separated, or JSON-array ticket option IDs. Targets must use the same transport and have a support team.",
       "useGlobalTranscriptDefault": "Use global transcript default",
@@ -855,6 +865,7 @@
       "validationMessageJson": "Advanced message settings must be valid JSON objects.",
       "validationRoutingTargets": "Choose an existing support team and valid escalation target option IDs.",
       "validationIntegrationProfile": "Choose an existing integration profile.",
+      "validationAiAssistProfile": "Choose an existing AI assist profile.",
       "validationWorkflowHours": "Awaiting-user timeout hours must be greater than reminder hours."
     }
   },
@@ -1121,6 +1132,18 @@
       "integrationProvider": "Provider",
       "integrationSummary": "Summary",
       "integrationLockedActions": "Locked actions",
+      "aiAssistTitle": "AI assist",
+      "aiAssistProfile": "Profile",
+      "aiAssistProvider": "Provider",
+      "aiAssistReason": "Reason",
+      "aiAssistActions": "Actions",
+      "aiAssistResultTitle": "AI assist result",
+      "aiAssistPromptLabel": "Question or instructions",
+      "aiAssistPromptPlaceholder": "Enter the FAQ question or optional reply instructions",
+      "aiAssistSummarize": "Summarize",
+      "aiAssistAnswerFaq": "Answer FAQ",
+      "aiAssistSuggestReply": "Draft reply",
+      "aiAssistCopy": "Copy",
       "missingOption": "Missing option",
       "missingPanel": "Missing panel",
       "noTeam": "No team",
@@ -1280,6 +1303,9 @@
         "dismissCloseRequestSuccess": "Close request dismissed.",
         "setAwaitingUserSuccess": "Ticket marked awaiting user.",
         "clearAwaitingUserSuccess": "Awaiting-user state cleared.",
+        "aiAssistSuccess": "AI assist request completed.",
+        "aiAssistUnavailable": "AI assist is unavailable for this ticket.",
+        "aiAssistDenied": "Open Ticket denied this AI assist request.",
         "genericSuccess": "Ticket action completed.",
         "genericFailure": "Ticket action failed."
       },
