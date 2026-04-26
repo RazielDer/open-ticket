@@ -343,6 +343,18 @@ test("AI assist catalogs keep dev-config reload fallback and FAQ content validat
   assert.match(checkerLoaderSource, /opendiscord:knowledge-source-content-invalid/)
 })
 
+test("AI assist request source type stays limited to dashboard and slash", () => {
+  const root = process.cwd()
+  const platformSource = fs.readFileSync(path.resolve(root, "src/core/api/openticket/ticket-platform.ts"), "utf8")
+  const runtimeSource = fs.readFileSync(path.resolve(root, "plugins/ot-ai-assist/service/ai-assist-runtime.ts"), "utf8")
+
+  assert.match(platformSource, /export type TicketAiAssistRequestSource = "dashboard" \| "slash"/)
+  assert.match(platformSource, /source: TicketAiAssistRequestSource/)
+  assert.doesNotMatch(platformSource, /source:\s*"dashboard"\s*\|\s*"slash"\s*\|\s*string/)
+  assert.match(runtimeSource, /export type AiAssistRequestSource = TicketAiAssistRequestSource/)
+  assert.doesNotMatch(runtimeSource, /AiAssistRequestSource = "dashboard" \| "slash" \| string/)
+})
+
 test("ticket integration service executes provider enrichment through the generic service path", () => {
   const root = process.cwd()
   const ticketIntegrationSource = fs.readFileSync(path.resolve(root, "src/actions/ticketIntegration.ts"), "utf8")

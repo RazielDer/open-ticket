@@ -318,11 +318,13 @@ export interface TicketAiAssistRequestContext {
     managedFormAnswers: TicketAiAssistFormAnswerContext[]
 }
 
+export type TicketAiAssistRequestSource = "dashboard" | "slash"
+
 export interface TicketAiAssistRequest {
     action: TicketPlatformAiAssistCapability
     prompt: string | null
     instructions: string | null
-    source: "dashboard" | "slash" | string
+    source: TicketAiAssistRequestSource
 }
 
 export interface TicketAiAssistCitation {

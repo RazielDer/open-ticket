@@ -63,16 +63,110 @@
   document.querySelectorAll("[data-ai-assist-panel]").forEach((panel) => {
     const ticketId = String(panel.getAttribute("data-ticket-id") || "").trim();
     const resultBox = panel.querySelector("[data-ai-assist-result]");
-    const setResult = (message, tone) => {
+    const resultTextBox = resultBox ? resultBox.querySelector("[data-ai-assist-result-text]") : null;
+    const warningsBox = resultBox ? resultBox.querySelector("[data-ai-assist-warnings]") : null;
+    const warningsList = resultBox ? resultBox.querySelector("[data-ai-assist-warning-list]") : null;
+    const citationsBox = resultBox ? resultBox.querySelector("[data-ai-assist-citations]") : null;
+    const citationsList = resultBox ? resultBox.querySelector("[data-ai-assist-citation-list]") : null;
+    const copyButton = resultBox ? resultBox.querySelector("[data-ai-assist-copy]") : null;
+    let copyText = "";
+
+    const clearList = (list) => {
+      if (!list) return;
+      while (list.firstChild) list.firstChild.remove();
+    };
+    const addListItem = (list, text) => {
+      if (!list || !text) return;
+      const item = document.createElement("li");
+      item.textContent = text;
+      list.appendChild(item);
+    };
+    const citationText = (citation) => {
+      if (!citation || typeof citation !== "object") return "";
+      const parts = [
+        citation.label,
+        citation.locator,
+        citation.excerpt
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      return parts.join(" - ");
+    };
+    const resetResultDetails = () => {
+      if (resultTextBox) resultTextBox.textContent = "";
+      clearList(warningsList);
+      clearList(citationsList);
+      if (warningsBox) warningsBox.hidden = true;
+      if (citationsBox) citationsBox.hidden = true;
+      if (copyButton) {
+        copyButton.hidden = true;
+        copyButton.textContent = copyButton.getAttribute("data-copy-label") || "Copy";
+      }
+      copyText = "";
+    };
+    const copyToClipboard = async (value) => {
+      if (!value) return;
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    };
+    const setMessage = (message, tone) => {
       if (!resultBox) return;
       resultBox.hidden = false;
       resultBox.className = `inline-alert ${tone || "info"}`;
-      resultBox.textContent = message;
+      resetResultDetails();
+      if (resultTextBox) {
+        resultTextBox.textContent = message;
+      } else {
+        resultBox.textContent = message;
+      }
     };
     const resultText = (result) => {
       if (!result) return "";
       return result.summary || result.answer || result.draft || result.degradedReason || result.message || "";
     };
+    const renderResult = (result, fallback) => {
+      const text = resultText(result) || fallback || "AI assist request completed.";
+      if (!resultTextBox) {
+        setMessage(text, "success");
+        return;
+      }
+
+      resultBox.hidden = false;
+      resultBox.className = `inline-alert ${result && result.outcome === "success" ? "success" : "warning"}`;
+      resetResultDetails();
+      resultTextBox.textContent = text;
+
+      const warnings = Array.isArray(result?.warnings)
+        ? result.warnings.map((warning) => String(warning || "").trim()).filter(Boolean)
+        : [];
+      warnings.forEach((warning) => addListItem(warningsList, warning));
+      if (warningsBox) warningsBox.hidden = warnings.length < 1;
+
+      const citations = Array.isArray(result?.citations)
+        ? result.citations.map(citationText).filter(Boolean)
+        : [];
+      citations.forEach((citation) => addListItem(citationsList, citation));
+      if (citationsBox) citationsBox.hidden = citations.length < 1;
+
+      const successfulText = result?.outcome === "success" ? (result.summary || result.answer || result.draft || "") : "";
+      copyText = String(successfulText || "").trim();
+      if (copyButton) copyButton.hidden = copyText.length < 1;
+    };
+    if (copyButton) {
+      copyButton.addEventListener("click", async () => {
+        await copyToClipboard(copyText);
+        copyButton.textContent = copyButton.getAttribute("data-copied-label") || "Copied";
+      });
+    }
 
     panel.querySelectorAll("[data-ai-assist-form]").forEach((form) => {
       form.addEventListener("submit", async (event) => {
@@ -82,7 +176,7 @@
 
         const submit = form.querySelector("button[type='submit']");
         if (submit) submit.disabled = true;
-        setResult("Working...", "info");
+        setMessage("Working...", "info");
         try {
           const formData = new FormData(form);
           const payload = {};
@@ -95,10 +189,9 @@
             method: "POST",
             json: payload
           });
-          const text = resultText(response.result);
-          setResult(text || response.result?.message || "AI assist request completed.", "success");
+          renderResult(response.result, response.result?.message);
         } catch (error) {
-          setResult(error.message || "AI assist request failed.", "warning");
+          setMessage(error.message || "AI assist request failed.", "warning");
         } finally {
           if (submit) submit.disabled = false;
         }

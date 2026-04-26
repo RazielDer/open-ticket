@@ -826,8 +826,10 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
       summary: null,
       answer: "FAQ answer text",
       draft: null,
-      citations: [],
-      warnings: [],
+      citations: [
+        { kind: "knowledge-source", sourceId: "faq", label: "FAQ: Rules", locator: "knowledge/faq.json#rules", excerpt: "Source excerpt" }
+      ],
+      warnings: ["Knowledge source was partially clipped."],
       degradedReason: null,
       ticketId: "ticket-1"
     }
@@ -839,7 +841,18 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
   const detailHtml = await detailResponse.text()
   const csrfToken = csrfFrom(detailHtml)
   assert.match(detailHtml, /AI assist/)
+  assert.match(detailHtml, /data-ai-assist-result-text/)
+  assert.match(detailHtml, /data-ai-assist-citations/)
+  assert.match(detailHtml, /data-ai-assist-warnings/)
+  assert.match(detailHtml, /data-ai-assist-copy/)
   assert.doesNotMatch(detailHtml, /send to ticket/i)
+
+  const clientSource = fs.readFileSync(path.join(pluginRoot, "public", "js", "control-center.js"), "utf8")
+  assert.match(clientSource, /data-ai-assist-citation-list/)
+  assert.match(clientSource, /data-ai-assist-warning-list/)
+  assert.match(clientSource, /data-ai-assist-copy/)
+  assert.match(clientSource, /navigator\.clipboard/)
+  assert.doesNotMatch(clientSource, /send to ticket/i)
 
   const missingCsrf = await fetch(`${runtime.baseUrl}/dash/api/tickets/ticket-1/ai/answer-faq`, {
     method: "POST",
@@ -866,6 +879,10 @@ test("ticket AI assist API requires csrf, stays actor-private, and audits metada
   assert.equal(response.status, 200)
   assert.equal(body.success, true)
   assert.equal(body.result.answer, "FAQ answer text")
+  assert.deepEqual(body.result.citations, [
+    { kind: "knowledge-source", sourceId: "faq", label: "FAQ: Rules", locator: "knowledge/faq.json#rules", excerpt: "Source excerpt" }
+  ])
+  assert.deepEqual(body.result.warnings, ["Knowledge source was partially clipped."])
   assert.equal(runtime.aiAssistRequests.length, 1)
   assert.deepEqual(runtime.aiAssistRequests[0], {
     ticketId: "ticket-1",

@@ -96,7 +96,7 @@ test("reference provider registers but fails closed without host env", async () 
       managedFormAnswers: []
     },
     knowledge: [],
-    request: { action: "summarize", prompt: null, instructions: null, source: "test" }
+    request: { action: "summarize", prompt: null, instructions: null, source: "dashboard" }
   })
 
   assert.equal(result?.outcome, "unavailable")

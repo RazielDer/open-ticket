@@ -77,7 +77,25 @@
               <button class="btn secondary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("suggestReply") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistSuggestReply") %></button>
             </form>
           </div>
-          <div class="inline-alert" data-ai-assist-result hidden></div>
+          <div class="inline-alert" data-ai-assist-result hidden>
+            <div data-ai-assist-result-text></div>
+            <div data-ai-assist-warnings hidden>
+              <strong><%= t("tickets.detail.aiAssistWarnings") %></strong>
+              <ul class="entry-stack" data-ai-assist-warning-list></ul>
+            </div>
+            <div data-ai-assist-citations hidden>
+              <strong><%= t("tickets.detail.aiAssistCitations") %></strong>
+              <ul class="entry-stack" data-ai-assist-citation-list></ul>
+            </div>
+            <button
+              class="btn subtle"
+              type="button"
+              data-ai-assist-copy
+              data-copy-label="<%= t('tickets.detail.aiAssistCopy') %>"
+              data-copied-label="<%= t('tickets.detail.aiAssistCopied') %>"
+              hidden
+            ><%= t("tickets.detail.aiAssistCopy") %></button>
+          </div>
         </section>
       <% } %>
 

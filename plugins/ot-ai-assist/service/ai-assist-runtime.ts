@@ -12,6 +12,7 @@ import {
   type TicketAiAssistOutcome,
   type TicketAiAssistParticipantContext,
   type TicketAiAssistProfile,
+  type TicketAiAssistRequestSource,
   type TicketAiAssistRequestContext,
   type TicketAiAssistTicketMetadataContext,
   type TicketPlatformAiAssistCapability,
@@ -19,7 +20,7 @@ import {
   resolveTicketAiAssistProfileState
 } from "../../../src/core/api/openticket/ticket-platform.js"
 
-export type AiAssistRequestSource = "dashboard" | "slash" | string
+export type AiAssistRequestSource = TicketAiAssistRequestSource
 
 export interface AiAssistSummary {
   profileId: string
