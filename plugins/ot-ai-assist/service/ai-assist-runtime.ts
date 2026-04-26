@@ -76,6 +76,7 @@ const MAX_FAQ_EXCERPT_CHARS = 1200
 const MAX_MARKDOWN_EXCERPT_CHARS = 2000
 const MAX_CITATIONS = 6
 const PROVIDER_ERROR_REASON = "AI assist provider returned an error."
+const LOW_CONFIDENCE_REASON = "AI assist returned low confidence."
 const KNOWLEDGE_SOURCE_UNAVAILABLE_REASON = "One or more configured knowledge sources could not be read."
 const FAQ_QUESTION_REQUIRED_REASON = "FAQ assist requires a question."
 const FAQ_KNOWLEDGE_REQUIRED_REASON = "FAQ assist requires at least one usable enabled local knowledge source."
@@ -246,6 +247,12 @@ function sanitizedErrorResult(error: unknown): { outcome: TicketAiAssistOutcome;
     return { outcome: error.outcome, reason: error.message }
   }
   return { outcome: "provider-error", reason: PROVIDER_ERROR_REASON }
+}
+
+function sanitizedHookReason(outcome: TicketAiAssistOutcome) {
+  if (outcome === "low-confidence") return LOW_CONFIDENCE_REASON
+  if (outcome === "unavailable") return DEFAULT_UNAVAILABLE_REASON
+  return null
 }
 
 function actionPrompt(action: TicketPlatformAiAssistCapability, value: unknown) {
@@ -640,7 +647,7 @@ function normalizeCitation(value: any): TicketAiAssistCitation | null {
 
 function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: TicketAiAssistHookResult): AiAssistRunResult {
   const confidence = normalizeConfidence(result?.confidence)
-  let degradedReason = normalizeString(result?.degradedReason) || null
+  let degradedReason: string | null = null
   let citations = Array.isArray(result?.citations)
     ? result.citations.map(normalizeCitation).filter(Boolean).slice(0, MAX_CITATIONS) as TicketAiAssistCitation[]
     : []
@@ -657,8 +664,8 @@ function normalizeHookResult(action: TicketPlatformAiAssistCapability, result: T
     outcome = "unavailable"
   } else if (!actionOutput) {
     outcome = "unavailable"
-    degradedReason ||= DEFAULT_UNAVAILABLE_REASON
   }
+  degradedReason = sanitizedHookReason(outcome)
   if (outcome !== "success") {
     summary = null
     answer = null

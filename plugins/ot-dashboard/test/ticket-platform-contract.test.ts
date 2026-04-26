@@ -328,6 +328,8 @@ test("AI assist managed-config secret predicates include bearer keys", () => {
   const checkerLoaderSource = fs.readFileSync(path.resolve(root, "src/data/framework/checkerLoader.ts"), "utf8")
 
   assert.match(checkerLoaderSource, /secret\|token\|password\|api\[_-\]\?key\|authorization\|credential\|bearer/)
+  assert.match(checkerLoaderSource, /function findSecretShapedSettingKey/)
+  assert.match(checkerLoaderSource, /findSecretShapedSettingKey\(nestedValue,nextPath\)/)
 })
 
 test("AI assist catalogs keep dev-config reload fallback and FAQ content validation", () => {

@@ -77,6 +77,14 @@ function normalizeAiAssistRouteInput(
 
 function sanitizeAiAssistReason(outcome: string | null | undefined, reason: string | null | undefined) {
   if (outcome === "provider-error") return "AI assist provider returned an error."
+  if (outcome === "low-confidence") return "AI assist returned low confidence."
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null
+}
+
+function sanitizeAiAssistAuditReason(outcome: string | null | undefined, reason: string | null | undefined) {
+  if (outcome === "provider-error") return "AI assist provider returned an error."
+  if (outcome === "low-confidence") return "AI assist returned low confidence."
+  if (outcome === "success") return null
   return typeof reason === "string" && reason.trim() ? reason.trim() : null
 }
 
@@ -125,13 +133,14 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       instructions: assistInput.instructions
     })
     const safeReason = sanitizeAiAssistReason(result.outcome, result.degradedReason)
+    const auditReason = sanitizeAiAssistAuditReason(result.outcome, result.degradedReason)
     const responseResult = { ...result, degradedReason: safeReason }
 
     void recordAdminAuditEvent(context, req, {
       eventType: "ai-assist-request",
       target: ticketId,
       outcome: result.outcome,
-      reason: safeReason,
+      reason: auditReason,
       details: {
         action,
         profileId: result.profileId,

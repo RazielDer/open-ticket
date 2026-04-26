@@ -607,6 +607,27 @@ export const defaultIntegrationProfilesStructure = new api.ODCheckerArrayStructu
     },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned profile settings."})},
 ],cliDisplayName:"Integration Profile",cliDisplayDescription:"A generic integration provider profile that ticket options can bind to."})})
 
+const AI_ASSIST_SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
+
+function findSecretShapedSettingKey(value: unknown, path: string[] = []): string | null {
+    if (value == null || typeof value != "object") return null
+    if (Array.isArray(value)){
+        for (let index = 0; index < value.length; index++){
+            const found = findSecretShapedSettingKey(value[index],[...path,String(index)])
+            if (found) return found
+        }
+        return null
+    }
+
+    for (const [key,nestedValue] of Object.entries(value as Record<string,unknown>)){
+        const nextPath = [...path,key]
+        if (AI_ASSIST_SECRET_SHAPED_KEY_REGEX.test(key)) return nextPath.join(".")
+        const found = findSecretShapedSettingKey(nestedValue,nextPath)
+        if (found) return found
+    }
+    return null
+}
+
 export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure("opendiscord:ai-assist-profiles",{allowedTypes:["object"],cliDisplayPropertyName:"AI assist profile",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","providerId"],children:[
     {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:ai-assist-profile-id","openticket","ai-assist-profile-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this AI assist profile."})},
     {key:"providerId",checker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-provider-id",{minLength:1,maxLength:128,cliDisplayName:"Provider ID",cliDisplayDescription:"The registered Open Ticket AI assist provider id."})},
@@ -626,7 +647,7 @@ export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure(
             checker.createMessage("opendiscord:ai-assist-profile-settings-object","error","AI assist profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
             return false
         }
-        const secretKey = Object.keys(value).find((key) => /secret|token|password|api[_-]?key|authorization|credential|bearer/i.test(key))
+        const secretKey = findSecretShapedSettingKey(value)
         if (secretKey){
             checker.createMessage("opendiscord:ai-assist-profile-settings-secret","error","AI assist profile settings must not contain secret-shaped keys. Use host environment variables for provider secrets.",lt,null,[secretKey],locationId,locationDocs)
             return false

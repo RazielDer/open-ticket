@@ -20,6 +20,27 @@ function trim(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
+const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
+
+function findSecretShapedSettingKey(value: unknown, path: string[] = []): string | null {
+  if (value == null || typeof value !== "object") return null
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findSecretShapedSettingKey(value[index], [...path, String(index)])
+      if (found) return found
+    }
+    return null
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    const nextPath = [...path, key]
+    if (SECRET_SHAPED_KEY_REGEX.test(key)) return nextPath.join(".")
+    const found = findSecretShapedSettingKey(nestedValue, nextPath)
+    if (found) return found
+  }
+  return null
+}
+
 export function isReferenceAiAssistConfigured(env: ReferenceProviderEnv = process.env) {
   return trim(env.OT_AI_ASSIST_REFERENCE_API_KEY).length > 0 && trim(env.OT_AI_ASSIST_REFERENCE_MODEL).length > 0
 }
@@ -44,7 +65,7 @@ function validateProfileSettings(input: TicketAiAssistValidateProfileSettingsInp
   void input.profile
   void input.referencedByOptionIds
   void input.knowledgeSources
-  const secretKey = Object.keys(input.settings || {}).find((key) => /secret|token|password|api[_-]?key|authorization|credential|bearer/i.test(key))
+  const secretKey = findSecretShapedSettingKey(input.settings || {})
   if (secretKey) {
     throw new Error(`AI assist profile settings must not contain secret-shaped key "${secretKey}". Use host environment variables for provider secrets.`)
   }

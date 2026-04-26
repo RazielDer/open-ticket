@@ -144,9 +144,9 @@ test("reference provider rejects bearer-shaped profile settings", () => {
         includeManagedFormSnapshot: true,
         includeBotMessages: false
       },
-      settings: { bearer: "must-not-be-here" }
+      settings: { headers: [{ bearer: "must-not-be-here" }] }
     },
-    settings: { bearer: "must-not-be-here" },
+    settings: { headers: [{ bearer: "must-not-be-here" }] },
     referencedByOptionIds: [],
     knowledgeSources: []
   }), /secret-shaped key/i)
@@ -264,7 +264,7 @@ test("AI assist service strips low-confidence output text and citations", async 
             confidence: "low",
             draft: "do not render this draft",
             citations: [{ kind: "knowledge-source", sourceId: "faq", label: "FAQ", locator: "knowledge/faq.json#entry", excerpt: "do not render" }],
-            degradedReason: "Low confidence."
+            degradedReason: "raw provider response contained secret prompt text"
           }
         }
       }
@@ -283,7 +283,8 @@ test("AI assist service strips low-confidence output text and citations", async 
   assert.equal(result.outcome, "low-confidence")
   assert.equal(result.draft, null)
   assert.deepEqual(result.citations, [])
-  assert.equal(result.degradedReason, "Low confidence.")
+  assert.equal(result.degradedReason, "AI assist returned low confidence.")
+  assert.doesNotMatch(JSON.stringify(result), /secret prompt text|raw provider response/)
 })
 
 test("AI assist service pages live channel messages before filtering and truncating context", async () => {
@@ -593,6 +594,55 @@ test("AI assist service sanitizes provider exceptions before returning results",
 
   assert.equal(result.outcome, "provider-error")
   assert.equal(result.degradedReason, "AI assist provider returned an error.")
+  assert.doesNotMatch(JSON.stringify(result), /secret prompt text|raw provider response/)
+})
+
+test("AI assist service strips provider degraded reasons from successful hook results", async () => {
+  const service = new OTAiAssistService({
+    projectRoot: process.cwd(),
+    getConfigData(id) {
+      if (id === "opendiscord:ai-assist-profiles") return [
+        {
+          id: "profile-1",
+          providerId: "probe",
+          label: "Probe",
+          enabled: true,
+          knowledgeSourceIds: [],
+          context: { maxRecentMessages: 40 },
+          settings: {}
+        }
+      ]
+      if (id === "opendiscord:knowledge-sources") return []
+      return null
+    },
+    getProvider() {
+      return {
+        id: "probe",
+        capabilities: ["summarize"],
+        summarize() {
+          return {
+            confidence: "high",
+            summary: "safe summary",
+            citations: [],
+            degradedReason: "raw provider response contained secret prompt text"
+          }
+        }
+      }
+    }
+  })
+
+  const result = await service.runTicketAiAssist({
+    ticket: ticket("profile-1"),
+    channel: channel(),
+    guild: {},
+    actorUser: { id: "staff-1" },
+    action: "summarize",
+    source: "dashboard"
+  })
+
+  assert.equal(result.outcome, "success")
+  assert.equal(result.summary, "safe summary")
+  assert.equal(result.degradedReason, null)
   assert.doesNotMatch(JSON.stringify(result), /secret prompt text|raw provider response/)
 })
 

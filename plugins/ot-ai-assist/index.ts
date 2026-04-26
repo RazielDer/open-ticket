@@ -130,6 +130,12 @@ function resultText(result: Awaited<ReturnType<OTAiAssistService["runTicketAiAss
   return result.summary || result.answer || result.draft || result.degradedReason || "AI assist request completed."
 }
 
+function sanitizeAuditReason(outcome: string, reason: string | null | undefined) {
+  if (outcome === "provider-error") return "AI assist provider returned an error."
+  if (outcome === "low-confidence") return "AI assist returned low confidence."
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null
+}
+
 async function recordAiAssistAudit(input: {
   ticketId: string | null
   actorUser: discord.User
@@ -171,7 +177,7 @@ async function recordAiAssistAudit(input: {
         },
         target: input.ticketId || "unknown-ticket",
         outcome: input.outcome,
-        reason: input.reason ?? null,
+        reason: sanitizeAuditReason(input.outcome, input.reason),
         details
       })
     : false

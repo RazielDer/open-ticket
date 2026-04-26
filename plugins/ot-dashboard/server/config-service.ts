@@ -756,8 +756,27 @@ function normalizeIntegrationProfile(profile: any) {
 
 const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
 
+function findSecretShapedSettingKey(value: unknown, path: string[] = []): string | null {
+  if (value == null || typeof value !== "object") return null
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findSecretShapedSettingKey(value[index], [...path, String(index)])
+      if (found) return found
+    }
+    return null
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    const nextPath = [...path, key]
+    if (SECRET_SHAPED_KEY_REGEX.test(key)) return nextPath.join(".")
+    const found = findSecretShapedSettingKey(nestedValue, nextPath)
+    if (found) return found
+  }
+  return null
+}
+
 function assertNoSecretShapedSettings(settings: Record<string, unknown>, label: string) {
-  const secretKey = Object.keys(settings).find((key) => SECRET_SHAPED_KEY_REGEX.test(key))
+  const secretKey = findSecretShapedSettingKey(settings)
   if (secretKey) {
     throw new Error(`${label} settings must not contain secret-shaped key "${secretKey}". Use host environment variables for provider secrets.`)
   }
