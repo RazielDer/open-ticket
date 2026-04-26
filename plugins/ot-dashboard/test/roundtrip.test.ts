@@ -460,7 +460,12 @@ test("raw options saves strip integration and AI assist profile bindings from no
         type: "ticket",
         button: { emoji: "", label: "Raw Ticket", color: "green" },
         integrationProfileId: "profile-1",
-        aiAssistProfileId: "assist-1"
+        aiAssistProfileId: "assist-1",
+        channel: {
+          category: "primary-category",
+          backupCategory: "legacy-backup-category",
+          overflowCategories: [" ", " overflow-a ", "overflow-a", "overflow-b", "", "overflow-b"]
+        }
       },
       {
         id: "role-raw",
@@ -486,6 +491,8 @@ test("raw options saves strip integration and AI assist profile bindings from no
 
     assert.equal(saved[0].integrationProfileId, "profile-1")
     assert.equal(saved[0].aiAssistProfileId, "assist-1")
+    assert.deepEqual(saved[0].channel.overflowCategories, ["overflow-a", "overflow-b"])
+    assert.equal(saved[0].channel.backupCategory, "overflow-a")
     assert.equal("integrationProfileId" in saved[1], false)
     assert.equal("aiAssistProfileId" in saved[1], false)
     assert.equal("integrationProfileId" in saved[2], false)
@@ -494,6 +501,8 @@ test("raw options saves strip integration and AI assist profile bindings from no
     const options = service.readManagedJson<any[]>("options")
     assert.equal(options[0].integrationProfileId, "profile-1")
     assert.equal(options[0].aiAssistProfileId, "assist-1")
+    assert.deepEqual(options[0].channel.overflowCategories, ["overflow-a", "overflow-b"])
+    assert.equal(options[0].channel.backupCategory, "overflow-a")
     assert.equal("integrationProfileId" in options[1], false)
     assert.equal("aiAssistProfileId" in options[1], false)
     assert.equal("integrationProfileId" in options[2], false)

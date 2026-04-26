@@ -368,11 +368,14 @@ function inspectGeneralGlobalAdminsValue(input: unknown): DashboardGeneralGlobal
 }
 
 function parseStringArray(input: unknown): string[] {
-  if (Array.isArray(input)) return input.map((item) => String(item))
+  const normalize = (items: unknown[]) => items
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+  if (Array.isArray(input)) return normalize(input)
   if (typeof input === "string" && input.trim().length > 0) {
     try {
       const parsed = JSON.parse(input)
-      if (Array.isArray(parsed)) return parsed.map((item) => String(item))
+      if (Array.isArray(parsed)) return normalize(parsed)
     } catch {
       return input
         .split("\n")
