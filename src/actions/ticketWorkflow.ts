@@ -271,6 +271,35 @@ async function replyCloseRequestApprovalFailure(instance: api.ODButtonResponderI
     await instance.reply(await opendiscord.builders.messages.getSafe("opendiscord:error").build("button",{guild,channel,user,error:failure.message,layout:"simple"}))
 }
 
+async function closeTicketAndAppendWorkflowTelemetry(input: {
+    eventType: "close_request_approved" | "awaiting_user_timeout_closed"
+    source: "close-request" | "awaiting-user-timeout"
+    guild: discord.Guild
+    channel: discord.GuildTextBasedChannel
+    user: discord.User
+    ticket: api.ODTicket
+    reason: string | null
+    sendMessage: boolean
+}) {
+    const previousSnapshot = snapshotTicketForTelemetry(input.ticket)
+    await opendiscord.actions.get("opendiscord:close-ticket").run(input.source,{
+        guild: input.guild,
+        channel: input.channel,
+        user: input.user,
+        ticket: input.ticket,
+        reason: input.reason,
+        sendMessage: input.sendMessage
+    })
+    if (!input.ticket.get("opendiscord:closed").value) return false
+    await appendTicketTelemetryLifecycleEvent({
+        eventType: input.eventType,
+        ticket: input.ticket,
+        actorUserId: input.user.id,
+        previousSnapshot
+    })
+    return true
+}
+
 export async function requestTicketClose(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
     const state = getTicketWorkflowState(ticket)
     const policy = getTicketWorkflowPolicy(ticket)
@@ -315,8 +344,16 @@ export async function approveTicketCloseRequest(guild: discord.Guild, channel: d
     if (!verification.ok) throw new api.ODSystemError(verification.message)
     const lock = await resolveTicketWorkflowLock(ticket,"approve-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
-    await appendTicketTelemetryLifecycleEvent({eventType:"close_request_approved",ticket,actorUserId:user.id,previousSnapshot:snapshotTicketForTelemetry(ticket)})
-    await opendiscord.actions.get("opendiscord:close-ticket").run("close-request",{guild,channel,user,ticket,reason,sendMessage:sendCloseMessage})
+    await closeTicketAndAppendWorkflowTelemetry({
+        eventType:"close_request_approved",
+        source:"close-request",
+        guild,
+        channel,
+        user,
+        ticket,
+        reason,
+        sendMessage:sendCloseMessage
+    })
 }
 
 export async function dismissTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -447,8 +484,9 @@ export async function runAwaitingUserWorkflowScan() {
         const elapsedMs = now - state.awaitingUserSince
         const autoCloseMs = policy.awaitingUser.autoCloseHours*60*60*1000
         if (policy.awaitingUser.autoCloseEnabled && elapsedMs >= autoCloseMs){
-            await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_timeout_closed",ticket,actorUserId:botUser.id,previousSnapshot:snapshotTicketForTelemetry(ticket)})
-            await opendiscord.actions.get("opendiscord:close-ticket").run("awaiting-user-timeout",{
+            const closedTicket = await closeTicketAndAppendWorkflowTelemetry({
+                eventType:"awaiting_user_timeout_closed",
+                source:"awaiting-user-timeout",
                 guild: channel.guild,
                 channel,
                 user: botUser,
@@ -456,6 +494,7 @@ export async function runAwaitingUserWorkflowScan() {
                 reason: "Awaiting user timeout",
                 sendMessage: true
             })
+            if (!closedTicket) continue
             closed++
             continue
         }

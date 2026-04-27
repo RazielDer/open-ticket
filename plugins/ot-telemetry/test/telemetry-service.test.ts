@@ -69,6 +69,15 @@ function service(database = new MemoryDatabase()) {
   }
 }
 
+function sourceSlice(source: string, startMarker: string, endMarker: string) {
+  const start = source.indexOf(startMarker)
+  const end = source.indexOf(endMarker, start)
+
+  assert.notEqual(start, -1)
+  assert.notEqual(end, -1)
+  return source.slice(start, end)
+}
+
 test("telemetry snapshots use the locked analytics-safe ticket shape", () => {
   const { service: telemetry } = service()
   const snapshot = telemetry.createTicketSnapshot(ticket())
@@ -235,4 +244,40 @@ test("telemetry plugin and workflow sources use the locked capture paths", () =>
   assert.match(workflowSource, /close_request_requested/)
   assert.match(workflowSource, /awaiting_user_timeout_closed/)
   assert.doesNotMatch(serviceSource, /opendiscord\.stats/)
+})
+
+test("close-derived workflow telemetry waits for successful close mutation", () => {
+  const workflowSource = fs.readFileSync(path.resolve(process.cwd(), "src", "actions", "ticketWorkflow.ts"), "utf8")
+  const closeTelemetryHelper = sourceSlice(
+    workflowSource,
+    "async function closeTicketAndAppendWorkflowTelemetry",
+    "export async function requestTicketClose"
+  )
+  const approvalFunction = sourceSlice(
+    workflowSource,
+    "export async function approveTicketCloseRequest",
+    "export async function dismissTicketCloseRequest"
+  )
+  const workflowScanFunction = sourceSlice(
+    workflowSource,
+    "export async function runAwaitingUserWorkflowScan",
+    "export const registerActions"
+  )
+
+  const previousSnapshotIndex = closeTelemetryHelper.indexOf("const previousSnapshot = snapshotTicketForTelemetry(input.ticket)")
+  const closeActionIndex = closeTelemetryHelper.indexOf('opendiscord.actions.get("opendiscord:close-ticket").run')
+  const closedGuardIndex = closeTelemetryHelper.indexOf('if (!input.ticket.get("opendiscord:closed").value) return false')
+  const appendIndex = closeTelemetryHelper.indexOf("appendTicketTelemetryLifecycleEvent")
+
+  assert.ok(previousSnapshotIndex >= 0)
+  assert.ok(previousSnapshotIndex < closeActionIndex)
+  assert.ok(closeActionIndex < closedGuardIndex)
+  assert.ok(closedGuardIndex < appendIndex)
+  assert.doesNotMatch(closeTelemetryHelper.slice(0, closeActionIndex), /appendTicketTelemetryLifecycleEvent/)
+
+  assert.match(approvalFunction, /closeTicketAndAppendWorkflowTelemetry\({[\s\S]*eventType:"close_request_approved"/)
+  assert.doesNotMatch(approvalFunction, /appendTicketTelemetryLifecycleEvent/)
+
+  assert.match(workflowScanFunction, /const closedTicket = await closeTicketAndAppendWorkflowTelemetry\({[\s\S]*eventType:"awaiting_user_timeout_closed"/)
+  assert.ok(workflowScanFunction.indexOf("if (!closedTicket) continue") < workflowScanFunction.indexOf("closed++"))
 })
