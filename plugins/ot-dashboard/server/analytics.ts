@@ -703,10 +703,12 @@ function ratingRows(
   const values = new Map<string, { label: string; samples: number[] }>()
   for (const record of records) {
     for (const question of record.questionSummaries) {
-      if (question.type !== "rating" || question.ratingValue == null) continue
+      if (question.type !== "rating") continue
       const questionKey = `${question.position}:${question.label}`
       const bucket = values.get(questionKey) || { label: question.label, samples: [] }
-      bucket.samples.push(question.ratingValue)
+      if (question.ratingValue != null) {
+        bucket.samples.push(question.ratingValue)
+      }
       values.set(questionKey, bucket)
     }
   }

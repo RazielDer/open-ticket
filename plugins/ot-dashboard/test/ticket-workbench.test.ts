@@ -430,6 +430,7 @@ async function startServer(options: {
   telemetrySignals?: Record<string, DashboardTicketTelemetrySignals>
   lifecycleTelemetry?: DashboardTicketLifecycleTelemetryRecord[]
   feedbackTelemetry?: DashboardTicketFeedbackTelemetryRecord[]
+  telemetrySignalCalls?: string[][]
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
@@ -576,6 +577,7 @@ async function startServer(options: {
         }
       },
       async getTicketTelemetrySignals(ticketIds: string[]) {
+        options.telemetrySignalCalls?.push([...ticketIds])
         return Object.fromEntries(ticketIds.map((ticketId) => [
           ticketId,
           options.telemetrySignals?.[ticketId] || telemetrySignals()
@@ -791,6 +793,48 @@ test("ticket list exposes telemetry filters only when telemetry reads are availa
   assert.match(detailHtml, /Latest feedback/)
   assert.match(detailHtml, /Feedback complete/)
   assert.match(detailHtml, /Experience/)
+})
+
+test("ticket list batches badge telemetry for the visible page", async (t) => {
+  const telemetrySignalCalls: string[][] = []
+  const tickets = Array.from({ length: 11 }, (_item, index) => ticket({
+    id: `ticket-${index + 1}`,
+    channelName: index === 0 ? "oldest-channel" : index === 10 ? "newest-channel" : `channel-${index + 1}`,
+    openedOn: 1710000000000 + index * 1000
+  }))
+  const runtime = await startServer({
+    tickets,
+    telemetrySignals: {
+      "ticket-11": telemetrySignals({
+        latestFeedbackStatus: "completed",
+        hasEverReopened: true,
+        reopenCount: 1
+      })
+    },
+    telemetrySignalCalls
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10`, { headers: { cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.deepEqual(telemetrySignalCalls, [[
+    "ticket-11",
+    "ticket-10",
+    "ticket-9",
+    "ticket-8",
+    "ticket-7",
+    "ticket-6",
+    "ticket-5",
+    "ticket-4",
+    "ticket-3",
+    "ticket-2"
+  ]])
+  assert.match(html, /newest-channel/)
+  assert.doesNotMatch(html, /oldest-channel/)
+  assert.match(html, /Feedback complete/)
+  assert.match(html, /Reopened x1/)
 })
 
 test("ticket telemetry filters are disabled when telemetry reads are unavailable", async (t) => {
@@ -1775,6 +1819,56 @@ test("analytics model reports feedback outcomes, rating summaries, and reopen te
   assert.equal(model.reopenRateByTeam.find((row) => row.key === "triage")?.closedTickets, 2)
   assert.equal(model.reopenRateByTeam.find((row) => row.key === "triage")?.reopenRate.value, "50%")
   assert.equal(model.reopenedBacklogByTeam.find((row) => row.key === "triage")?.count, 1)
+})
+
+test("analytics model keeps zero-response rating buckets visible as unavailable", async (t) => {
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      {
+        sessionId: "feedback-zero-rating",
+        ticketId: "ticket-1",
+        triggerMode: "close",
+        triggeredAt: Date.parse("2026-04-20T09:01:00.000Z"),
+        completedAt: Date.parse("2026-04-20T09:03:00.000Z"),
+        status: "completed",
+        respondentUserId: "creator-1",
+        closeCountAtTrigger: 1,
+        snapshot: telemetrySnapshot(),
+        questionSummaries: [
+          { position: 1, type: "rating", label: "Experience", answered: false, ratingValue: null, choiceIndex: null, choiceLabel: null },
+          { position: 2, type: "choice", label: "Outcome", answered: true, ratingValue: null, choiceIndex: 0, choiceLabel: "Good" }
+        ]
+      }
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    transcriptService: {
+      async listTicketAnalyticsHistory() {
+        return {
+          total: 0,
+          warnings: [],
+          nextCursor: null,
+          truncated: false,
+          items: []
+        }
+      }
+    }
+  })
+
+  const ratingRow = model.ratingQuestions.find((row) => row.questionKey === "1:Experience")
+  assert.notEqual(ratingRow, undefined)
+  assert.equal(ratingRow?.responses, 0)
+  assert.equal(ratingRow?.averageRating, runtime.context.i18n.t("common.unavailable"))
+  assert.equal(ratingRow?.medianRating, runtime.context.i18n.t("common.unavailable"))
+  assert.equal(ratingRow?.lowSample, false)
+  assert.equal(model.ratingQuestions.find((row) => row.questionKey === "2:Outcome"), undefined)
 })
 
 test("analytics model normalizes UTC windows, computes SLA metrics, groups backlog, and dedupes live tickets over history", async (t) => {

@@ -75,6 +75,7 @@ import {
   sanitizeTicketWorkbenchReturnTo,
   translateTicketWorkbenchMessage
 } from "../ticket-workbench"
+import type { DashboardTicketTelemetrySignals } from "../ticket-workbench-types"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
   const access = res.locals.dashboardAccess as { capabilities?: string[] } | undefined
@@ -1033,14 +1034,40 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
       const tickets = readsSupported ? runtimeBridge.listTickets() : []
       let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
-      let telemetrySignals = {}
+      let telemetrySignals: Record<string, DashboardTicketTelemetrySignals> = {}
+      let telemetryFilterSignals: Record<string, DashboardTicketTelemetrySignals> = {}
       let telemetryWarningMessage = ""
 
       if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
         try {
-          telemetrySignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
+          const telemetryFiltersActive = request.feedback !== "all" || request.reopened !== "all"
+          if (telemetryFiltersActive) {
+            telemetryFilterSignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
+          }
+          const preview = buildTicketWorkbenchListModel({
+            basePath,
+            currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
+            request,
+            tickets,
+            configService,
+            readsSupported,
+            writesSupported,
+            telemetrySupported,
+            telemetrySignals: telemetryFilterSignals,
+            telemetryFilterSignals,
+            warningMessage: runtimeAvailable
+              ? ""
+              : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+            telemetryWarningMessage
+          })
+          const visibleTicketIds = preview.items.map((item) => item.id)
+          telemetrySignals = visibleTicketIds.length > 0
+            ? await runtimeBridge.getTicketTelemetrySignals(visibleTicketIds)
+            : {}
         } catch {
           telemetrySupported = false
+          telemetryFilterSignals = {}
+          telemetrySignals = {}
           telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
         }
       } else if (readsSupported) {
@@ -1057,6 +1084,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         writesSupported,
         telemetrySupported,
         telemetrySignals,
+        telemetryFilterSignals,
         warningMessage: runtimeAvailable
           ? ""
           : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",

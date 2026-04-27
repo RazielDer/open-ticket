@@ -493,6 +493,7 @@ export function buildTicketWorkbenchListModel(input: {
   readsSupported: boolean
   telemetrySupported?: boolean
   telemetrySignals?: Record<string, DashboardTicketTelemetrySignals>
+  telemetryFilterSignals?: Record<string, DashboardTicketTelemetrySignals>
   warningMessage?: string
   telemetryWarningMessage?: string
   writesSupported?: boolean
@@ -507,7 +508,8 @@ export function buildTicketWorkbenchListModel(input: {
     transportMode: normalizeTransport(ticket.transportMode) || null
   }))
   const telemetrySignals = input.telemetrySignals || {}
-  const filtered = sortTickets(applyListFilters(normalizedTickets, effectiveRequest, lookups, telemetrySignals, telemetrySupported), effectiveRequest.sort)
+  const telemetryFilterSignals = input.telemetryFilterSignals || telemetrySignals
+  const filtered = sortTickets(applyListFilters(normalizedTickets, effectiveRequest, lookups, telemetryFilterSignals, telemetrySupported), effectiveRequest.sort)
   const totalPages = Math.max(1, Math.ceil(filtered.length / effectiveRequest.limit))
   const page = Math.min(effectiveRequest.page, totalPages)
   const startIndex = (page - 1) * effectiveRequest.limit
