@@ -1,4 +1,107 @@
 export type DashboardTicketTransportMode = "channel_text" | "private_thread"
+export type DashboardTicketFeedbackStatus = "completed" | "ignored" | "delivery_failed" | "none"
+export type DashboardTicketFeedbackStoredStatus = Exclude<DashboardTicketFeedbackStatus, "none">
+
+export interface DashboardTicketTelemetrySnapshot {
+  creatorUserId: string | null
+  optionId: string | null
+  transportMode: DashboardTicketTransportMode | null
+  assignedTeamId: string | null
+  assignedStaffUserId: string | null
+  assignmentStrategy: string | null
+  integrationProfileId: string | null
+  aiAssistProfileId: string | null
+  closeRequestState: string | null
+  awaitingUserState: string | null
+  firstStaffResponseAt: number | null
+  resolvedAt: number | null
+  closed: boolean
+}
+
+export interface DashboardTicketLifecycleTelemetryRecord {
+  recordId: string
+  ticketId: string
+  eventType: string
+  occurredAt: number
+  actorUserId: string | null
+  snapshot: DashboardTicketTelemetrySnapshot
+  previousSnapshot: DashboardTicketTelemetrySnapshot | null
+}
+
+export interface DashboardTicketFeedbackQuestionSummary {
+  position: number
+  type: "text" | "rating" | "image" | "attachment" | "choice"
+  label: string
+  answered: boolean
+  ratingValue: number | null
+  choiceIndex: number | null
+  choiceLabel: string | null
+}
+
+export interface DashboardTicketFeedbackTelemetryRecord {
+  sessionId: string
+  ticketId: string
+  triggerMode: "close" | "delete" | "first-close-only"
+  triggeredAt: number
+  completedAt: number | null
+  status: DashboardTicketFeedbackStoredStatus
+  respondentUserId: string | null
+  closeCountAtTrigger: number
+  snapshot: DashboardTicketTelemetrySnapshot
+  questionSummaries: DashboardTicketFeedbackQuestionSummary[]
+}
+
+export interface DashboardTicketLifecycleTelemetryQuery {
+  since?: number
+  until?: number
+  teamId?: string | null
+  assigneeId?: string | null
+  transportMode?: DashboardTicketTransportMode | null
+  eventTypes?: string[]
+  cursor?: string | null
+  limit?: number
+}
+
+export interface DashboardTicketFeedbackTelemetryQuery {
+  since?: number
+  until?: number
+  teamId?: string | null
+  assigneeId?: string | null
+  transportMode?: DashboardTicketTransportMode | null
+  statuses?: DashboardTicketFeedbackStoredStatus[]
+  cursor?: string | null
+  limit?: number
+}
+
+export interface DashboardTicketLifecycleTelemetryResult {
+  items: DashboardTicketLifecycleTelemetryRecord[]
+  nextCursor: string | null
+  truncated: boolean
+  warnings: string[]
+}
+
+export interface DashboardTicketFeedbackTelemetryResult {
+  items: DashboardTicketFeedbackTelemetryRecord[]
+  nextCursor: string | null
+  truncated: boolean
+  warnings: string[]
+}
+
+export interface DashboardTicketFeedbackRatingSignal {
+  questionKey: string
+  label: string
+  value: number | null
+}
+
+export interface DashboardTicketTelemetrySignals {
+  hasEverReopened: boolean
+  reopenCount: number
+  lastReopenedAt: number | null
+  latestFeedbackStatus: DashboardTicketFeedbackStatus
+  latestFeedbackTriggeredAt: number | null
+  latestFeedbackCompletedAt: number | null
+  latestRatings: DashboardTicketFeedbackRatingSignal[]
+}
 
 export const DASHBOARD_TICKET_ACTION_IDS = [
   "claim",
@@ -164,6 +267,7 @@ export interface DashboardTicketDetailRecord {
   providerLock: DashboardTicketProviderLock | null
   integration: DashboardTicketIntegrationSummary | null
   aiAssist: DashboardTicketAiAssistSummary | null
+  telemetry: DashboardTicketTelemetrySignals | null
 }
 
 export interface DashboardTicketActionRequest {

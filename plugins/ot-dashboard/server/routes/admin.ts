@@ -61,6 +61,7 @@ import {
   type DashboardTranscriptRetentionPreview
 } from "../transcript-service-bridge"
 import {
+  supportsTicketTelemetryReads,
   supportsTicketWorkbenchReads,
   supportsTicketWorkbenchWrites
 } from "../runtime-bridge"
@@ -1023,36 +1024,59 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
-  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), (req, res) => {
-    const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
-    const runtimeAvailable = snapshot.ticketSummary.available === true
-    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
-    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
-    const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
-    const model = buildTicketWorkbenchListModel({
-      basePath,
-      currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
-      request,
-      tickets: readsSupported ? runtimeBridge.listTickets() : [],
-      configService,
-      readsSupported,
-      writesSupported,
-      warningMessage: runtimeAvailable
-        ? ""
-        : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now."
-    })
+  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
+    try {
+      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+      const runtimeAvailable = snapshot.ticketSummary.available === true
+      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+      const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
+      const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
+      const tickets = readsSupported ? runtimeBridge.listTickets() : []
+      let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
+      let telemetrySignals = {}
+      let telemetryWarningMessage = ""
 
-    renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
-      pageTitle: `${i18n.t("tickets.title")} | ${brand.title}`,
-      pageEyebrow: i18n.t("tickets.page.eyebrow"),
-      pageHeadline: i18n.t("tickets.page.headline"),
-      pageSubtitle: i18n.t("tickets.page.subtitle"),
-      pageAlert: getAlert(req),
-      hidePageIntro: true,
-      pageClass: "page-ticket-workbench",
-      contentView: "sections/tickets",
-      ticketList: model
-    }))
+      if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
+        try {
+          telemetrySignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
+        } catch {
+          telemetrySupported = false
+          telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+        }
+      } else if (readsSupported) {
+        telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+      }
+
+      const model = buildTicketWorkbenchListModel({
+        basePath,
+        currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
+        request,
+        tickets,
+        configService,
+        readsSupported,
+        writesSupported,
+        telemetrySupported,
+        telemetrySignals,
+        warningMessage: runtimeAvailable
+          ? ""
+          : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+        telemetryWarningMessage
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
+        pageTitle: `${i18n.t("tickets.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("tickets.page.eyebrow"),
+        pageHeadline: i18n.t("tickets.page.headline"),
+        pageSubtitle: i18n.t("tickets.page.subtitle"),
+        pageAlert: getAlert(req),
+        hidePageIntro: true,
+        pageClass: "page-ticket-workbench",
+        contentView: "sections/tickets",
+        ticketList: model
+      }))
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.post(joinBasePath(basePath, "admin/tickets/bulk/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
@@ -1186,6 +1210,18 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       if (!detail && readsSupported) {
         const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === req.params.ticketId) || null
         detail = ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+      }
+
+      if (detail && !detail.telemetry && readsSupported && supportsTicketTelemetryReads(runtimeBridge) && runtimeBridge.getTicketTelemetrySignals) {
+        try {
+          const telemetrySignals = await runtimeBridge.getTicketTelemetrySignals([detail.ticket.id])
+          detail = {
+            ...detail,
+            telemetry: telemetrySignals[detail.ticket.id] || null
+          }
+        } catch {
+          detail = { ...detail, telemetry: null }
+        }
       }
 
       if (readsSupported && !detail) {

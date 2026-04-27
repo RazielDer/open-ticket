@@ -9,13 +9,17 @@ import type {
   DashboardTicketBulkActionId,
   DashboardTicketDetailRecord,
   DashboardTicketEscalationTargetChoice,
+  DashboardTicketFeedbackStatus,
   DashboardTicketProviderLock,
+  DashboardTicketTelemetrySignals,
   DashboardTicketTransportMode
 } from "./ticket-workbench-types"
 import { DASHBOARD_TICKET_ACTION_IDS } from "./ticket-workbench-types"
 
 export const TICKET_WORKBENCH_STATUS_FILTERS = ["all", "open", "closed", "claimed", "unclaimed"] as const
 export const TICKET_WORKBENCH_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
+export const TICKET_WORKBENCH_FEEDBACK_FILTERS = ["all", "completed", "ignored", "delivery_failed", "none"] as const
+export const TICKET_WORKBENCH_REOPENED_FILTERS = ["all", "ever", "never"] as const
 export const TICKET_WORKBENCH_SORTS = ["opened-desc", "opened-asc", "activity-desc", "activity-asc"] as const
 export const TICKET_WORKBENCH_LIMITS = [10, 25, 50, 100] as const
 
@@ -23,6 +27,8 @@ type TicketWorkbenchTranslator = DashboardI18n["t"]
 
 export type TicketWorkbenchStatusFilter = (typeof TICKET_WORKBENCH_STATUS_FILTERS)[number]
 export type TicketWorkbenchTransportFilter = (typeof TICKET_WORKBENCH_TRANSPORT_FILTERS)[number]
+export type TicketWorkbenchFeedbackFilter = (typeof TICKET_WORKBENCH_FEEDBACK_FILTERS)[number]
+export type TicketWorkbenchReopenedFilter = (typeof TICKET_WORKBENCH_REOPENED_FILTERS)[number]
 export type TicketWorkbenchSort = (typeof TICKET_WORKBENCH_SORTS)[number]
 
 interface ConfigRecord {
@@ -43,6 +49,8 @@ export interface TicketWorkbenchListRequest {
   q: string
   status: TicketWorkbenchStatusFilter
   transport: TicketWorkbenchTransportFilter
+  feedback: TicketWorkbenchFeedbackFilter
+  reopened: TicketWorkbenchReopenedFilter
   teamId: string
   assigneeId: string
   optionId: string
@@ -53,6 +61,8 @@ export interface TicketWorkbenchListRequest {
   page: number
   statusOptions: Array<{ value: TicketWorkbenchStatusFilter; label: string }>
   transportOptions: Array<{ value: TicketWorkbenchTransportFilter; label: string }>
+  feedbackOptions: Array<{ value: TicketWorkbenchFeedbackFilter; label: string }>
+  reopenedOptions: Array<{ value: TicketWorkbenchReopenedFilter; label: string }>
   sortOptions: Array<{ value: TicketWorkbenchSort; label: string }>
   limitOptions: number[]
 }
@@ -60,6 +70,7 @@ export interface TicketWorkbenchListRequest {
 export interface TicketWorkbenchListModel {
   available: boolean
   warningMessage: string
+  telemetryWarningMessage: string
   filterAction: string
   clearFiltersHref: string
   currentHref: string
@@ -95,6 +106,8 @@ export interface TicketWorkbenchListModel {
     transportLabel: string
     channelNameLabel: string
     statusBadge: { label: string; tone: DashboardTone }
+    feedbackBadge: { label: string; tone: DashboardTone } | null
+    reopenBadge: { label: string; tone: DashboardTone } | null
     openedLabel: string
     activityLabel: string
     detailHref: string
@@ -188,6 +201,8 @@ function buildPageHref(basePath: string, request: TicketWorkbenchListRequest, pa
     q: request.q,
     status: request.status === "all" ? "" : request.status,
     transport: request.transport === "all" ? "" : request.transport,
+    feedback: request.feedback === "all" ? "" : request.feedback,
+    reopened: request.reopened === "all" ? "" : request.reopened,
     teamId: request.teamId,
     assigneeId: request.assigneeId,
     optionId: request.optionId,
@@ -231,6 +246,8 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
     q: normalizeString(query.q),
     status: enumOrDefault(query.status, TICKET_WORKBENCH_STATUS_FILTERS, "all"),
     transport: enumOrDefault(query.transport, TICKET_WORKBENCH_TRANSPORT_FILTERS, "all"),
+    feedback: enumOrDefault(query.feedback, TICKET_WORKBENCH_FEEDBACK_FILTERS, "all"),
+    reopened: enumOrDefault(query.reopened, TICKET_WORKBENCH_REOPENED_FILTERS, "all"),
     teamId: normalizeString(query.teamId),
     assigneeId: normalizeString(query.assigneeId),
     optionId: normalizeString(query.optionId),
@@ -250,6 +267,18 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
       { value: "all", label: "All transports" },
       { value: "channel_text", label: "Channel tickets" },
       { value: "private_thread", label: "Private threads" }
+    ],
+    feedbackOptions: [
+      { value: "all", label: "All feedback" },
+      { value: "completed", label: "Feedback complete" },
+      { value: "ignored", label: "Feedback ignored" },
+      { value: "delivery_failed", label: "Feedback failed" },
+      { value: "none", label: "No feedback" }
+    ],
+    reopenedOptions: [
+      { value: "all", label: "All reopen history" },
+      { value: "ever", label: "Ever reopened" },
+      { value: "never", label: "Never reopened" }
     ],
     sortOptions: [
       { value: "activity-desc", label: "Recent activity first" },
@@ -345,6 +374,29 @@ function statusBadge(ticket: DashboardTicketRecord): { label: string; tone: Dash
   return { label: "Unknown", tone: "muted" }
 }
 
+function defaultTelemetrySignals(): DashboardTicketTelemetrySignals {
+  return {
+    hasEverReopened: false,
+    reopenCount: 0,
+    lastReopenedAt: null,
+    latestFeedbackStatus: "none",
+    latestFeedbackTriggeredAt: null,
+    latestFeedbackCompletedAt: null,
+    latestRatings: []
+  }
+}
+
+function ticketTelemetrySignal(signals: Record<string, DashboardTicketTelemetrySignals> | undefined, ticketId: string) {
+  return signals?.[ticketId] || defaultTelemetrySignals()
+}
+
+function feedbackBadge(status: DashboardTicketFeedbackStatus): { label: string; tone: DashboardTone } {
+  if (status === "completed") return { label: "Feedback complete", tone: "success" }
+  if (status === "ignored") return { label: "Feedback ignored", tone: "warning" }
+  if (status === "delivery_failed") return { label: "Feedback failed", tone: "danger" }
+  return { label: "No feedback", tone: "muted" }
+}
+
 function activityTime(ticket: DashboardTicketRecord) {
   return Math.max(
     ticket.resolvedAt || 0,
@@ -359,7 +411,9 @@ function activityTime(ticket: DashboardTicketRecord) {
 function applyListFilters(
   tickets: DashboardTicketRecord[],
   request: TicketWorkbenchListRequest,
-  lookups: ReturnType<typeof buildConfigLookups>
+  lookups: ReturnType<typeof buildConfigLookups>,
+  telemetrySignals: Record<string, DashboardTicketTelemetrySignals>,
+  telemetrySupported: boolean
 ) {
   const q = request.q.toLowerCase()
   return tickets.filter((ticket) => {
@@ -368,6 +422,7 @@ function applyListFilters(
     const teamLabel = resolveTeamLabel(lookups.teamById, ticket.assignedTeamId)
     const assigneeLabel = unknownUserLabel(ticket.assignedStaffUserId)
     const creatorLabel = unknownUserLabel(ticket.creatorId)
+    const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
 
     if (request.status === "open" && !ticket.open) return false
     if (request.status === "closed" && !ticket.closed) return false
@@ -379,6 +434,9 @@ function applyListFilters(
     if (request.optionId && ticket.optionId !== request.optionId) return false
     if (request.panelId && panel.panelId !== request.panelId) return false
     if (request.creatorId && ticket.creatorId !== request.creatorId) return false
+    if (telemetrySupported && request.feedback !== "all" && telemetry.latestFeedbackStatus !== request.feedback) return false
+    if (telemetrySupported && request.reopened === "ever" && !telemetry.hasEverReopened) return false
+    if (telemetrySupported && request.reopened === "never" && telemetry.hasEverReopened) return false
 
     if (!q) return true
     return [
@@ -414,6 +472,8 @@ function buildActiveFilters(request: TicketWorkbenchListRequest, lookups: Return
   if (request.q) filters.push({ label: "Search", value: request.q })
   if (request.status !== "all") filters.push({ label: "Status", value: request.status })
   if (request.transport !== "all") filters.push({ label: "Transport", value: transportLabel(request.transport) })
+  if (request.feedback !== "all") filters.push({ label: "Feedback", value: feedbackBadge(request.feedback).label })
+  if (request.reopened !== "all") filters.push({ label: "Reopened", value: request.reopened === "ever" ? "Ever reopened" : "Never reopened" })
   if (request.teamId) filters.push({ label: "Team", value: resolveTeamLabel(lookups.teamById, request.teamId) })
   if (request.assigneeId) filters.push({ label: "Assignee", value: unknownUserLabel(request.assigneeId) })
   if (request.optionId) filters.push({ label: "Option", value: resolveOptionLabel(lookups.optionById, request.optionId) })
@@ -431,45 +491,54 @@ export function buildTicketWorkbenchListModel(input: {
   tickets: DashboardTicketRecord[]
   configService: DashboardConfigService
   readsSupported: boolean
+  telemetrySupported?: boolean
+  telemetrySignals?: Record<string, DashboardTicketTelemetrySignals>
   warningMessage?: string
+  telemetryWarningMessage?: string
   writesSupported?: boolean
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
+  const telemetrySupported = input.readsSupported && input.telemetrySupported === true
+  const effectiveRequest = telemetrySupported
+    ? input.request
+    : { ...input.request, feedback: "all" as const, reopened: "all" as const }
   const normalizedTickets = input.tickets.map((ticket) => ({
     ...ticket,
     transportMode: normalizeTransport(ticket.transportMode) || null
   }))
-  const filtered = sortTickets(applyListFilters(normalizedTickets, input.request, lookups), input.request.sort)
-  const totalPages = Math.max(1, Math.ceil(filtered.length / input.request.limit))
-  const page = Math.min(input.request.page, totalPages)
-  const startIndex = (page - 1) * input.request.limit
-  const pageItems = filtered.slice(startIndex, startIndex + input.request.limit)
-  const currentHref = input.currentHref || buildPageHref(input.basePath, input.request, page)
+  const telemetrySignals = input.telemetrySignals || {}
+  const filtered = sortTickets(applyListFilters(normalizedTickets, effectiveRequest, lookups, telemetrySignals, telemetrySupported), effectiveRequest.sort)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / effectiveRequest.limit))
+  const page = Math.min(effectiveRequest.page, totalPages)
+  const startIndex = (page - 1) * effectiveRequest.limit
+  const pageItems = filtered.slice(startIndex, startIndex + effectiveRequest.limit)
+  const currentHref = input.currentHref || buildPageHref(input.basePath, effectiveRequest, page)
 
   return {
     available: input.readsSupported,
     warningMessage: input.warningMessage || "",
+    telemetryWarningMessage: input.telemetryWarningMessage || "",
     filterAction: joinBasePath(input.basePath, "admin/tickets"),
     clearFiltersHref: joinBasePath(input.basePath, "admin/tickets"),
     currentHref,
     request: {
-      ...input.request,
+      ...effectiveRequest,
       page
     },
     total: filtered.length,
     unfilteredTotal: normalizedTickets.length,
     pageStart: filtered.length > 0 ? startIndex + 1 : 0,
     pageEnd: startIndex + pageItems.length,
-    previousHref: page > 1 ? buildPageHref(input.basePath, input.request, page - 1) : null,
-    nextHref: page < totalPages ? buildPageHref(input.basePath, input.request, page + 1) : null,
+    previousHref: page > 1 ? buildPageHref(input.basePath, effectiveRequest, page - 1) : null,
+    nextHref: page < totalPages ? buildPageHref(input.basePath, effectiveRequest, page + 1) : null,
     pageLinks: Array.from({ length: totalPages }, (_item, index) => index + 1)
       .slice(Math.max(0, page - 3), Math.max(0, page - 3) + 5)
       .map((pageNumber) => ({
         page: pageNumber,
-        href: buildPageHref(input.basePath, input.request, pageNumber),
+        href: buildPageHref(input.basePath, effectiveRequest, pageNumber),
         active: pageNumber === page
       })),
-    activeFilters: buildActiveFilters(input.request, lookups),
+    activeFilters: buildActiveFilters(effectiveRequest, lookups),
     filteredSummary: {
       cards: [
         { label: "Visible", value: String(filtered.length), tone: filtered.length > 0 ? "success" : "muted" },
@@ -505,6 +574,7 @@ export function buildTicketWorkbenchListModel(input: {
       const creatorLabel = unknownUserLabel(ticket.creatorId)
       const channelNameLabel = normalizeString(ticket.channelName) || normalizeString(ticket.channelSuffix) || ticket.id
       const detailHref = `${joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(ticket.id)}`)}?returnTo=${encodeURIComponent(currentHref)}`
+      const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
       return {
         id: ticket.id,
         optionLabel,
@@ -515,6 +585,8 @@ export function buildTicketWorkbenchListModel(input: {
         transportLabel: transportLabel(ticket.transportMode),
         channelNameLabel,
         statusBadge: statusBadge(ticket),
+        feedbackBadge: telemetrySupported ? feedbackBadge(telemetry.latestFeedbackStatus) : null,
+        reopenBadge: telemetrySupported && telemetry.reopenCount > 0 ? { label: `Reopened x${telemetry.reopenCount}`, tone: "warning" as DashboardTone } : null,
         openedLabel: formatDate(ticket.openedOn),
         activityLabel: formatDate(activityTime(ticket) || null),
         detailHref,
@@ -526,7 +598,9 @@ export function buildTicketWorkbenchListModel(input: {
           creatorLabel,
           teamLabel,
           assigneeLabel,
-          ticket.transportMode || ""
+          ticket.transportMode || "",
+          telemetrySupported ? telemetry.latestFeedbackStatus : "",
+          telemetrySupported && telemetry.hasEverReopened ? "reopened" : ""
         ].join(" ").toLowerCase()
       }
     })
@@ -552,6 +626,7 @@ export function buildFallbackTicketDetail(input: {
   providerLock?: DashboardTicketProviderLock | null
   integration?: DashboardTicketDetailRecord["integration"] | null
   aiAssist?: DashboardTicketDetailRecord["aiAssist"] | null
+  telemetry?: DashboardTicketTelemetrySignals | null
 }): DashboardTicketDetailRecord {
   const lookups = buildConfigLookups(input.configService)
   const panel = resolvePanelMapping(lookups.panelForOption, input.ticket.optionId)
@@ -661,7 +736,8 @@ export function buildFallbackTicketDetail(input: {
     priorityChoices: [],
     providerLock,
     integration: input.integration || null,
-    aiAssist: input.aiAssist || null
+    aiAssist: input.aiAssist || null,
+    telemetry: input.telemetry || null
   }
 }
 
@@ -775,6 +851,7 @@ export function buildTicketWorkbenchDetailModel(input: {
   const detail = input.detail
     ? {
         ...input.detail,
+        telemetry: input.detail.telemetry || null,
         creatorTransferWarning: translateTicketWorkbenchMessage(t, input.detail.creatorTransferWarning, {
           originalApplicant: input.detail.originalApplicantLabel || unknownUserLabel(input.detail.originalApplicantUserId),
           currentCreator: input.detail.creatorLabel || unknownUserLabel(input.detail.ticket.creatorId)
@@ -813,7 +890,9 @@ export function buildTicketWorkbenchDetailModel(input: {
         { label: t("tickets.detail.summary.state"), value: statusBadge(detail.ticket).label, detail: detail.ticket.open ? t("tickets.detail.summary.ticketOpen") : t("tickets.detail.summary.ticketNotOpen"), tone: statusBadge(detail.ticket).tone },
         { label: t("tickets.detail.summary.route"), value: detail.optionLabel || t("tickets.detail.missingOption"), detail: detail.panelLabel || t("tickets.detail.missingPanel"), tone: "muted" as DashboardTone },
         { label: t("tickets.detail.facts.assignee"), value: detail.assigneeLabel || t("tickets.detail.unassigned"), detail: detail.teamLabel || t("tickets.detail.noTeam"), tone: detail.ticket.assignedStaffUserId ? "success" as DashboardTone : "warning" as DashboardTone },
-        { label: t("tickets.detail.facts.transport"), value: transportLabel(detail.ticket.transportMode), detail: detail.ticket.transportParentChannelId || t("tickets.detail.noParentChannelRecorded"), tone: "muted" as DashboardTone }
+        { label: t("tickets.detail.facts.transport"), value: transportLabel(detail.ticket.transportMode), detail: detail.ticket.transportParentChannelId || t("tickets.detail.noParentChannelRecorded"), tone: "muted" as DashboardTone },
+        { label: t("tickets.detail.telemetry.feedbackStatus"), value: detail.telemetry ? feedbackBadge(detail.telemetry.latestFeedbackStatus).label : t("common.unavailable"), detail: detail.telemetry?.latestFeedbackTriggeredAt ? formatDate(detail.telemetry.latestFeedbackTriggeredAt) : t("tickets.detail.telemetry.noFeedbackSession"), tone: detail.telemetry ? feedbackBadge(detail.telemetry.latestFeedbackStatus).tone : "muted" as DashboardTone },
+        { label: t("tickets.detail.telemetry.reopenCount"), value: detail.telemetry ? String(detail.telemetry.reopenCount) : t("common.unavailable"), detail: detail.telemetry?.lastReopenedAt ? formatDate(detail.telemetry.lastReopenedAt) : t("tickets.detail.telemetry.noReopenRecorded"), tone: detail.telemetry && detail.telemetry.reopenCount > 0 ? "warning" as DashboardTone : "muted" as DashboardTone }
       ]
     : []
   const providerLocked = new Set(detail?.providerLock?.lockedActions || [])

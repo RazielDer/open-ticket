@@ -1,5 +1,6 @@
 <%
   const historyUnavailable = analytics.historyState !== "available"
+  const telemetryUnavailable = analytics.telemetryState !== "available"
   const renderBacklogRows = (rows, emptyKey) => { %>
     <% if (rows.length) { %>
       <% rows.forEach((row) => { %>
@@ -45,6 +46,84 @@
     </tr>
   <% } %>
 <% } %>
+<% const renderFeedbackRows = (rows) => { %>
+  <% if (telemetryUnavailable) { %>
+    <tr>
+      <td colspan="7"><%= t("analytics.telemetry.unavailableTable") %></td>
+    </tr>
+  <% } else if (rows.length) { %>
+    <% rows.forEach((row) => { %>
+      <tr>
+        <td><strong><%= row.label %></strong></td>
+        <td><%= row.total %></td>
+        <td><%= row.completed %></td>
+        <td><%= row.ignored %></td>
+        <td><%= row.deliveryFailed %></td>
+        <td>
+          <%= row.completionRate.value %>
+          <% if (row.completionRate.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+          <div class="field-help"><%= row.completionRate.detail %></div>
+        </td>
+        <td>
+          <%= row.ignoredRate.value %>
+          <% if (row.ignoredRate.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+          <div class="field-help"><%= row.ignoredRate.detail %></div>
+        </td>
+      </tr>
+    <% }) %>
+  <% } else { %>
+    <tr>
+      <td colspan="7"><%= t("analytics.telemetry.emptyFeedback") %></td>
+    </tr>
+  <% } %>
+<% } %>
+<% const renderRatingRows = (rows) => { %>
+  <% if (telemetryUnavailable) { %>
+    <tr>
+      <td colspan="4"><%= t("analytics.telemetry.unavailableTable") %></td>
+    </tr>
+  <% } else if (rows.length) { %>
+    <% rows.forEach((row) => { %>
+      <tr>
+        <td><strong><%= row.questionLabel %></strong><div class="field-help"><%= row.questionKey %></div></td>
+        <td>
+          <%= row.responses %>
+          <% if (row.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+        </td>
+        <td><%= row.averageRating %></td>
+        <td><%= row.medianRating %></td>
+      </tr>
+    <% }) %>
+  <% } else { %>
+    <tr>
+      <td colspan="4"><%= t("analytics.telemetry.emptyRatings") %></td>
+    </tr>
+  <% } %>
+<% } %>
+<% const renderReopenRows = (rows) => { %>
+  <% if (telemetryUnavailable) { %>
+    <tr>
+      <td colspan="4"><%= t("analytics.telemetry.unavailableTable") %></td>
+    </tr>
+  <% } else if (rows.length) { %>
+    <% rows.forEach((row) => { %>
+      <tr>
+        <td><strong><%= row.label %></strong></td>
+        <td><%= row.reopenedTickets %></td>
+        <td><%= row.closedTickets %></td>
+        <td>
+          <%= row.reopenRate.value %>
+          <% if (row.reopenRate.lowSample) { %><span class="pill-tag"><%= t("analytics.page.lowSample") %></span><% } %>
+          <div class="field-help"><%= row.reopenRate.detail %></div>
+        </td>
+      </tr>
+    <% }) %>
+  <% } else { %>
+    <tr>
+      <td colspan="4"><%= t("analytics.telemetry.emptyReopens") %></td>
+    </tr>
+  <% } %>
+<% } %>
 
 <section class="section-card transcript-workspace-shell analytics-workspace-shell">
   <div class="transcript-workspace-header">
@@ -59,6 +138,17 @@
       <span class="status-pill tone-warning"><%= t("analytics.page.degradedBadge") %></span>
       <div>
         <% analytics.historyWarnings.slice(0, 3).forEach((warning) => { %>
+          <p class="item-copy"><%= warning %></p>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (analytics.telemetryWarnings.length) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("analytics.telemetry.degradedBadge") %></span>
+      <div>
+        <% analytics.telemetryWarnings.slice(0, 3).forEach((warning) => { %>
           <p class="item-copy"><%= warning %></p>
         <% }) %>
       </div>
@@ -133,6 +223,147 @@
     </form>
   </div>
 </details>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.feedbackByTeam") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.telemetry.table.triggered") %></th>
+          <th><%= t("analytics.telemetry.table.completed") %></th>
+          <th><%= t("analytics.telemetry.table.ignored") %></th>
+          <th><%= t("analytics.telemetry.table.deliveryFailed") %></th>
+          <th><%= t("analytics.telemetry.table.completionRate") %></th>
+          <th><%= t("analytics.telemetry.table.ignoredRate") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderFeedbackRows(analytics.feedbackByTeam) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.feedbackByTransport") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.telemetry.table.triggered") %></th>
+          <th><%= t("analytics.telemetry.table.completed") %></th>
+          <th><%= t("analytics.telemetry.table.ignored") %></th>
+          <th><%= t("analytics.telemetry.table.deliveryFailed") %></th>
+          <th><%= t("analytics.telemetry.table.completionRate") %></th>
+          <th><%= t("analytics.telemetry.table.ignoredRate") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderFeedbackRows(analytics.feedbackByTransport) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.ratingQuestions") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.telemetry.table.question") %></th>
+          <th><%= t("analytics.telemetry.table.responses") %></th>
+          <th><%= t("analytics.telemetry.table.averageRating") %></th>
+          <th><%= t("analytics.telemetry.table.medianRating") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderRatingRows(analytics.ratingQuestions) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.reopenRateByTeam") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.telemetry.table.reopened") %></th>
+          <th><%= t("analytics.telemetry.table.closed") %></th>
+          <th><%= t("analytics.telemetry.table.reopenRate") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderReopenRows(analytics.reopenRateByTeam) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.reopenRateByTransport") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><%= t("analytics.page.table.group") %></th>
+          <th><%= t("analytics.telemetry.table.reopened") %></th>
+          <th><%= t("analytics.telemetry.table.closed") %></th>
+          <th><%= t("analytics.telemetry.table.reopenRate") %></th>
+        </tr>
+      </thead>
+      <tbody><% renderReopenRows(analytics.reopenRateByTransport) %></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.reopenedBacklogByTeam") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th><%= t("analytics.page.table.group") %></th><th><%= t("analytics.page.table.open") %></th><th><%= t("analytics.page.table.detail") %></th></tr>
+      </thead>
+      <tbody>
+        <% if (telemetryUnavailable) { %>
+          <tr><td colspan="3"><%= t("analytics.telemetry.unavailableTable") %></td></tr>
+        <% } else { %>
+          <% renderBacklogRows(analytics.reopenedBacklogByTeam, "analytics.telemetry.emptyReopenedBacklog") %>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-card analytics-table-shell">
+  <div class="section-heading">
+    <h3><%= t("analytics.telemetry.reopenedBacklogByTransport") %></h3>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th><%= t("analytics.page.table.group") %></th><th><%= t("analytics.page.table.open") %></th><th><%= t("analytics.page.table.detail") %></th></tr>
+      </thead>
+      <tbody>
+        <% if (telemetryUnavailable) { %>
+          <tr><td colspan="3"><%= t("analytics.telemetry.unavailableTable") %></td></tr>
+        <% } else { %>
+          <% renderBacklogRows(analytics.reopenedBacklogByTransport, "analytics.telemetry.emptyReopenedBacklog") %>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</section>
 
 <section class="section-card analytics-table-shell">
   <div class="section-heading">

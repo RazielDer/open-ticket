@@ -16,6 +16,13 @@
       <p class="item-copy"><%= ticketList.warningMessage %></p>
     </div>
   <% } %>
+
+  <% if (ticketList.telemetryWarningMessage) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.telemetryDegradedBadge") %></span>
+      <p class="item-copy"><%= ticketList.telemetryWarningMessage %></p>
+    </div>
+  <% } %>
 </section>
 
 <details class="section-card editor-disclosure transcript-filter-shell ticket-filter-shell" data-responsive-disclosure="ticket-filters" open>
@@ -62,7 +69,7 @@
         </label>
       </div>
 
-      <details class="editor-disclosure transcript-filter-advanced" <%= (ticketList.request.teamId || ticketList.request.assigneeId || ticketList.request.optionId || ticketList.request.panelId || ticketList.request.creatorId || ticketList.request.limit !== 25) ? 'open' : '' %>>
+      <details class="editor-disclosure transcript-filter-advanced" <%= (ticketList.request.teamId || ticketList.request.assigneeId || ticketList.request.optionId || ticketList.request.panelId || ticketList.request.creatorId || ticketList.request.feedback !== 'all' || ticketList.request.reopened !== 'all' || ticketList.request.limit !== 25) ? 'open' : '' %>>
         <summary class="transcript-filter-advanced-summary">
           <div>
             <h4><%= t("tickets.page.filters.moreTitle") %></h4>
@@ -105,6 +112,22 @@
             <label>
               <span class="field-label"><%= t("tickets.page.filters.creatorLabel") %></span>
               <input class="text-input" type="text" name="creatorId" value="<%= ticketList.request.creatorId %>" placeholder="<%= t('tickets.page.filters.creatorPlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.feedbackLabel") %></span>
+              <select class="select-input" name="feedback">
+                <% ticketList.request.feedbackOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= ticketList.request.feedback === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.reopenedLabel") %></span>
+              <select class="select-input" name="reopened">
+                <% ticketList.request.reopenedOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= ticketList.request.reopened === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
             </label>
             <label>
               <span class="field-label"><%= t("tickets.page.filters.rowsLabel") %></span>
@@ -223,7 +246,15 @@
                 <strong class="transcript-record-title"><%= item.id %></strong>
                 <div class="field-help"><%= item.channelNameLabel %> / <%= item.transportLabel %></div>
               </td>
-              <td><span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span></td>
+              <td>
+                <span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span>
+                <% if (item.feedbackBadge) { %>
+                  <span class="status-pill tone-<%= item.feedbackBadge.tone %>"><%= item.feedbackBadge.label %></span>
+                <% } %>
+                <% if (item.reopenBadge) { %>
+                  <span class="status-pill tone-<%= item.reopenBadge.tone %>"><%= item.reopenBadge.label %></span>
+                <% } %>
+              </td>
               <td>
                 <strong><%= item.optionLabel %></strong>
                 <div class="field-help"><%= item.panelLabel %></div>

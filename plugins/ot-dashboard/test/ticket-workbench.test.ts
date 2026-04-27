@@ -25,9 +25,16 @@ import {
   type DashboardTicketActionId,
   type DashboardTicketActionRequest,
   type DashboardTicketAiAssistRequest,
-  type DashboardTicketDetailRecord
+  type DashboardTicketDetailRecord,
+  type DashboardTicketFeedbackTelemetryRecord,
+  type DashboardTicketLifecycleTelemetryRecord,
+  type DashboardTicketTelemetrySignals
 } from "../server/ticket-workbench-types"
-import { sanitizeTicketWorkbenchReturnTo } from "../server/ticket-workbench"
+import {
+  buildTicketWorkbenchListModel,
+  parseTicketWorkbenchListRequest,
+  sanitizeTicketWorkbenchReturnTo
+} from "../server/ticket-workbench"
 
 const pluginRoot = path.resolve(process.cwd(), "plugins", "ot-dashboard")
 
@@ -128,6 +135,38 @@ function ticket(overrides: Partial<DashboardTicketRecord>): DashboardTicketRecor
     participantCount: 2,
     categoryMode: "normal",
     channelSuffix: "creator",
+    ...overrides
+  }
+}
+
+function telemetrySignals(overrides: Partial<DashboardTicketTelemetrySignals> = {}): DashboardTicketTelemetrySignals {
+  return {
+    hasEverReopened: false,
+    reopenCount: 0,
+    lastReopenedAt: null,
+    latestFeedbackStatus: "none",
+    latestFeedbackTriggeredAt: null,
+    latestFeedbackCompletedAt: null,
+    latestRatings: [],
+    ...overrides
+  }
+}
+
+function telemetrySnapshot(overrides: Partial<DashboardTicketFeedbackTelemetryRecord["snapshot"]> = {}): DashboardTicketFeedbackTelemetryRecord["snapshot"] {
+  return {
+    creatorUserId: "creator-1",
+    optionId: "intake",
+    transportMode: "channel_text",
+    assignedTeamId: "triage",
+    assignedStaffUserId: null,
+    assignmentStrategy: "manual",
+    integrationProfileId: null,
+    aiAssistProfileId: null,
+    closeRequestState: null,
+    awaitingUserState: null,
+    firstStaffResponseAt: null,
+    resolvedAt: null,
+    closed: false,
     ...overrides
   }
 }
@@ -377,7 +416,8 @@ function enabledDetail(base: DashboardTicketRecord, actions: DashboardTicketActi
     ],
     providerLock: null,
     integration: null,
-    aiAssist: null
+    aiAssist: null,
+    telemetry: null
   }
 }
 
@@ -387,11 +427,15 @@ async function startServer(options: {
   writes?: boolean
   ticketSummaryAvailable?: boolean
   aiAssistResult?: any
+  telemetrySignals?: Record<string, DashboardTicketTelemetrySignals>
+  lifecycleTelemetry?: DashboardTicketLifecycleTelemetryRecord[]
+  feedbackTelemetry?: DashboardTicketFeedbackTelemetryRecord[]
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
   const actionRequests: DashboardTicketActionRequest[] = []
   const aiAssistRequests: DashboardTicketAiAssistRequest[] = []
+  const telemetryEnabled = Boolean(options.telemetrySignals || options.lifecycleTelemetry || options.feedbackTelemetry)
   const members = new Map([
     ["admin-user", member("admin-user", ["role-admin"])],
     ["editor-user", member("editor-user", ["role-editor"])],
@@ -510,9 +554,34 @@ async function startServer(options: {
           lockedActions: ["close", "escalate"]
         },
         integration: null,
-        aiAssist: null
+        aiAssist: null,
+        telemetry: options.telemetrySignals?.[base.id] || null
       }
     },
+    ...(telemetryEnabled ? {
+      async listLifecycleTelemetry() {
+        return {
+          items: options.lifecycleTelemetry || [],
+          nextCursor: null,
+          truncated: false,
+          warnings: []
+        }
+      },
+      async listFeedbackTelemetry() {
+        return {
+          items: options.feedbackTelemetry || [],
+          nextCursor: null,
+          truncated: false,
+          warnings: []
+        }
+      },
+      async getTicketTelemetrySignals(ticketIds: string[]) {
+        return Object.fromEntries(ticketIds.map((ticketId) => [
+          ticketId,
+          options.telemetrySignals?.[ticketId] || telemetrySignals()
+        ]))
+      }
+    } : {}),
     ...(options.writes === false ? {} : {
       async runTicketAction(input: DashboardTicketActionRequest) {
         actionRequests.push(input)
@@ -684,6 +753,92 @@ test("ticket list filters, fallback labels, and returnTo links stay detail-first
   assert.match(html, /returnTo=%2Fdash%2Fadmin%2Ftickets%3Fstatus%3Dopen%26transport%3Dprivate_thread%26teamId%3Dmissing-team%26q%3Dmissing/)
   assert.doesNotMatch(html, /Close ticket<\/button>/)
   assert.doesNotMatch(html, /Assign staff<\/button>/)
+})
+
+test("ticket list exposes telemetry filters only when telemetry reads are available", async (t) => {
+  const baseTickets = [
+    ticket({ id: "ticket-1", channelName: "intake-channel" }),
+    ticket({ id: "ticket-2", channelName: "second-channel", openedOn: 1710000100000 })
+  ]
+  const runtime = await startServer({
+    tickets: baseTickets,
+    telemetrySignals: {
+      "ticket-1": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 2,
+        lastReopenedAt: Date.parse("2026-04-20T12:00:00.000Z"),
+        latestFeedbackStatus: "completed",
+        latestFeedbackTriggeredAt: Date.parse("2026-04-20T11:00:00.000Z"),
+        latestFeedbackCompletedAt: Date.parse("2026-04-20T11:05:00.000Z"),
+        latestRatings: [{ questionKey: "1:Experience", label: "Experience", value: 5 }]
+      })
+    }
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets?feedback=completed&reopened=ever`, { headers: { cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.match(html, /intake-channel/)
+  assert.match(html, /Feedback complete/)
+  assert.match(html, /Reopened x2/)
+  assert.doesNotMatch(html, /second-channel/)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie } })
+  const detailHtml = await detailResponse.text()
+  assert.equal(detailResponse.status, 200)
+  assert.match(detailHtml, /Latest feedback/)
+  assert.match(detailHtml, /Feedback complete/)
+  assert.match(detailHtml, /Experience/)
+})
+
+test("ticket telemetry filters are disabled when telemetry reads are unavailable", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({ id: "ticket-1", channelName: "intake-channel" }),
+      ticket({ id: "ticket-2", channelName: "second-channel", openedOn: 1710000100000 })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets?feedback=completed&reopened=ever`, { headers: { cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.match(html, /Ticket telemetry reads are unavailable/)
+  assert.match(html, /intake-channel/)
+  assert.match(html, /second-channel/)
+})
+
+test("ticket list model applies feedback and reopened telemetry signals", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+  const request = parseTicketWorkbenchListRequest({ feedback: "completed", reopened: "ever" })
+  const model = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets?feedback=completed&reopened=ever",
+    request,
+    tickets: [
+      ticket({ id: "ticket-1", channelName: "intake-channel" }),
+      ticket({ id: "ticket-2", channelName: "second-channel", openedOn: 1710000100000 })
+    ],
+    configService: runtime.context.configService,
+    readsSupported: true,
+    telemetrySupported: true,
+    telemetrySignals: {
+      "ticket-1": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 1,
+        latestFeedbackStatus: "completed"
+      })
+    }
+  })
+
+  assert.equal(model.total, 1)
+  assert.equal(model.items[0].id, "ticket-1")
+  assert.equal(model.items[0].feedbackBadge?.label, "Feedback complete")
+  assert.equal(model.items[0].reopenBadge?.label, "Reopened x1")
 })
 
 test("ticket detail shows provider locks, safe back links, and form-post runtime actions", async (t) => {
@@ -1478,6 +1633,148 @@ test("analytics workspace is admin-only and degrades when transcript history is 
   })
   assert.equal(editorAnalytics.status, 302)
   assert.equal(editorAnalytics.headers.get("location"), "/dash/visual/options")
+})
+
+test("analytics model reports feedback outcomes, rating summaries, and reopen telemetry", async (t) => {
+  const ticketA = ticket({ id: "ticket-a", channelName: "ticket-a", openedOn: Date.parse("2026-04-20T08:00:00.000Z") })
+  const ticketB = ticket({
+    id: "ticket-b",
+    channelName: "ticket-b",
+    openedOn: Date.parse("2026-04-20T09:00:00.000Z"),
+    closedOn: Date.parse("2026-04-20T11:00:00.000Z"),
+    open: false,
+    closed: true
+  })
+  const ticketC = ticket({
+    id: "ticket-c",
+    channelName: "ticket-c",
+    assignedTeamId: "lead",
+    openedOn: Date.parse("2026-04-20T10:00:00.000Z")
+  })
+  const lifecycleTelemetry: DashboardTicketLifecycleTelemetryRecord[] = [
+    {
+      recordId: "closed-a",
+      ticketId: "ticket-a",
+      eventType: "closed",
+      occurredAt: Date.parse("2026-04-20T09:00:00.000Z"),
+      actorUserId: "staff-1",
+      snapshot: telemetrySnapshot({ closed: true }),
+      previousSnapshot: telemetrySnapshot()
+    },
+    {
+      recordId: "reopened-a",
+      ticketId: "ticket-a",
+      eventType: "reopened",
+      occurredAt: Date.parse("2026-04-20T10:00:00.000Z"),
+      actorUserId: "staff-1",
+      snapshot: telemetrySnapshot(),
+      previousSnapshot: telemetrySnapshot({ closed: true })
+    },
+    {
+      recordId: "closed-b",
+      ticketId: "ticket-b",
+      eventType: "closed",
+      occurredAt: Date.parse("2026-04-20T11:00:00.000Z"),
+      actorUserId: "staff-1",
+      snapshot: telemetrySnapshot({ closed: true }),
+      previousSnapshot: telemetrySnapshot()
+    },
+    {
+      recordId: "closed-c",
+      ticketId: "ticket-c",
+      eventType: "closed",
+      occurredAt: Date.parse("2026-04-20T12:00:00.000Z"),
+      actorUserId: "staff-2",
+      snapshot: telemetrySnapshot({ assignedTeamId: "lead", closed: true }),
+      previousSnapshot: telemetrySnapshot({ assignedTeamId: "lead" })
+    }
+  ]
+  const feedbackTelemetry: DashboardTicketFeedbackTelemetryRecord[] = [
+    {
+      sessionId: "feedback-a",
+      ticketId: "ticket-a",
+      triggerMode: "close",
+      triggeredAt: Date.parse("2026-04-20T09:01:00.000Z"),
+      completedAt: Date.parse("2026-04-20T09:03:00.000Z"),
+      status: "completed",
+      respondentUserId: "creator-1",
+      closeCountAtTrigger: 1,
+      snapshot: telemetrySnapshot(),
+      questionSummaries: [{ position: 1, type: "rating", label: "Experience", answered: true, ratingValue: 5, choiceIndex: null, choiceLabel: null }]
+    },
+    {
+      sessionId: "feedback-b",
+      ticketId: "ticket-b",
+      triggerMode: "close",
+      triggeredAt: Date.parse("2026-04-20T11:01:00.000Z"),
+      completedAt: null,
+      status: "ignored",
+      respondentUserId: "creator-1",
+      closeCountAtTrigger: 1,
+      snapshot: telemetrySnapshot(),
+      questionSummaries: [{ position: 1, type: "rating", label: "Experience", answered: true, ratingValue: 3, choiceIndex: null, choiceLabel: null }]
+    },
+    {
+      sessionId: "feedback-c",
+      ticketId: "ticket-c",
+      triggerMode: "close",
+      triggeredAt: Date.parse("2026-04-20T12:01:00.000Z"),
+      completedAt: null,
+      status: "delivery_failed",
+      respondentUserId: "creator-1",
+      closeCountAtTrigger: 1,
+      snapshot: telemetrySnapshot({ assignedTeamId: "lead" }),
+      questionSummaries: []
+    }
+  ]
+  const runtime = await startServer({
+    tickets: [ticketA, ticketB, ticketC],
+    lifecycleTelemetry,
+    feedbackTelemetry,
+    telemetrySignals: {
+      "ticket-a": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 1,
+        lastReopenedAt: Date.parse("2026-04-20T10:00:00.000Z"),
+        latestFeedbackStatus: "completed"
+      })
+    }
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardAnalyticsModel({
+    basePath: "/dash",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    t: runtime.context.i18n.t,
+    transcriptService: {
+      async listTicketAnalyticsHistory() {
+        return {
+          total: 0,
+          warnings: [],
+          nextCursor: null,
+          truncated: false,
+          items: []
+        }
+      }
+    }
+  })
+
+  assert.equal(model.telemetryState, "available")
+  assert.equal(model.summaryCards[6].value, "3")
+  assert.equal(model.summaryCards[9].value, "1")
+  assert.equal(model.summaryCards[10].value, "1")
+  assert.equal(model.feedbackByTeam.find((row) => row.key === "triage")?.completed, 1)
+  assert.equal(model.feedbackByTeam.find((row) => row.key === "triage")?.ignored, 1)
+  assert.equal(model.feedbackByTeam.find((row) => row.key === "triage")?.completionRate.value, "50%")
+  assert.equal(model.ratingQuestions[0].questionLabel, "Experience")
+  assert.equal(model.ratingQuestions[0].averageRating, "4.0")
+  assert.equal(model.ratingQuestions[0].medianRating, "4.0")
+  assert.equal(model.reopenRateByTeam.find((row) => row.key === "triage")?.reopenedTickets, 1)
+  assert.equal(model.reopenRateByTeam.find((row) => row.key === "triage")?.closedTickets, 2)
+  assert.equal(model.reopenRateByTeam.find((row) => row.key === "triage")?.reopenRate.value, "50%")
+  assert.equal(model.reopenedBacklogByTeam.find((row) => row.key === "triage")?.count, 1)
 })
 
 test("analytics model normalizes UTC windows, computes SLA metrics, groups backlog, and dedupes live tickets over history", async (t) => {

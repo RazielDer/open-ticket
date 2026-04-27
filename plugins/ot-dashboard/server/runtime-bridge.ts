@@ -23,12 +23,22 @@ import {
   type DashboardTicketAssignableStaffChoice,
   type DashboardTicketDetailRecord,
   type DashboardTicketEscalationTargetChoice,
+  type DashboardTicketFeedbackQuestionSummary,
+  type DashboardTicketFeedbackStoredStatus,
+  type DashboardTicketFeedbackTelemetryQuery,
+  type DashboardTicketFeedbackTelemetryRecord,
+  type DashboardTicketFeedbackTelemetryResult,
   type DashboardTicketMoveTargetChoice,
   type DashboardTicketParticipantChoice,
   type DashboardTicketProviderLockedActionId,
   type DashboardTicketProviderLock,
   type DashboardTicketIntegrationSummary,
+  type DashboardTicketLifecycleTelemetryQuery,
+  type DashboardTicketLifecycleTelemetryRecord,
+  type DashboardTicketLifecycleTelemetryResult,
   type DashboardTicketPriorityChoice,
+  type DashboardTicketTelemetrySignals,
+  type DashboardTicketTelemetrySnapshot,
   type DashboardTicketTransferCandidateChoice,
   type DashboardTicketTransportMode
 } from "./ticket-workbench-types"
@@ -51,6 +61,9 @@ export interface DashboardRuntimeBridge {
   getTicketDetail?: (ticketId: string, actorUserId: string) => Promise<DashboardTicketDetailRecord | null>
   runTicketAction?: (input: DashboardTicketActionRequest) => Promise<DashboardTicketActionResult>
   runTicketAiAssist?: (input: DashboardTicketAiAssistRequest) => Promise<DashboardTicketAiAssistResult>
+  listLifecycleTelemetry?: (query: DashboardTicketLifecycleTelemetryQuery) => Promise<DashboardTicketLifecycleTelemetryResult>
+  listFeedbackTelemetry?: (query: DashboardTicketFeedbackTelemetryQuery) => Promise<DashboardTicketFeedbackTelemetryResult>
+  getTicketTelemetrySignals?: (ticketIds: string[]) => Promise<Record<string, DashboardTicketTelemetrySignals>>
   getRuntimeSource?: () => DashboardRuntimeSource | null
   resolveGuildMember?: (userId: string) => Promise<DashboardRuntimeGuildMember | null>
   getGuildId?: () => string | null
@@ -77,6 +90,15 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async runTicketAiAssist(input) {
     return await runRuntimeTicketAiAssist(defaultDashboardRuntimeBridge, input)
+  },
+  async listLifecycleTelemetry(query) {
+    return await listRuntimeLifecycleTelemetry(defaultDashboardRuntimeBridge, query)
+  },
+  async listFeedbackTelemetry(query) {
+    return await listRuntimeFeedbackTelemetry(defaultDashboardRuntimeBridge, query)
+  },
+  async getTicketTelemetrySignals(ticketIds) {
+    return await getRuntimeTicketTelemetrySignals(defaultDashboardRuntimeBridge, ticketIds)
   },
   getRuntimeSource() {
     return getDashboardRuntimeSource()
@@ -108,6 +130,15 @@ interface DashboardRuntimeAuthSource extends DashboardRuntimeSource {
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
+}
+
+function stringOrNull(value: unknown): string | null {
+  const normalized = normalizeString(value)
+  return normalized || null
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
 const ticketAvailabilityReasons = {
@@ -255,6 +286,10 @@ function normalizeStringArray(value: unknown) {
 
 function normalizeTransport(value: unknown): DashboardTicketTransportMode {
   return value === "private_thread" ? "private_thread" : "channel_text"
+}
+
+function normalizeTransportOrNull(value: unknown): DashboardTicketTransportMode | null {
+  return value === "channel_text" || value === "private_thread" ? value : null
 }
 
 function runtimeDataValue(source: any, id: string) {
@@ -805,6 +840,284 @@ async function resolveAiAssistSummary(runtimeBridge: DashboardRuntimeBridge, tic
   }
 }
 
+const TELEMETRY_SERVICE_ID = "ot-telemetry:service"
+const TELEMETRY_DEFAULT_LIMIT = 200
+const TELEMETRY_MAX_LIMIT = 500
+
+function defaultTicketTelemetrySignals(): DashboardTicketTelemetrySignals {
+  return {
+    hasEverReopened: false,
+    reopenCount: 0,
+    lastReopenedAt: null,
+    latestFeedbackStatus: "none",
+    latestFeedbackTriggeredAt: null,
+    latestFeedbackCompletedAt: null,
+    latestRatings: []
+  }
+}
+
+function telemetryUnavailableResult<T>(message = "Ticket telemetry reads are unavailable.") {
+  return {
+    items: [] as T[],
+    nextCursor: null,
+    truncated: false,
+    warnings: [message]
+  }
+}
+
+function getRuntimeTelemetryService(runtimeBridge: DashboardRuntimeBridge) {
+  const runtime = runtimeBridge.getRuntimeSource?.() as any
+  try {
+    return runtime?.plugins?.classes?.get?.(TELEMETRY_SERVICE_ID) || null
+  } catch {
+    return null
+  }
+}
+
+function hasRuntimeTelemetryService(runtimeBridge: DashboardRuntimeBridge) {
+  const service = getRuntimeTelemetryService(runtimeBridge)
+  return Boolean(
+    service
+    && typeof service.listLifecycleHistory === "function"
+    && typeof service.listFeedbackHistory === "function"
+  )
+}
+
+function normalizeTelemetryLimit(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) return TELEMETRY_DEFAULT_LIMIT
+  return Math.min(TELEMETRY_MAX_LIMIT, Math.floor(value))
+}
+
+function normalizeTelemetryCursor(value: unknown) {
+  const normalized = normalizeString(value)
+  if (!normalized) return 0
+  const parsed = Number(normalized)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function pageTelemetryItems<T>(items: T[], query: { cursor?: string | null; limit?: number }) {
+  const offset = normalizeTelemetryCursor(query.cursor)
+  const limit = normalizeTelemetryLimit(query.limit)
+  const page = items.slice(offset, offset + limit)
+  const nextOffset = offset + page.length
+  return {
+    items: page,
+    nextCursor: nextOffset < items.length ? String(nextOffset) : null,
+    truncated: false,
+    warnings: [] as string[]
+  }
+}
+
+function normalizeTelemetrySnapshot(value: any): DashboardTicketTelemetrySnapshot {
+  return {
+    creatorUserId: stringOrNull(value?.creatorUserId),
+    optionId: stringOrNull(value?.optionId),
+    transportMode: normalizeTransportOrNull(value?.transportMode),
+    assignedTeamId: stringOrNull(value?.assignedTeamId),
+    assignedStaffUserId: stringOrNull(value?.assignedStaffUserId),
+    assignmentStrategy: stringOrNull(value?.assignmentStrategy),
+    integrationProfileId: stringOrNull(value?.integrationProfileId),
+    aiAssistProfileId: stringOrNull(value?.aiAssistProfileId),
+    closeRequestState: stringOrNull(value?.closeRequestState),
+    awaitingUserState: stringOrNull(value?.awaitingUserState),
+    firstStaffResponseAt: numberOrNull(value?.firstStaffResponseAt),
+    resolvedAt: numberOrNull(value?.resolvedAt),
+    closed: value?.closed === true
+  }
+}
+
+function normalizeLifecycleTelemetryRecord(value: any): DashboardTicketLifecycleTelemetryRecord | null {
+  const recordId = normalizeString(value?.recordId)
+  const ticketId = normalizeString(value?.ticketId)
+  const eventType = normalizeString(value?.eventType)
+  const occurredAt = numberOrNull(value?.occurredAt)
+  if (!recordId || !ticketId || !eventType || occurredAt == null) return null
+  return {
+    recordId,
+    ticketId,
+    eventType,
+    occurredAt,
+    actorUserId: stringOrNull(value?.actorUserId),
+    snapshot: normalizeTelemetrySnapshot(value?.snapshot),
+    previousSnapshot: value?.previousSnapshot ? normalizeTelemetrySnapshot(value.previousSnapshot) : null
+  }
+}
+
+function normalizeFeedbackStatus(value: unknown): DashboardTicketFeedbackStoredStatus | null {
+  return value === "completed" || value === "ignored" || value === "delivery_failed" ? value : null
+}
+
+function normalizeFeedbackQuestionType(value: unknown): DashboardTicketFeedbackQuestionSummary["type"] {
+  if (value === "rating" || value === "image" || value === "attachment" || value === "choice") return value
+  return "text"
+}
+
+function normalizeFeedbackQuestionSummary(value: any): DashboardTicketFeedbackQuestionSummary | null {
+  const position = numberOrNull(value?.position)
+  if (position == null) return null
+  return {
+    position,
+    type: normalizeFeedbackQuestionType(value?.type),
+    label: normalizeString(value?.label),
+    answered: value?.answered === true,
+    ratingValue: numberOrNull(value?.ratingValue),
+    choiceIndex: numberOrNull(value?.choiceIndex),
+    choiceLabel: stringOrNull(value?.choiceLabel)
+  }
+}
+
+function normalizeFeedbackTelemetryRecord(value: any): DashboardTicketFeedbackTelemetryRecord | null {
+  const sessionId = normalizeString(value?.sessionId)
+  const ticketId = normalizeString(value?.ticketId)
+  const triggeredAt = numberOrNull(value?.triggeredAt)
+  const status = normalizeFeedbackStatus(value?.status)
+  if (!sessionId || !ticketId || triggeredAt == null || !status) return null
+  return {
+    sessionId,
+    ticketId,
+    triggerMode: value?.triggerMode === "delete" || value?.triggerMode === "first-close-only" ? value.triggerMode : "close",
+    triggeredAt,
+    completedAt: numberOrNull(value?.completedAt),
+    status,
+    respondentUserId: stringOrNull(value?.respondentUserId),
+    closeCountAtTrigger: typeof value?.closeCountAtTrigger === "number" && Number.isFinite(value.closeCountAtTrigger) ? Math.max(0, Math.floor(value.closeCountAtTrigger)) : 0,
+    snapshot: normalizeTelemetrySnapshot(value?.snapshot),
+    questionSummaries: Array.isArray(value?.questionSummaries)
+      ? value.questionSummaries.map(normalizeFeedbackQuestionSummary).filter((summary: DashboardTicketFeedbackQuestionSummary | null): summary is DashboardTicketFeedbackQuestionSummary => Boolean(summary))
+      : []
+  }
+}
+
+function telemetrySnapshotMatches(
+  snapshot: DashboardTicketTelemetrySnapshot,
+  query: {
+    teamId?: string | null
+    assigneeId?: string | null
+    transportMode?: DashboardTicketTransportMode | null
+  }
+) {
+  const teamId = stringOrNull(query.teamId)
+  const assigneeId = stringOrNull(query.assigneeId)
+  const transportMode = normalizeTransportOrNull(query.transportMode)
+  if (teamId && snapshot.assignedTeamId !== teamId) return false
+  if (assigneeId && snapshot.assignedStaffUserId !== assigneeId) return false
+  if (transportMode && snapshot.transportMode !== transportMode) return false
+  return true
+}
+
+async function listRuntimeLifecycleTelemetry(
+  runtimeBridge: DashboardRuntimeBridge,
+  query: DashboardTicketLifecycleTelemetryQuery = {}
+): Promise<DashboardTicketLifecycleTelemetryResult> {
+  const service = getRuntimeTelemetryService(runtimeBridge)
+  if (!service || typeof service.listLifecycleHistory !== "function") {
+    return telemetryUnavailableResult<DashboardTicketLifecycleTelemetryRecord>()
+  }
+
+  try {
+    const eventTypes = new Set(Array.isArray(query.eventTypes) ? query.eventTypes.map(normalizeString).filter(Boolean) : [])
+    const records = (await service.listLifecycleHistory({
+      since: numberOrNull(query.since),
+      until: numberOrNull(query.until)
+    }) as unknown[])
+      .map(normalizeLifecycleTelemetryRecord)
+      .filter((record): record is DashboardTicketLifecycleTelemetryRecord => Boolean(record))
+      .filter((record) => eventTypes.size < 1 || eventTypes.has(record.eventType))
+      .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
+      .sort((left, right) => left.occurredAt - right.occurredAt || left.recordId.localeCompare(right.recordId))
+
+    return pageTelemetryItems(records, query)
+  } catch {
+    return telemetryUnavailableResult<DashboardTicketLifecycleTelemetryRecord>("Ticket lifecycle telemetry could not be read.")
+  }
+}
+
+async function listRuntimeFeedbackTelemetry(
+  runtimeBridge: DashboardRuntimeBridge,
+  query: DashboardTicketFeedbackTelemetryQuery = {}
+): Promise<DashboardTicketFeedbackTelemetryResult> {
+  const service = getRuntimeTelemetryService(runtimeBridge)
+  if (!service || typeof service.listFeedbackHistory !== "function") {
+    return telemetryUnavailableResult<DashboardTicketFeedbackTelemetryRecord>()
+  }
+
+  try {
+    const statuses = new Set(Array.isArray(query.statuses) ? query.statuses.map(normalizeFeedbackStatus).filter((status): status is DashboardTicketFeedbackStoredStatus => Boolean(status)) : [])
+    const records = (await service.listFeedbackHistory({
+      since: numberOrNull(query.since),
+      until: numberOrNull(query.until)
+    }) as unknown[])
+      .map(normalizeFeedbackTelemetryRecord)
+      .filter((record): record is DashboardTicketFeedbackTelemetryRecord => Boolean(record))
+      .filter((record) => statuses.size < 1 || statuses.has(record.status))
+      .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
+      .sort((left, right) => left.triggeredAt - right.triggeredAt || left.sessionId.localeCompare(right.sessionId))
+
+    return pageTelemetryItems(records, query)
+  } catch {
+    return telemetryUnavailableResult<DashboardTicketFeedbackTelemetryRecord>("Ticket feedback telemetry could not be read.")
+  }
+}
+
+async function getRuntimeTicketTelemetrySignals(
+  runtimeBridge: DashboardRuntimeBridge,
+  ticketIds: string[]
+): Promise<Record<string, DashboardTicketTelemetrySignals>> {
+  const ids = [...new Set(ticketIds.map(normalizeString).filter(Boolean))]
+  const signals = Object.fromEntries(ids.map((ticketId) => [ticketId, defaultTicketTelemetrySignals()])) as Record<string, DashboardTicketTelemetrySignals>
+  if (ids.length < 1) return signals
+
+  const service = getRuntimeTelemetryService(runtimeBridge)
+  if (!service || typeof service.listLifecycleHistory !== "function" || typeof service.listFeedbackHistory !== "function") {
+    return signals
+  }
+
+  const idSet = new Set(ids)
+  try {
+    const lifecycleRecords = (await service.listLifecycleHistory({}) as unknown[])
+      .map(normalizeLifecycleTelemetryRecord)
+      .filter((record): record is DashboardTicketLifecycleTelemetryRecord => record !== null && idSet.has(record.ticketId))
+    const feedbackRecords = (await service.listFeedbackHistory({}) as unknown[])
+      .map(normalizeFeedbackTelemetryRecord)
+      .filter((record): record is DashboardTicketFeedbackTelemetryRecord => record !== null && idSet.has(record.ticketId))
+
+    for (const record of lifecycleRecords) {
+      if (record.eventType !== "reopened") continue
+      const current = signals[record.ticketId] || defaultTicketTelemetrySignals()
+      signals[record.ticketId] = {
+        ...current,
+        hasEverReopened: true,
+        reopenCount: current.reopenCount + 1,
+        lastReopenedAt: current.lastReopenedAt == null ? record.occurredAt : Math.max(current.lastReopenedAt, record.occurredAt)
+      }
+    }
+
+    for (const record of feedbackRecords) {
+      const current = signals[record.ticketId] || defaultTicketTelemetrySignals()
+      if (current.latestFeedbackTriggeredAt != null && current.latestFeedbackTriggeredAt > record.triggeredAt) {
+        continue
+      }
+      signals[record.ticketId] = {
+        ...current,
+        latestFeedbackStatus: record.status,
+        latestFeedbackTriggeredAt: record.triggeredAt,
+        latestFeedbackCompletedAt: record.completedAt,
+        latestRatings: record.questionSummaries
+          .filter((question) => question.type === "rating")
+          .map((question) => ({
+            questionKey: `${question.position}:${question.label}`,
+            label: question.label,
+            value: question.ratingValue
+          }))
+      }
+    }
+  } catch {
+    return signals
+  }
+
+  return signals
+}
+
 async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, ticketId: string, actorUserId = ""): Promise<DashboardTicketDetailRecord | null> {
   const normalizedTicketId = normalizeString(ticketId)
   if (!normalizedTicketId) return null
@@ -853,6 +1166,9 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
   const creatorTransferWarning = originalApplicantUserId && ticket.creatorId && originalApplicantUserId !== ticket.creatorId
     ? "tickets.detail.warnings.creatorTransfer"
     : null
+  const telemetry = hasRuntimeTelemetryService(runtimeBridge)
+    ? (await getRuntimeTicketTelemetrySignals(runtimeBridge, [ticket.id]))[ticket.id] || defaultTicketTelemetrySignals()
+    : null
   const actionAvailability = await buildRuntimeActionAvailability({
     runtimeBridge,
     context,
@@ -898,7 +1214,8 @@ async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, tic
     priorityChoices,
     providerLock,
     integration,
-    aiAssist
+    aiAssist,
+    telemetry
   }
 }
 
@@ -1355,6 +1672,16 @@ export function supportsTicketWorkbenchReads(runtimeBridge: DashboardRuntimeBrid
 
 export function supportsTicketWorkbenchWrites(runtimeBridge: DashboardRuntimeBridge) {
   return typeof runtimeBridge.runTicketAction === "function"
+}
+
+export function supportsTicketTelemetryReads(runtimeBridge: DashboardRuntimeBridge) {
+  const hasBridgeMethods = (
+    typeof runtimeBridge.listLifecycleTelemetry === "function"
+    && typeof runtimeBridge.listFeedbackTelemetry === "function"
+    && typeof runtimeBridge.getTicketTelemetrySignals === "function"
+  )
+  if (!hasBridgeMethods) return false
+  return runtimeBridge === defaultDashboardRuntimeBridge ? hasRuntimeTelemetryService(runtimeBridge) : true
 }
 
 function buildDiscordAvatarUrl(userId: string, avatarHash: unknown) {

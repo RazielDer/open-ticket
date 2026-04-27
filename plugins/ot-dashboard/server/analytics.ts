@@ -1,8 +1,13 @@
 import type { DashboardConfigService } from "./config-service"
 import { joinBasePath } from "./dashboard-config"
 import type { DashboardSummaryCardInput, DashboardTone } from "./control-center"
-import type { DashboardRuntimeBridge } from "./runtime-bridge"
+import { supportsTicketTelemetryReads, type DashboardRuntimeBridge } from "./runtime-bridge"
 import type { DashboardTicketRecord } from "./dashboard-runtime-registry"
+import type {
+  DashboardTicketFeedbackTelemetryRecord,
+  DashboardTicketLifecycleTelemetryRecord,
+  DashboardTicketTelemetrySignals
+} from "./ticket-workbench-types"
 import type {
   DashboardTicketAnalyticsHistoryRecord,
   DashboardTranscriptTicketAnalyticsHistoryService
@@ -65,18 +70,55 @@ export interface DashboardAnalyticsBacklogRow {
   detail: string
 }
 
+export interface DashboardAnalyticsFeedbackOutcomeRow {
+  key: string
+  label: string
+  total: number
+  completed: number
+  ignored: number
+  deliveryFailed: number
+  completionRate: DashboardAnalyticsMetricCell
+  ignoredRate: DashboardAnalyticsMetricCell
+}
+
+export interface DashboardAnalyticsRatingRow {
+  questionKey: string
+  questionLabel: string
+  responses: number
+  averageRating: string
+  medianRating: string
+  lowSample: boolean
+}
+
+export interface DashboardAnalyticsReopenRateRow {
+  key: string
+  label: string
+  reopenedTickets: number
+  closedTickets: number
+  reopenRate: DashboardAnalyticsMetricCell
+}
+
 export interface DashboardAnalyticsModel {
   request: DashboardAnalyticsRequest
   filterAction: string
   clearFiltersHref: string
   historyState: DashboardAnalyticsHistoryState
   historyWarnings: string[]
+  telemetryState: DashboardAnalyticsHistoryState
+  telemetryWarnings: string[]
   summaryCards: DashboardSummaryCardInput[]
   backlogByTeam: DashboardAnalyticsBacklogRow[]
   backlogByAssignee: DashboardAnalyticsBacklogRow[]
   backlogByTransport: DashboardAnalyticsBacklogRow[]
   cohortByTeam: DashboardAnalyticsTableRow[]
   cohortByTransport: DashboardAnalyticsTableRow[]
+  feedbackByTeam: DashboardAnalyticsFeedbackOutcomeRow[]
+  feedbackByTransport: DashboardAnalyticsFeedbackOutcomeRow[]
+  ratingQuestions: DashboardAnalyticsRatingRow[]
+  reopenRateByTeam: DashboardAnalyticsReopenRateRow[]
+  reopenRateByTransport: DashboardAnalyticsReopenRateRow[]
+  reopenedBacklogByTeam: DashboardAnalyticsBacklogRow[]
+  reopenedBacklogByTransport: DashboardAnalyticsBacklogRow[]
 }
 
 const DEFAULT_WINDOW: DashboardAnalyticsWindow = "30d"
@@ -88,6 +130,9 @@ const WINDOW_DAYS: Record<Exclude<DashboardAnalyticsWindow, "custom">, number> =
 const HISTORY_PAGE_LIMIT = 200
 const HISTORY_MAX_PAGES = 10
 const HISTORY_MAX_RECORDS = 2000
+const TELEMETRY_PAGE_LIMIT = 200
+const TELEMETRY_MAX_PAGES = 10
+const TELEMETRY_MAX_RECORDS = 2000
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 function normalizeString(value: unknown) {
@@ -248,6 +293,14 @@ export function medianDurationMs(samples: number[]) {
   return Math.round((sorted[middle - 1] + sorted[middle]) / 2)
 }
 
+function medianNumber(samples: number[]) {
+  if (samples.length === 0) return null
+  const sorted = [...samples].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 1) return sorted[middle]
+  return (sorted[middle - 1] + sorted[middle]) / 2
+}
+
 export function p95DurationMs(samples: number[]) {
   return percentileNearestRank(samples, 0.95)
 }
@@ -315,6 +368,44 @@ function countCard(label: string, value: number | null, detail: string, tone?: D
     detail,
     tone: tone || (value == null ? "muted" : "success")
   }
+}
+
+function rateMetricCell(
+  numerator: number,
+  denominator: number,
+  t: (key: string, variables?: Record<string, string | number>) => string
+): DashboardAnalyticsMetricCell {
+  if (denominator < 1) {
+    return {
+      value: t("common.unavailable"),
+      detail: t("analytics.telemetry.noRateDenominator"),
+      available: false,
+      lowSample: false
+    }
+  }
+
+  const lowSample = denominator > 0 && denominator < 5
+  return {
+    value: `${Math.round((numerator / denominator) * 1000) / 10}%`,
+    detail: lowSample
+      ? t("analytics.page.lowSampleDetail", { count: denominator })
+      : t("analytics.telemetry.rateDetail", { numerator, denominator }),
+    available: true,
+    lowSample
+  }
+}
+
+function rateCard(label: string, cell: DashboardAnalyticsMetricCell): DashboardSummaryCardInput {
+  return {
+    label,
+    value: cell.value,
+    detail: cell.detail,
+    tone: cell.available ? cell.lowSample ? "warning" : "success" : "muted"
+  }
+}
+
+function formatRatingValue(value: number | null, t: (key: string, variables?: Record<string, string | number>) => string) {
+  return value == null ? t("common.unavailable") : value.toFixed(1)
 }
 
 function groupRows(
@@ -441,6 +532,247 @@ async function fetchHistoryRecords(input: {
   }
 }
 
+async function fetchTelemetryRecords(input: {
+  request: DashboardAnalyticsRequest
+  runtimeBridge: DashboardRuntimeBridge
+  backlogRecords: AnalyticsTicketRecord[]
+  t: (key: string, variables?: Record<string, string | number>) => string
+}) {
+  if (!supportsTicketTelemetryReads(input.runtimeBridge)) {
+    return {
+      state: "unavailable" as DashboardAnalyticsHistoryState,
+      lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+      feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+      ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+      warnings: [input.t("analytics.telemetry.unavailableWarning")]
+    }
+  }
+
+  const baseQuery = {
+    since: input.request.openedFromMs,
+    until: input.request.openedToMs - 1,
+    teamId: input.request.teamId || null,
+    assigneeId: input.request.assigneeId || null,
+    transportMode: input.request.transport === "all" ? null : input.request.transport
+  }
+  const warnings: string[] = []
+  const lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[] = []
+  const feedbackRecords: DashboardTicketFeedbackTelemetryRecord[] = []
+
+  try {
+    let lifecycleCursor: string | null = null
+    for (let page = 0; page < TELEMETRY_MAX_PAGES; page += 1) {
+      const result = await input.runtimeBridge.listLifecycleTelemetry!({
+        ...baseQuery,
+        eventTypes: ["closed", "reopened"],
+        cursor: lifecycleCursor,
+        limit: TELEMETRY_PAGE_LIMIT
+      })
+      warnings.push(...result.warnings)
+      if (result.truncated) {
+        return {
+          state: "truncated" as DashboardAnalyticsHistoryState,
+          lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+          feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+          ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+          warnings: [input.t("analytics.telemetry.truncatedWarning"), ...warnings]
+        }
+      }
+      lifecycleRecords.push(...result.items)
+      lifecycleCursor = result.nextCursor
+      if (!lifecycleCursor) break
+      if (lifecycleRecords.length >= TELEMETRY_MAX_RECORDS) {
+        return {
+          state: "truncated" as DashboardAnalyticsHistoryState,
+          lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+          feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+          ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+          warnings: [input.t("analytics.telemetry.scanCeilingWarning"), ...warnings]
+        }
+      }
+    }
+    if (lifecycleCursor) {
+      return {
+        state: "truncated" as DashboardAnalyticsHistoryState,
+        lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+        feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+        ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+        warnings: [input.t("analytics.telemetry.scanCeilingWarning"), ...warnings]
+      }
+    }
+
+    let feedbackCursor: string | null = null
+    for (let page = 0; page < TELEMETRY_MAX_PAGES; page += 1) {
+      const result = await input.runtimeBridge.listFeedbackTelemetry!({
+        ...baseQuery,
+        cursor: feedbackCursor,
+        limit: TELEMETRY_PAGE_LIMIT
+      })
+      warnings.push(...result.warnings)
+      if (result.truncated) {
+        return {
+          state: "truncated" as DashboardAnalyticsHistoryState,
+          lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+          feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+          ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+          warnings: [input.t("analytics.telemetry.truncatedWarning"), ...warnings]
+        }
+      }
+      feedbackRecords.push(...result.items)
+      feedbackCursor = result.nextCursor
+      if (!feedbackCursor) break
+      if (feedbackRecords.length >= TELEMETRY_MAX_RECORDS) {
+        return {
+          state: "truncated" as DashboardAnalyticsHistoryState,
+          lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+          feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+          ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+          warnings: [input.t("analytics.telemetry.scanCeilingWarning"), ...warnings]
+        }
+      }
+    }
+    if (feedbackCursor) {
+      return {
+        state: "truncated" as DashboardAnalyticsHistoryState,
+        lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+        feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+        ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+        warnings: [input.t("analytics.telemetry.scanCeilingWarning"), ...warnings]
+      }
+    }
+
+    const backlogTicketIds = input.backlogRecords.map((record) => record.ticketId).filter((ticketId): ticketId is string => Boolean(ticketId))
+    const ticketSignals = backlogTicketIds.length > 0
+      ? await input.runtimeBridge.getTicketTelemetrySignals!(backlogTicketIds)
+      : {}
+
+    return {
+      state: "available" as DashboardAnalyticsHistoryState,
+      lifecycleRecords,
+      feedbackRecords,
+      ticketSignals,
+      warnings
+    }
+  } catch {
+    return {
+      state: "unavailable" as DashboardAnalyticsHistoryState,
+      lifecycleRecords: [] as DashboardTicketLifecycleTelemetryRecord[],
+      feedbackRecords: [] as DashboardTicketFeedbackTelemetryRecord[],
+      ticketSignals: {} as Record<string, DashboardTicketTelemetrySignals>,
+      warnings: [input.t("analytics.telemetry.readFailureWarning"), ...warnings]
+    }
+  }
+}
+
+function feedbackOutcomeRows(
+  records: DashboardTicketFeedbackTelemetryRecord[],
+  getKey: (record: DashboardTicketFeedbackTelemetryRecord) => string,
+  getLabel: (key: string) => string,
+  t: (key: string, variables?: Record<string, string | number>) => string
+): DashboardAnalyticsFeedbackOutcomeRow[] {
+  const groups = new Map<string, DashboardTicketFeedbackTelemetryRecord[]>()
+  for (const record of records) {
+    const key = getKey(record)
+    groups.set(key, [...(groups.get(key) || []), record])
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, group]) => {
+      const completed = group.filter((record) => record.status === "completed").length
+      const ignored = group.filter((record) => record.status === "ignored").length
+      const deliveryFailed = group.filter((record) => record.status === "delivery_failed").length
+      const denominator = completed + ignored
+      return {
+        key,
+        label: getLabel(key),
+        total: group.length,
+        completed,
+        ignored,
+        deliveryFailed,
+        completionRate: rateMetricCell(completed, denominator, t),
+        ignoredRate: rateMetricCell(ignored, denominator, t)
+      }
+    })
+}
+
+function ratingRows(
+  records: DashboardTicketFeedbackTelemetryRecord[],
+  t: (key: string, variables?: Record<string, string | number>) => string
+): DashboardAnalyticsRatingRow[] {
+  const values = new Map<string, { label: string; samples: number[] }>()
+  for (const record of records) {
+    for (const question of record.questionSummaries) {
+      if (question.type !== "rating" || question.ratingValue == null) continue
+      const questionKey = `${question.position}:${question.label}`
+      const bucket = values.get(questionKey) || { label: question.label, samples: [] }
+      bucket.samples.push(question.ratingValue)
+      values.set(questionKey, bucket)
+    }
+  }
+
+  return [...values.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([questionKey, bucket]) => {
+      const total = bucket.samples.reduce((sum, sample) => sum + sample, 0)
+      const average = bucket.samples.length > 0 ? total / bucket.samples.length : null
+      const median = medianNumber(bucket.samples)
+      return {
+        questionKey,
+        questionLabel: bucket.label,
+        responses: bucket.samples.length,
+        averageRating: formatRatingValue(average, t),
+        medianRating: formatRatingValue(median, t),
+        lowSample: bucket.samples.length > 0 && bucket.samples.length < 5
+      }
+    })
+}
+
+function uniqueTicketCount(records: DashboardTicketLifecycleTelemetryRecord[]) {
+  return new Set(records.map((record) => record.ticketId).filter(Boolean)).size
+}
+
+function reopenRateRows(
+  records: DashboardTicketLifecycleTelemetryRecord[],
+  getKey: (record: DashboardTicketLifecycleTelemetryRecord) => string,
+  getLabel: (key: string) => string,
+  t: (key: string, variables?: Record<string, string | number>) => string
+): DashboardAnalyticsReopenRateRow[] {
+  const groups = new Map<string, DashboardTicketLifecycleTelemetryRecord[]>()
+  for (const record of records) {
+    const key = getKey(record)
+    groups.set(key, [...(groups.get(key) || []), record])
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, group]) => {
+      const reopenedTickets = uniqueTicketCount(group.filter((record) => record.eventType === "reopened"))
+      const closedTickets = uniqueTicketCount(group.filter((record) => record.eventType === "closed"))
+      return {
+        key,
+        label: getLabel(key),
+        reopenedTickets,
+        closedTickets,
+        reopenRate: rateMetricCell(reopenedTickets, closedTickets, t)
+      }
+    })
+}
+
+function reopenedBacklogRows(
+  records: AnalyticsTicketRecord[],
+  signals: Record<string, DashboardTicketTelemetrySignals>,
+  getKey: (record: AnalyticsTicketRecord) => string,
+  getLabel: (key: string) => string,
+  t: (key: string, variables?: Record<string, string | number>) => string
+): DashboardAnalyticsBacklogRow[] {
+  const reopened = records.filter((record) => record.ticketId && signals[record.ticketId]?.hasEverReopened)
+  return backlogRows(reopened, getKey, getLabel).map((row) => ({
+    ...row,
+    detail: t("analytics.telemetry.reopenedBacklogDetail", { count: row.count })
+  }))
+}
+
 export async function buildDashboardAnalyticsModel(input: {
   basePath: string
   query: Record<string, unknown>
@@ -461,6 +793,7 @@ export async function buildDashboardAnalyticsModel(input: {
     .filter((record) => matchesFilters(record, request))
   const backlogRecords = liveRecords.filter((record) => record.open)
   const history = await fetchHistoryRecords({ request, transcriptService: input.transcriptService })
+  const telemetry = await fetchTelemetryRecords({ request, runtimeBridge: input.runtimeBridge, backlogRecords, t })
   const deduped = new Map<string, AnalyticsTicketRecord>()
   for (const record of liveRecords.filter((item) => isInWindow(item, request))) {
     deduped.set(record.ticketId || `live:${record.transcriptId || record.creatorId || deduped.size}`, record)
@@ -486,6 +819,17 @@ export async function buildDashboardAnalyticsModel(input: {
   const cohortUnavailableDetail = history.state === "available"
     ? t("analytics.summary.openedDetail")
     : t("analytics.summary.historyUnavailableDetail")
+  const feedbackCompleted = telemetry.feedbackRecords.filter((record) => record.status === "completed").length
+  const feedbackIgnored = telemetry.feedbackRecords.filter((record) => record.status === "ignored").length
+  const feedbackDeliveryFailed = telemetry.feedbackRecords.filter((record) => record.status === "delivery_failed").length
+  const feedbackRateDenominator = feedbackCompleted + feedbackIgnored
+  const reopenedTickets = uniqueTicketCount(telemetry.lifecycleRecords.filter((record) => record.eventType === "reopened"))
+  const closedTickets = uniqueTicketCount(telemetry.lifecycleRecords.filter((record) => record.eventType === "closed"))
+  const telemetryAvailable = telemetry.state === "available"
+  const feedbackCompletionRate = rateMetricCell(feedbackCompleted, feedbackRateDenominator, t)
+  const feedbackIgnoredRate = rateMetricCell(feedbackIgnored, feedbackRateDenominator, t)
+  const reopenRate = rateMetricCell(reopenedTickets, closedTickets, t)
+  const unavailableRate = rateMetricCell(0, 0, t)
 
   return {
     request,
@@ -493,18 +837,33 @@ export async function buildDashboardAnalyticsModel(input: {
     clearFiltersHref: joinBasePath(input.basePath, "admin/analytics"),
     historyState: history.state,
     historyWarnings: history.warnings,
+    telemetryState: telemetry.state,
+    telemetryWarnings: telemetry.warnings,
     summaryCards: [
       countCard(t("analytics.summary.opened"), history.state === "available" ? cohortRecords.length : null, cohortUnavailableDetail, history.state === "available" ? "success" : "muted"),
       countCard(t("analytics.summary.backlog"), backlogRecords.length, t("analytics.summary.backlogDetail")),
       summaryMetricCard(t("analytics.summary.medianFirstResponse"), firstResponseMedian),
       summaryMetricCard(t("analytics.summary.p95FirstResponse"), firstResponseP95),
       summaryMetricCard(t("analytics.summary.medianResolution"), resolutionMedian),
-      summaryMetricCard(t("analytics.summary.p95Resolution"), resolutionP95)
+      summaryMetricCard(t("analytics.summary.p95Resolution"), resolutionP95),
+      countCard(t("analytics.summary.feedbackTriggered"), telemetryAvailable ? telemetry.feedbackRecords.length : null, t("analytics.telemetry.feedbackTriggeredDetail"), telemetryAvailable ? "success" : "muted"),
+      rateCard(t("analytics.summary.feedbackCompletionRate"), telemetryAvailable ? feedbackCompletionRate : unavailableRate),
+      rateCard(t("analytics.summary.feedbackIgnoredRate"), telemetryAvailable ? feedbackIgnoredRate : unavailableRate),
+      countCard(t("analytics.summary.feedbackDeliveryFailed"), telemetryAvailable ? feedbackDeliveryFailed : null, t("analytics.telemetry.feedbackDeliveryFailedDetail"), telemetryAvailable && feedbackDeliveryFailed > 0 ? "warning" : telemetryAvailable ? "success" : "muted"),
+      countCard(t("analytics.summary.reopenedTickets"), telemetryAvailable ? reopenedTickets : null, t("analytics.telemetry.reopenedTicketsDetail"), telemetryAvailable ? "warning" : "muted"),
+      rateCard(t("analytics.summary.reopenRate"), telemetryAvailable ? reopenRate : unavailableRate)
     ],
     backlogByTeam: backlogRows(backlogRecords, (record) => record.assignedTeamId || "unknown", teamLabel),
     backlogByAssignee: backlogRows(backlogRecords, (record) => record.assignedStaffUserId || "unknown", assigneeLabel),
     backlogByTransport: backlogRows(backlogRecords, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t)),
     cohortByTeam: history.state === "available" ? groupRows(cohortRecords, (record) => record.assignedTeamId || "unknown", teamLabel, t) : [],
-    cohortByTransport: history.state === "available" ? groupRows(cohortRecords, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t), t) : []
+    cohortByTransport: history.state === "available" ? groupRows(cohortRecords, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t), t) : [],
+    feedbackByTeam: telemetryAvailable ? feedbackOutcomeRows(telemetry.feedbackRecords, (record) => record.snapshot.assignedTeamId || "unknown", teamLabel, t) : [],
+    feedbackByTransport: telemetryAvailable ? feedbackOutcomeRows(telemetry.feedbackRecords, (record) => record.snapshot.transportMode || "unknown", (key) => transportLabel(key, t), t) : [],
+    ratingQuestions: telemetryAvailable ? ratingRows(telemetry.feedbackRecords, t) : [],
+    reopenRateByTeam: telemetryAvailable ? reopenRateRows(telemetry.lifecycleRecords, (record) => record.snapshot.assignedTeamId || "unknown", teamLabel, t) : [],
+    reopenRateByTransport: telemetryAvailable ? reopenRateRows(telemetry.lifecycleRecords, (record) => record.snapshot.transportMode || "unknown", (key) => transportLabel(key, t), t) : [],
+    reopenedBacklogByTeam: telemetryAvailable ? reopenedBacklogRows(backlogRecords, telemetry.ticketSignals, (record) => record.assignedTeamId || "unknown", teamLabel, t) : [],
+    reopenedBacklogByTransport: telemetryAvailable ? reopenedBacklogRows(backlogRecords, telemetry.ticketSignals, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t), t) : []
   }
 }
