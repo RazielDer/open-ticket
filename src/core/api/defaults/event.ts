@@ -190,6 +190,10 @@ export interface ODEventIds_Default {
     "afterTicketClaimed": ODEvent_Default<(ticket:ODTicket, claimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "onTicketUnclaim": ODEvent_Default<(ticket:ODTicket, unclaimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "afterTicketUnclaimed": ODEvent_Default<(ticket:ODTicket, unclaimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
+    "onTicketAssign": ODEvent_Default<(ticket:ODTicket, assigner:discord.User, channel:discord.GuildTextBasedChannel, assigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "afterTicketAssigned": ODEvent_Default<(ticket:ODTicket, assigner:discord.User, channel:discord.GuildTextBasedChannel, assigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "onTicketUnassign": ODEvent_Default<(ticket:ODTicket, unassigner:discord.User, channel:discord.GuildTextBasedChannel, previousAssigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "afterTicketUnassigned": ODEvent_Default<(ticket:ODTicket, unassigner:discord.User, channel:discord.GuildTextBasedChannel, previousAssigneeUserId:string, reason:string|null) => ODPromiseVoid>
     "onTicketPin": ODEvent_Default<(ticket:ODTicket, pinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "afterTicketPinned": ODEvent_Default<(ticket:ODTicket, pinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "onTicketUnpin": ODEvent_Default<(ticket:ODTicket, unpinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>

@@ -47,6 +47,7 @@ export const registerActions = async () => {
             ticket.get("opendiscord:closed").value = false
             ticket.get("opendiscord:closed-by").value = null
             ticket.get("opendiscord:closed-on").value = null
+            ticket.get("opendiscord:resolved-on").value = null
             
             ticket.get("opendiscord:autoclosed").value = false
             ticket.get("opendiscord:open").value = true

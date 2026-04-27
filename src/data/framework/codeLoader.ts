@@ -1,6 +1,7 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as discord from "discord.js"
 import { clearAwaitingUserForRequesterActivity, runAwaitingUserWorkflowScan } from "../../actions/ticketWorkflow.js"
+import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "../../actions/ticketTelemetry.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const globalDatabase = opendiscord.databases.get("opendiscord:global")
@@ -441,6 +442,16 @@ const loadAutoCode = () => {
             if (!message.channel || message.channel.isDMBased()) return
             const ticket = opendiscord.tickets.get(message.channel.id)
             if (!ticket) return
+            if (!ticket.get("opendiscord:first-staff-response-on").value && message.author.id != ticket.get("opendiscord:opened-by").value){
+                const member = await message.guild.members.fetch(message.author.id).catch(() => null)
+                const permission = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",message.author,member,message.channel as discord.GuildTextBasedChannel,message.guild)
+                if (permission?.hasPerms){
+                    const occurredAt = typeof message.createdTimestamp == "number" ? message.createdTimestamp : Date.now()
+                    const previousSnapshot = snapshotTicketForTelemetry(ticket)
+                    ticket.get("opendiscord:first-staff-response-on").value = occurredAt
+                    await appendTicketTelemetryLifecycleEvent({eventType:"first_staff_response",ticket,actorUserId:message.author.id,occurredAt,previousSnapshot})
+                }
+            }
             await clearAwaitingUserForRequesterActivity({
                 guild:message.guild,
                 channel:message.channel as discord.GuildTextBasedChannel,

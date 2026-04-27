@@ -22,6 +22,7 @@ export const registerActions = async () => {
                 return cancel()
             }
 
+            await opendiscord.events.get("onTicketAssign").emit([ticket,user,channel,normalizedAssigneeUserId,reason])
             setTicketAssignedStaff(ticket,normalizedAssigneeUserId)
             await opendiscord.actions.get("opendiscord:update-ticket-topic").run("ticket-action",{guild,channel,user,ticket,sendMessage:false,newTopic:null})
 
@@ -30,6 +31,7 @@ export const registerActions = async () => {
                 const assigneeLabel = assignee ? assignee.username : normalizedAssigneeUserId
                 await channel.send(`Ticket assigned to ${assigneeLabel}${reason ? `: ${reason}` : "."}`).catch(() => null)
             }
+            await opendiscord.events.get("afterTicketAssigned").emit([ticket,user,channel,normalizedAssigneeUserId,reason])
         }),
         new api.ODWorker("opendiscord:logs",0,(instance,params,source,cancel) => {
             const {channel,user,ticket,assigneeUserId} = params

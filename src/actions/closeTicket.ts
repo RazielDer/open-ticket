@@ -5,6 +5,7 @@ import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
 import { PRIVATE_THREAD_ACCESS_WARNING, getTicketUserParticipantIds, removePrivateThreadMembers } from "./ticketTransport.js"
 import { resetTicketWorkflowState } from "./ticketWorkflow.js"
+import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "./ticketTelemetry.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -30,11 +31,14 @@ export const registerActions = async () => {
             }
 
             await opendiscord.events.get("onTicketClose").emit([ticket,user,channel,reason])
+            const previousResolvedSnapshot = snapshotTicketForTelemetry(ticket)
+            const closedAt = new Date().getTime()
             
             //update ticket
             ticket.get("opendiscord:closed").value = true
             ticket.get("opendiscord:closed-by").value = user.id
-            ticket.get("opendiscord:closed-on").value = new Date().getTime()
+            ticket.get("opendiscord:closed-on").value = closedAt
+            ticket.get("opendiscord:resolved-on").value = closedAt
             
             ticket.get("opendiscord:reopened").value = false
             ticket.get("opendiscord:reopened-by").value = null
@@ -146,6 +150,7 @@ export const registerActions = async () => {
             //reply with new message
             if (params.sendMessage) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:close-message").build(source,{guild,channel,user,ticket,reason})).message)
             ticket.get("opendiscord:busy").value = false
+            await appendTicketTelemetryLifecycleEvent({eventType:"resolved",ticket,actorUserId:user.id,occurredAt:closedAt,previousSnapshot:previousResolvedSnapshot})
             await opendiscord.events.get("afterTicketClosed").emit([ticket,user,channel,reason])
 
             //update channel topic

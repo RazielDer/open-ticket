@@ -1,0 +1,25 @@
+{
+    "name":"OT Telemetry",
+    "id":"ot-telemetry",
+    "version":"1.0.0",
+    "startFile":"index.ts",
+    "supportedVersions":["OTv4.0.x","OTv4.1.x","OTv4.2.x"],
+
+    "enabled":true,
+    "priority":0,
+    "events":[],
+
+    "npmDependencies":[],
+    "requiredPlugins":[],
+    "incompatiblePlugins":[],
+
+    "details":{
+        "author":"EoTFS",
+        "contributors":[],
+        "shortDescription":"Persists analytics-safe ticket lifecycle and feedback telemetry.",
+        "longDescription":"Adds a configless telemetry service backed by the Open Ticket global database without retaining raw feedback content.",
+        "imageUrl":"",
+        "projectUrl":"",
+        "tags":["ticket","telemetry","analytics","feedback"]
+    }
+}

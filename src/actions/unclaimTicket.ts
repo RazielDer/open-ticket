@@ -12,6 +12,9 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:unclaim-ticket").workers.add([
         new api.ODWorker("opendiscord:unclaim-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
+            const previousAssigneeUserId = typeof ticket.get("opendiscord:assigned-staff").value == "string"
+                ? ticket.get("opendiscord:assigned-staff").value
+                : null
 
             let openCategoryRoute: ODTicketOpenCategoryRoute|null = null
             if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
@@ -23,6 +26,7 @@ export const registerActions = async () => {
             }
 
             await opendiscord.events.get("onTicketUnclaim").emit([ticket,user,channel,reason])
+            if (previousAssigneeUserId) await opendiscord.events.get("onTicketUnassign").emit([ticket,user,channel,previousAssigneeUserId,reason])
 
             //update ticket
             ticket.get("opendiscord:claimed").value = false
@@ -67,6 +71,7 @@ export const registerActions = async () => {
             if (params.sendMessage) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:unclaim-message").build(source,{guild,channel,user,ticket,reason})).message)
             ticket.get("opendiscord:busy").value = false
             await opendiscord.events.get("afterTicketUnclaimed").emit([ticket,user,channel,reason])
+            if (previousAssigneeUserId) await opendiscord.events.get("afterTicketUnassigned").emit([ticket,user,channel,previousAssigneeUserId,reason])
 
             //update channel topic
             await opendiscord.actions.get("opendiscord:update-ticket-topic").run("ticket-action",{guild,channel,user,ticket,sendMessage:false,newTopic:null})

@@ -3,6 +3,7 @@
 import {opendiscord, api} from "../index"
 import { validateTicketMoveTransport } from "./ticketTransport.js"
 import { clearTicketClaimState, getTicketOptionEscalationTargetIds } from "./ticketRouting.js"
+import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "./ticketTelemetry.js"
 
 export const registerActions = async () => {
     opendiscord.actions.add(new api.ODAction("opendiscord:escalate-ticket"))
@@ -21,11 +22,13 @@ export const registerActions = async () => {
                 return cancel()
             }
 
+            const previousSnapshot = snapshotTicketForTelemetry(ticket)
             ticket.get("opendiscord:busy").value = true
             clearTicketClaimState(ticket)
 
             await opendiscord.actions.get("opendiscord:move-ticket").run(source,{guild,channel,user,ticket,reason,sendMessage:false,data})
             if (params.sendMessage) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:move-message").build(source,{guild,channel,user,ticket,reason,data})).message)
+            await appendTicketTelemetryLifecycleEvent({eventType:"escalated",ticket,actorUserId:user.id,previousSnapshot})
         }),
         new api.ODWorker("opendiscord:logs",0,(instance,params,source,cancel) => {
             const {channel,user,ticket,data} = params

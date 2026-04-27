@@ -4,6 +4,7 @@
 import {opendiscord, api} from "../index"
 import * as discord from "discord.js"
 import { resolveTicketIntegrationActionLock } from "./ticketIntegration.js"
+import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "./ticketTelemetry.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -287,11 +288,13 @@ export async function requestTicketClose(guild: discord.Guild, channel: discord.
             : "Close request availability could not be verified.")
     }
 
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     ticket.get("opendiscord:close-request-state").value = "requested"
     ticket.get("opendiscord:close-request-by").value = user.id
     ticket.get("opendiscord:close-request-on").value = Date.now()
     await sendWorkflowMessage("opendiscord:close-request-message","requested",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"close_request_requested",ticket,actorUserId:user.id,previousSnapshot})
 }
 
 export async function cancelTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -300,9 +303,11 @@ export async function cancelTicketCloseRequest(guild: discord.Guild, channel: di
     if (state.closeRequestState != "requested") throw new api.ODSystemError("No close request is pending.")
     const lock = await resolveTicketWorkflowLock(ticket,"cancel-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     resetTicketCloseRequest(ticket)
     await sendWorkflowMessage("opendiscord:close-request-message","cancelled",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"close_request_canceled",ticket,actorUserId:user.id,previousSnapshot})
 }
 
 export async function approveTicketCloseRequest(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null, member?: discord.GuildMember | null, sendCloseMessage = true) {
@@ -310,6 +315,7 @@ export async function approveTicketCloseRequest(guild: discord.Guild, channel: d
     if (!verification.ok) throw new api.ODSystemError(verification.message)
     const lock = await resolveTicketWorkflowLock(ticket,"approve-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
+    await appendTicketTelemetryLifecycleEvent({eventType:"close_request_approved",ticket,actorUserId:user.id,previousSnapshot:snapshotTicketForTelemetry(ticket)})
     await opendiscord.actions.get("opendiscord:close-ticket").run("close-request",{guild,channel,user,ticket,reason,sendMessage:sendCloseMessage})
 }
 
@@ -318,9 +324,11 @@ export async function dismissTicketCloseRequest(guild: discord.Guild, channel: d
     if (state.closeRequestState != "requested") throw new api.ODSystemError("No close request is pending.")
     const lock = await resolveTicketWorkflowLock(ticket,"dismiss-close-request")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     resetTicketCloseRequest(ticket)
     await sendWorkflowMessage("opendiscord:close-request-message","dismissed",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"close_request_dismissed",ticket,actorUserId:user.id,previousSnapshot})
 }
 
 export async function setTicketAwaitingUser(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -333,11 +341,13 @@ export async function setTicketAwaitingUser(guild: discord.Guild, channel: disco
     const lock = await resolveTicketWorkflowLock(ticket,"set-awaiting-user")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
 
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     ticket.get("opendiscord:awaiting-user-state").value = "waiting"
     ticket.get("opendiscord:awaiting-user-since").value = Date.now()
     resetTicketCloseRequest(ticket)
     await sendWorkflowMessage("opendiscord:awaiting-user-message","set",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_set",ticket,actorUserId:user.id,previousSnapshot})
 }
 
 export async function clearTicketAwaitingUser(guild: discord.Guild, channel: discord.GuildTextBasedChannel, user: discord.User, ticket: api.ODTicket, reason: string | null) {
@@ -345,9 +355,11 @@ export async function clearTicketAwaitingUser(guild: discord.Guild, channel: dis
     if (!state.awaitingUserState) throw new api.ODSystemError("This ticket is not awaiting user response.")
     const lock = await resolveTicketWorkflowLock(ticket,"clear-awaiting-user")
     if (lock.locked) throw new api.ODSystemError(lock.reason || "Ticket workflow is locked by its provider.")
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     resetTicketAwaitingUser(ticket)
     await sendWorkflowMessage("opendiscord:awaiting-user-message","cleared",guild,channel,user,ticket,reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_cleared",ticket,actorUserId:user.id,previousSnapshot})
 }
 
 export async function clearAwaitingUserForRequesterActivity(input: {
@@ -382,9 +394,11 @@ async function clearAwaitingUserForAuthorizedActivity(input: {
     const state = getTicketWorkflowState(ticket)
     if (!state.awaitingUserState) return false
     if (!ticket.get("opendiscord:open").value || ticket.get("opendiscord:closed").value) return false
+    const previousSnapshot = snapshotTicketForTelemetry(ticket)
     resetTicketAwaitingUser(ticket)
     await sendWorkflowMessage("opendiscord:awaiting-user-message","cleared",guild,channel,user,ticket,input.reason)
     await refreshWorkflowTicketMessage(guild,channel,user,ticket)
+    await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_cleared",ticket,actorUserId:user.id,previousSnapshot})
     return true
 }
 
@@ -433,6 +447,7 @@ export async function runAwaitingUserWorkflowScan() {
         const elapsedMs = now - state.awaitingUserSince
         const autoCloseMs = policy.awaitingUser.autoCloseHours*60*60*1000
         if (policy.awaitingUser.autoCloseEnabled && elapsedMs >= autoCloseMs){
+            await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_timeout_closed",ticket,actorUserId:botUser.id,previousSnapshot:snapshotTicketForTelemetry(ticket)})
             await opendiscord.actions.get("opendiscord:close-ticket").run("awaiting-user-timeout",{
                 guild: channel.guild,
                 channel,
@@ -447,9 +462,11 @@ export async function runAwaitingUserWorkflowScan() {
 
         const reminderMs = policy.awaitingUser.reminderHours*60*60*1000
         if (state.awaitingUserState == "waiting" && policy.awaitingUser.reminderEnabled && elapsedMs >= reminderMs){
+            const previousSnapshot = snapshotTicketForTelemetry(ticket)
             await sendWorkflowMessage("opendiscord:awaiting-user-message","reminder",channel.guild,channel,botUser,ticket,null)
             ticket.get("opendiscord:awaiting-user-state").value = "reminded"
             await refreshWorkflowTicketMessage(channel.guild,channel,botUser,ticket)
+            await appendTicketTelemetryLifecycleEvent({eventType:"awaiting_user_reminded",ticket,actorUserId:botUser.id,previousSnapshot})
             reminders++
         }
     }

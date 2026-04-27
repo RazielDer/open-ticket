@@ -14,6 +14,7 @@ export const registerActions = async () => {
             const {guild,channel,user,ticket,reason} = params
 
             await opendiscord.events.get("onTicketClaim").emit([ticket,user,channel,reason])
+            await opendiscord.events.get("onTicketAssign").emit([ticket,user,channel,user.id,reason])
             
             //update ticket
             ticket.get("opendiscord:claimed").value = true
@@ -66,6 +67,7 @@ export const registerActions = async () => {
             if (params.sendMessage) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:claim-message").build(source,{guild,channel,user,ticket,reason})).message)
             ticket.get("opendiscord:busy").value = false
             await opendiscord.events.get("afterTicketClaimed").emit([ticket,user,channel,reason])
+            await opendiscord.events.get("afterTicketAssigned").emit([ticket,user,channel,user.id,reason])
 
             //update channel topic
             await opendiscord.actions.get("opendiscord:update-ticket-topic").run("ticket-action",{guild,channel,user,ticket,sendMessage:false,newTopic:null})
