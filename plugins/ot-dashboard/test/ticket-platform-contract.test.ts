@@ -407,11 +407,49 @@ test("slice 013 profile source contracts preserve stored ticket and canonical wh
   assert.match(bridgeSource, /function resolveBridgeConfigForTicket/)
   assert.match(bridgeSource, /hasOwnProperty\.call\(settings,"eligibleOptionIds"\)/)
   assert.equal(bridgeSource.includes("parseStringArraySetting(settings.eligibleOptionIds).length > 0"), false)
-  assert.match(bridgeSource, /return Boolean\(resolveBridgeConfigForTicket\(entry\)\)/)
+  assert.match(bridgeSource, /return ticketHasCanonicalBridgeProfile\(entry\)/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
   assert.equal(bridgeSource.includes("return isEligibleOptionId(getBridgeConfig().eligibleOptionIds"), false)
 
   assert.equal(localRuntimeSource.includes("eligibleOptionIds:[WHITELIST_OPTION_ID]"), false)
+})
+
+test("whitelist bridge live runtime paths require canonical profile binding", () => {
+  const root = process.cwd()
+  const bridgeSource = fs.readFileSync(path.resolve(root, "plugins/ot-eotfs-bridge/index.ts"), "utf8")
+  const extractBlock = (name: string, startMarker: string, endMarker?: string): string => {
+    const start = bridgeSource.indexOf(startMarker)
+    assert.notEqual(start, -1, `${name} start marker was not found`)
+    if (!endMarker) return bridgeSource.slice(start)
+    const end = bridgeSource.indexOf(endMarker, start + startMarker.length)
+    assert.notEqual(end, -1, `${name} end marker was not found`)
+    return bridgeSource.slice(start, end)
+  }
+  const requiredLiveBlocks: Array<[string, string, string | undefined]> = [
+    ["restoreBridgeState", "async function restoreBridgeState(", "async function persistBridgeState("],
+    ["syncTicketPresentationInternal", "async function syncTicketPresentationInternal(", "async function syncTicketPresentation("],
+    ["syncTicketPresentation", "async function syncTicketPresentation(", "async function submitApplicantReview("],
+    ["submitApplicantReview", "async function submitApplicantReview(", "function buildOperationEndpoint("],
+    ["refreshBridgeStatusAndRender", "async function refreshBridgeStatusAndRender(", "async function recoverUnstagedBridgeControl("],
+    ["recoverUnstagedBridgeControl", "async function recoverUnstagedBridgeControl(", "async function handleBridgeActionSuccess("],
+    ["performBridgeAction", "async function performBridgeAction(", "async function repairEligibleTicketControls("],
+    ["pollBridgeStates", "async function pollBridgeStates(", "function ensureBridgePollLoop("],
+    ["bridge button responder", "opendiscord.events.get(\"onButtonResponderLoad\")", "opendiscord.events.get(\"onModalResponderLoad\")"],
+    ["transcript attached", "opendiscord.events.get(\"afterTranscriptReady\")", undefined]
+  ]
+
+  assert.match(bridgeSource, /BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE/)
+  assert.match(bridgeSource, /function requireBridgeConfigForTicket/)
+
+  for (const [name, startMarker, endMarker] of requiredLiveBlocks) {
+    const block = extractBlock(name, startMarker, endMarker)
+    assert.doesNotMatch(block, /const config = getBridgeConfig\(\)/, `${name} bypassed canonical profile resolution`)
+    assert.match(block, /resolveRequiredBridgeConfigForTicket|requireBridgeConfigForTicket/, `${name} did not require canonical profile resolution`)
+  }
+
+  const afterTicketCreated = extractBlock("afterTicketCreated", "opendiscord.events.get(\"afterTicketCreated\")", "opendiscord.events.get(\"onButtonResponderLoad\")")
+  assert.doesNotMatch(afterTicketCreated, /getBridgeConfig\(\)/)
+  assert.match(afterTicketCreated, /resolveBridgeConfigForTicket\(ticket\)/)
 })
 
 test("slash AI assist records metadata-only ai-assist-request audit events through dashboard runtime API", () => {
