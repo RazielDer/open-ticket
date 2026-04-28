@@ -984,7 +984,7 @@ test("seeded owners can bootstrap admin access while non-mapped members cannot s
   assert.match(memberLocation, /returnTo=%2Fdash%2Fadmin/)
 })
 
-test("editors stay inside visual workspaces while reviewers stay off the admin host", async (t) => {
+test("editors stay inside visual workspaces while reviewers stay inside quality review", async (t) => {
   const runtime = await startTestServer()
   t.after(async () => {
     await stopTestServer(runtime)
@@ -998,8 +998,20 @@ test("editors stay inside visual workspaces while reviewers stay off the admin h
   await reviewerCompleted.response.arrayBuffer()
 
   assert.equal(reviewerCompleted.response.status, 302)
-  assert.match(decodeURIComponent(reviewerLocation), /Your Discord account does not currently have admin-host access\./)
-  assert.match(reviewerLocation, /returnTo=%2Fdash%2Fadmin/)
+  assert.equal(reviewerLocation, "/dash/admin/quality-review")
+  const reviewerReview = await fetch(`${runtime.baseUrl}/dash/admin/quality-review`, {
+    headers: { cookie: reviewerCompleted.cookie }
+  })
+  const reviewerReviewHtml = await reviewerReview.text()
+  assert.equal(reviewerReview.status, 200)
+  assert.match(reviewerReviewHtml, /Quality review workspace/)
+  const reviewerTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
+    headers: { cookie: reviewerCompleted.cookie },
+    redirect: "manual"
+  })
+  await reviewerTickets.arrayBuffer()
+  assert.equal(reviewerTickets.status, 302)
+  assert.equal(reviewerTickets.headers.get("location"), "/dash/admin/quality-review")
 
   const { cookie } = await login(runtime, "editor-user", "/dash/visual/options")
   const optionsResponse = await fetch(`${runtime.baseUrl}/dash/visual/options`, {
@@ -1034,7 +1046,8 @@ test("editors stay inside visual workspaces while reviewers stay off the admin h
     `${runtime.baseUrl}/dash/admin/plugins`,
     `${runtime.baseUrl}/dash/admin/evidence`,
     `${runtime.baseUrl}/dash/admin/security`,
-    `${runtime.baseUrl}/dash/admin/advanced`
+    `${runtime.baseUrl}/dash/admin/advanced`,
+    `${runtime.baseUrl}/dash/admin/quality-review`
   ]
 
   for (const target of disallowedGetTargets) {

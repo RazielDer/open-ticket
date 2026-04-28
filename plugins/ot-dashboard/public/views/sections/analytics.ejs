@@ -131,6 +131,11 @@
       <h2 class="transcript-workspace-title"><%= t("analytics.page.workspaceTitle") %></h2>
       <p class="item-copy"><%= t("analytics.page.workspaceBody") %></p>
     </div>
+    <% if (analytics.qualityReviewHref) { %>
+      <div class="card-actions">
+        <a class="btn secondary" href="<%= analytics.qualityReviewHref %>"><%= t("qualityReview.entryAction") %></a>
+      </div>
+    <% } %>
   </div>
 
   <% if (analytics.historyWarnings.length) { %>

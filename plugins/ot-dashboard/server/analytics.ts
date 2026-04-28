@@ -129,6 +129,7 @@ export interface DashboardAnalyticsModel {
     csvAction: string
     returnTo: string
   }
+  qualityReviewHref: string | null
   backlogByTeam: DashboardAnalyticsBacklogRow[]
   backlogByAssignee: DashboardAnalyticsBacklogRow[]
   backlogByTransport: DashboardAnalyticsBacklogRow[]
@@ -869,6 +870,7 @@ export async function buildDashboardAnalyticsModel(input: {
   transcriptService: DashboardTranscriptTicketAnalyticsHistoryService | null
   t?: (key: string, variables?: Record<string, string | number>) => string
   now?: number
+  qualityReviewHref?: string | null
 }): Promise<DashboardAnalyticsModel> {
   const t = input.t || ((key: string) => key)
   const teamLabels = readSupportTeamLabels(input.configService)
@@ -989,6 +991,7 @@ export async function buildDashboardAnalyticsModel(input: {
       csvAction: joinBasePath(input.basePath, "admin/analytics/export/csv"),
       returnTo: currentHref
     },
+    qualityReviewHref: input.qualityReviewHref || null,
     backlogByTeam: backlogRows(backlogRecords, (record) => record.assignedTeamId || "unknown", teamLabel),
     backlogByAssignee: backlogRows(backlogRecords, (record) => record.assignedStaffUserId || "unknown", assigneeLabel),
     backlogByTransport: backlogRows(backlogRecords, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t)),

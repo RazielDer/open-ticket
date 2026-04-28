@@ -36,6 +36,11 @@ import {
   parseTicketWorkbenchListRequest,
   sanitizeTicketWorkbenchReturnTo
 } from "../server/ticket-workbench"
+import {
+  buildDashboardQualityReviewListModel,
+  parseDashboardQualityReviewQuery,
+  sanitizeQualityReviewReturnTo
+} from "../server/quality-review"
 
 const pluginRoot = path.resolve(process.cwd(), "plugins", "ot-dashboard")
 
@@ -168,6 +173,37 @@ function telemetrySnapshot(overrides: Partial<DashboardTicketFeedbackTelemetryRe
     firstStaffResponseAt: null,
     resolvedAt: null,
     closed: false,
+    ...overrides
+  }
+}
+
+function feedbackTelemetry(overrides: Partial<DashboardTicketFeedbackTelemetryRecord> = {}): DashboardTicketFeedbackTelemetryRecord {
+  return {
+    sessionId: "feedback-1",
+    ticketId: "ticket-1",
+    triggerMode: "close",
+    triggeredAt: Date.now() - 60_000,
+    completedAt: Date.now() - 30_000,
+    status: "completed",
+    respondentUserId: "creator-1",
+    closeCountAtTrigger: 1,
+    snapshot: telemetrySnapshot(),
+    questionSummaries: [
+      { position: 0, type: "rating", label: "Experience", answered: true, ratingValue: 5, choiceIndex: null, choiceLabel: null }
+    ],
+    ...overrides
+  }
+}
+
+function lifecycleTelemetry(overrides: Partial<DashboardTicketLifecycleTelemetryRecord> = {}): DashboardTicketLifecycleTelemetryRecord {
+  return {
+    recordId: "lifecycle-1",
+    ticketId: "ticket-1",
+    eventType: "reopened",
+    occurredAt: Date.now() - 45_000,
+    actorUserId: "staff-1",
+    snapshot: telemetrySnapshot(),
+    previousSnapshot: telemetrySnapshot({ closed: true }),
     ...overrides
   }
 }
@@ -750,14 +786,12 @@ test("ticket workbench restores editor/admin access without reopening admin home
   assert.equal(editorHome.status, 302)
   assert.equal(editorHome.headers.get("location"), "/dash/visual/options")
 
-  const reviewerStarted = await startLogin(runtime.baseUrl, "/dash/admin/tickets")
-  const reviewerCallback = await fetch(`${runtime.baseUrl}/dash/login/discord/callback?code=reviewer-user&state=${encodeURIComponent(String(reviewerStarted.state))}`, {
-    redirect: "manual",
-    headers: { cookie: reviewerStarted.cookie }
-  })
-  await reviewerCallback.arrayBuffer()
-  assert.equal(reviewerCallback.status, 302)
-  assert.match(String(reviewerCallback.headers.get("location")), /does%20not%20currently%20have%20admin-host%20access/)
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/tickets")
+  assert.equal(reviewer.location, "/dash/admin/quality-review")
+  const reviewerTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: reviewer.cookie }, redirect: "manual" })
+  await reviewerTickets.arrayBuffer()
+  assert.equal(reviewerTickets.status, 302)
+  assert.equal(reviewerTickets.headers.get("location"), "/dash/admin/quality-review")
 })
 
 test("ticket list filters, fallback labels, and returnTo links stay detail-first", async (t) => {
@@ -902,6 +936,154 @@ test("ticket list model applies feedback and reopened telemetry signals", async 
   assert.equal(model.items[0].id, "ticket-1")
   assert.equal(model.items[0].feedbackBadge?.label, "Feedback complete")
   assert.equal(model.items[0].reopenBadge?.label, "Reopened x1")
+})
+
+test("quality review admits reviewers and admins without granting editor workbench access", async (t) => {
+  const runtime = await startServer({
+    telemetrySignals: {},
+    feedbackTelemetry: [feedbackTelemetry()],
+    lifecycleTelemetry: [lifecycleTelemetry()]
+  })
+  t.after(() => stopServer(runtime))
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review")
+  assert.equal(reviewer.location, "/dash/admin/quality-review")
+  const reviewerList = await fetch(`${runtime.baseUrl}/dash/admin/quality-review`, { headers: { cookie: reviewer.cookie } })
+  const reviewerHtml = await reviewerList.text()
+  assert.equal(reviewerList.status, 200)
+  assert.match(reviewerHtml, /Quality review workspace/)
+  assert.match(reviewerHtml, /Review candidates/)
+  assert.doesNotMatch(reviewerHtml, /Export JSON|Export CSV|Bulk actions/)
+  assert.doesNotMatch(reviewerHtml, /href="\/dash\/admin\/tickets"[^>]*>Tickets</)
+
+  const reviewerTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: reviewer.cookie }, redirect: "manual" })
+  await reviewerTickets.arrayBuffer()
+  assert.equal(reviewerTickets.status, 302)
+  assert.equal(reviewerTickets.headers.get("location"), "/dash/admin/quality-review")
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/tickets")
+  const adminTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: admin.cookie } })
+  assert.match(await adminTickets.text(), /Quality review/)
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/quality-review")
+  assert.equal(editor.location, "/dash/visual/options")
+  const editorDenied = await fetch(`${runtime.baseUrl}/dash/admin/quality-review`, { headers: { cookie: editor.cookie }, redirect: "manual" })
+  await editorDenied.arrayBuffer()
+  assert.equal(editorDenied.status, 302)
+  assert.equal(editorDenied.headers.get("location"), "/dash/visual/options")
+})
+
+test("quality review list is window-scoped, current-page drilldown only, and privacy-safe", async (t) => {
+  const now = Date.now()
+  const liveTicket = ticket({ id: "ticket-live", channelName: "live-review-channel", assignedStaffUserId: "staff-1" })
+  const archivedFeedback = feedbackTelemetry({
+    sessionId: "feedback-archived",
+    ticketId: "ticket-archived",
+    triggeredAt: now - 90_000,
+    completedAt: now - 80_000,
+    status: "completed",
+    respondentUserId: "creator-archived",
+    snapshot: telemetrySnapshot({
+      creatorUserId: "creator-archived",
+      optionId: "missing-option",
+      assignedTeamId: "missing-team",
+      assignedStaffUserId: "staff-archived",
+      transportMode: "private_thread",
+      closed: true
+    }),
+    questionSummaries: [
+      { position: 0, type: "rating", label: "Satisfaction", answered: true, ratingValue: 4, choiceIndex: null, choiceLabel: null },
+      { position: 1, type: "text", label: "Private comment", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null }
+    ]
+  })
+  const liveFeedback = feedbackTelemetry({
+    sessionId: "feedback-live",
+    ticketId: "ticket-live",
+    triggeredAt: now - 70_000,
+    completedAt: now - 65_000,
+    status: "ignored",
+    snapshot: telemetrySnapshot({ assignedStaffUserId: "staff-1" })
+  })
+  const liveReopen = lifecycleTelemetry({
+    recordId: "reopened-live",
+    ticketId: "ticket-live",
+    occurredAt: now - 60_000,
+    eventType: "reopened",
+    snapshot: telemetrySnapshot({ assignedStaffUserId: "staff-1" })
+  })
+  const runtime = await startServer({
+    tickets: [liveTicket],
+    telemetrySignals: {},
+    feedbackTelemetry: [archivedFeedback, liveFeedback],
+    lifecycleTelemetry: [
+      liveReopen,
+      lifecycleTelemetry({
+        recordId: "closed-archived",
+        ticketId: "ticket-archived",
+        eventType: "closed",
+        occurredAt: now - 75_000,
+        snapshot: archivedFeedback.snapshot
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review")
+
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review?signal=feedback&feedback=completed&q=archived`, { headers: { cookie } })
+  const listHtml = await listResponse.text()
+  assert.equal(listResponse.status, 200)
+  assert.match(listHtml, /ticket-archived/)
+  assert.match(listHtml, /Ticket no longer active/)
+  assert.match(listHtml, /Unknown option/)
+  assert.match(listHtml, /Unknown team/)
+  assert.match(listHtml, /Unknown assignee \(staff-archived\)/)
+  assert.match(listHtml, /Completed feedback/)
+  assert.doesNotMatch(listHtml, /ticket-live/)
+  assert.doesNotMatch(listHtml, /Export JSON|Export CSV|Bulk actions/)
+  assert.match(listHtml, /returnTo=%2Fdash%2Fadmin%2Fquality-review%3Fsignal%3Dfeedback%26feedback%3Dcompleted%26q%3Darchived/)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-archived?signal=feedback&feedback=completed&returnTo=${encodeURIComponent("https://example.invalid/bad")}`, { headers: { cookie } })
+  const detailHtml = await detailResponse.text()
+  assert.equal(detailResponse.status, 200)
+  assert.match(detailHtml, /Ticket no longer active/)
+  assert.match(detailHtml, /Latest rating answers/)
+  assert.match(detailHtml, /Satisfaction/)
+  assert.match(detailHtml, /In current window/)
+  assert.match(detailHtml, /href="\/dash\/admin\/quality-review"/)
+  assert.doesNotMatch(detailHtml, /Private comment|raw feedback|attachment|discord\.com\/channels/)
+})
+
+test("quality review model preserves filter semantics and unavailable telemetry state", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+
+  const parsed = parseDashboardQualityReviewQuery({
+    window: "custom",
+    from: "2026-04-22",
+    to: "2026-04-20",
+    signal: "reopened",
+    reopened: "never",
+    limit: "999",
+    page: "-2"
+  }, { now: Date.parse("2026-04-28T12:00:00.000Z") })
+  assert.equal(parsed.window, "30d")
+  assert.equal(parsed.reopened, "all")
+  assert.equal(parsed.limit, 25)
+  assert.equal(parsed.page, 1)
+  assert.equal(sanitizeQualityReviewReturnTo("/dash", "/dash/admin/tickets"), "/dash/admin/quality-review")
+  assert.equal(sanitizeQualityReviewReturnTo("/dash", "/dash/admin/quality-review/ticket-1?returnTo=/dash/admin/quality-review"), "/dash/admin/quality-review/ticket-1?returnTo=/dash/admin/quality-review")
+
+  const model = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge
+  })
+  assert.equal(model.available, false)
+  assert.match(model.warningMessage, /Ticket telemetry reads are unavailable/)
+  assert.equal(model.items.length, 0)
 })
 
 test("ticket detail shows provider locks, safe back links, and form-post runtime actions", async (t) => {
@@ -2463,22 +2645,30 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   const root = path.resolve(process.cwd())
   const authSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "auth.ts"), "utf8")
   const routesSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "routes", "admin.ts"), "utf8")
+  const controlCenterSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "control-center.ts"), "utf8")
   const workflowSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "workflow.yaml"), "utf8")
   const controllerSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "runtime", "controller-state.yaml"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(root, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
 
   assert.match(authSource, /ticket\.workbench/)
   assert.match(authSource, /"\/admin\/tickets"/)
+  assert.match(authSource, /"quality\.review"/)
+  assert.match(authSource, /"quality\.review\.manage"/)
   assert.doesNotMatch(authSource, /\/admin\/tickets\/export\/:format/)
   assert.match(authSource, /if \(tier === "editor" \|\| tier === "admin"\) \{\s+capabilities\.push\("config\.write\.visual", "admin\.shell", "ticket\.workbench"\)/)
+  assert.doesNotMatch(authSource, /DASHBOARD_EDITOR_ALLOWED_PATHS[\s\S]*\/admin\/quality-review/)
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
   assert.match(routesSource, /admin\/analytics\/export\/:format"\), adminGuard\.form\("analytics\.view"\)/)
   assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
+  assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/tickets\/bulk\/:actionId"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)
   assert.match(routesSource, /eventType: "ticket-bulk-action"/)
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
-  assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport|review workspace/i)
+  assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
+  assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"|api\/quality-review/i)
+  assert.doesNotMatch(controlCenterSource, /admin\/quality-review/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
   assert.match(workflowSource, /superseded by the workspace SLICE-010 controller contract/)

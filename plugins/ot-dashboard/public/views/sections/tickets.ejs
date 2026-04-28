@@ -8,6 +8,11 @@
       <h2 class="transcript-workspace-title"><%= t("tickets.page.workspaceTitle") %></h2>
       <p class="item-copy"><%= t("tickets.page.workspaceBody") %></p>
     </div>
+    <% if (ticketList.qualityReviewHref) { %>
+      <div class="card-actions">
+        <a class="btn secondary" href="<%= ticketList.qualityReviewHref %>"><%= t("qualityReview.entryAction") %></a>
+      </div>
+    <% } %>
   </div>
 
   <% if (!ticketList.available) { %>

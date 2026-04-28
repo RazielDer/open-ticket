@@ -45,6 +45,8 @@ export type DashboardCapability =
   | "config.write.visual"
   | "admin.shell"
   | "ticket.workbench"
+  | "quality.review"
+  | "quality.review.manage"
   | "analytics.view"
   | "transcript.view.global"
   | "transcript.manage"
@@ -229,12 +231,17 @@ function capabilitySetForTier(tier: DashboardAccessTier | null) {
     capabilities.push("viewer.portal")
   }
 
+  if (tier === "reviewer" || tier === "admin") {
+    capabilities.push("quality.review")
+  }
+
   if (tier === "editor" || tier === "admin") {
     capabilities.push("config.write.visual", "admin.shell", "ticket.workbench")
   }
 
   if (tier === "admin") {
     capabilities.push(
+      "quality.review.manage",
       "transcript.view.global",
       "analytics.view",
       "transcript.manage",
@@ -300,7 +307,9 @@ function buildAdminAccessState(
   const capabilities = capabilitySetForTier(tier)
   const preferredEntryPath = tier === "admin"
     ? joinBasePath(basePath, "admin")
-    : joinBasePath(basePath, "visual/options")
+    : tier === "reviewer"
+      ? joinBasePath(basePath, "admin/quality-review")
+      : joinBasePath(basePath, "visual/options")
 
   return {
     authenticated: Boolean(identity),
@@ -309,7 +318,7 @@ function buildAdminAccessState(
     membership: member ? "member" : "missing",
     capabilities,
     preferredEntryPath,
-    canAccessAdminHost: tier === "editor" || tier === "admin",
+    canAccessAdminHost: tier === "reviewer" || tier === "editor" || tier === "admin",
     canUseAdvancedEditorTools: tier === "admin",
     revalidatedAt: new Date().toISOString(),
     source,
@@ -597,12 +606,23 @@ function isEditorAllowedPath(basePath: string, candidate: string) {
   })
 }
 
+function isReviewerAllowedPath(basePath: string, candidate: string) {
+  const target = joinBasePath(basePath, "admin/quality-review")
+  return candidate === target || candidate.startsWith(`${target}/`) || candidate.startsWith(`${target}?`)
+}
+
 export function resolveAdminReturnTo(
   basePath: string,
   access: DashboardAdminAccessState,
   candidate: unknown
 ) {
   const sanitized = sanitizeReturnTo(basePath, candidate, access.preferredEntryPath)
+  if (access.tier === "reviewer") {
+    return isReviewerAllowedPath(basePath, sanitized)
+      ? sanitized
+      : access.preferredEntryPath
+  }
+
   if (access.tier !== "editor") {
     return sanitized
   }

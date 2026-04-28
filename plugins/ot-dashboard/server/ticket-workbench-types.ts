@@ -54,6 +54,7 @@ export interface DashboardTicketFeedbackTelemetryRecord {
 export interface DashboardTicketLifecycleTelemetryQuery {
   since?: number
   until?: number
+  ticketId?: string | null
   teamId?: string | null
   assigneeId?: string | null
   transportMode?: DashboardTicketTransportMode | null
@@ -65,6 +66,7 @@ export interface DashboardTicketLifecycleTelemetryQuery {
 export interface DashboardTicketFeedbackTelemetryQuery {
   since?: number
   until?: number
+  ticketId?: string | null
   teamId?: string | null
   assigneeId?: string | null
   transportMode?: DashboardTicketTransportMode | null

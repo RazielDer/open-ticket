@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import type express from "express"
 
-import { buildDashboardAuditActor, createAdminGuard, sanitizeReturnTo } from "../auth"
+import { buildDashboardAuditActor, createAdminGuard, hasDashboardCapability, sanitizeReturnTo } from "../auth"
 import { buildDashboardAnalyticsModel } from "../analytics"
 import type { DashboardAppContext } from "../create-app"
 import {
@@ -72,6 +72,10 @@ import {
   supportsTicketWorkbenchReads,
   supportsTicketWorkbenchWrites
 } from "../runtime-bridge"
+import {
+  buildDashboardQualityReviewDetailModel,
+  buildDashboardQualityReviewListModel
+} from "../quality-review"
 import {
   buildFallbackTicketDetail,
   buildTicketWorkbenchDetailModel,
@@ -362,6 +366,12 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     transcriptNotFound: i18n.t("routeMessages.transcriptNotFound"),
     reviewTokenExpired: i18n.t("routeMessages.reviewTokenExpired")
   }
+  const qualityReviewHrefForAccess = (res: express.Response) => {
+    const access = adminGuard.getAccess(res)
+    return access && hasDashboardCapability(access, "quality.review")
+      ? joinBasePath(basePath, "admin/quality-review")
+      : null
+  }
   const managedConfigRequirement = (req: express.Request) => {
     const definition = requireManagedConfig(req.params.id)
     if (!definition) {
@@ -377,7 +387,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       : "config.write.general" as const
   }
 
-  const buildAnalyticsWorkspaceModel = async (query: Record<string, unknown>) => {
+  const buildAnalyticsWorkspaceModel = async (query: Record<string, unknown>, qualityReviewHref: string | null = null) => {
     const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
     const transcriptService = transcriptIntegration.state === "ready" && supportsTranscriptTicketAnalyticsHistory(transcriptIntegration.service)
       ? transcriptIntegration.service
@@ -388,11 +398,12 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       configService,
       runtimeBridge,
       transcriptService,
-      t: i18n.t
+      t: i18n.t,
+      qualityReviewHref
     })
   }
 
-  const buildTicketWorkbenchWorkspaceModel = async (query: Record<string, unknown>, currentHref: string) => {
+  const buildTicketWorkbenchWorkspaceModel = async (query: Record<string, unknown>, currentHref: string, qualityReviewHref: string | null = null) => {
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const runtimeAvailable = snapshot.ticketSummary.available === true
     const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
@@ -424,7 +435,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           warningMessage: runtimeAvailable
             ? ""
             : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
-          telemetryWarningMessage
+          telemetryWarningMessage,
+          qualityReviewHref
         })
         const visibleTicketIds = preview.items.map((item) => item.id)
         telemetrySignals = visibleTicketIds.length > 0
@@ -454,7 +466,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       warningMessage: runtimeAvailable
         ? ""
         : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
-      telemetryWarningMessage
+      telemetryWarningMessage,
+      qualityReviewHref
     })
   }
 
@@ -1114,7 +1127,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
   app.get(joinBasePath(basePath, "admin/analytics"), adminGuard.page("analytics.view"), async (req, res, next) => {
     try {
-      const model = await buildAnalyticsWorkspaceModel(req.query as Record<string, unknown>)
+      const model = await buildAnalyticsWorkspaceModel(req.query as Record<string, unknown>, qualityReviewHrefForAccess(res))
 
       renderPage(res, "admin-shell", buildAdminShell(context, "analytics", {
         pageTitle: `${i18n.t("analytics.title")} | ${brand.title}`,
@@ -1152,7 +1165,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
 
     try {
-      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>)
+      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>, qualityReviewHrefForAccess(res))
       const payload = await buildAnalyticsExportPayload(model, format)
       await recordAdminAuditEvent(context, req, actor, {
         eventType: "analytics-export",
@@ -1178,11 +1191,81 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
+  app.get(joinBasePath(basePath, "admin/quality-review"), adminGuard.page("quality.review"), async (req, res, next) => {
+    try {
+      const model = await buildDashboardQualityReviewListModel({
+        basePath,
+        projectRoot: context.projectRoot,
+        currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review"),
+        query: req.query as Record<string, unknown>,
+        configService,
+        runtimeBridge
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `${i18n.t("qualityReview.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.page.eyebrow"),
+        pageHeadline: i18n.t("qualityReview.page.headline"),
+        pageSubtitle: i18n.t("qualityReview.page.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        hidePageIntro: true,
+        pageClass: "page-quality-review",
+        contentView: "sections/quality-review",
+        qualityReview: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/:ticketId"), adminGuard.page("quality.review"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const model = await buildDashboardQualityReviewDetailModel({
+        basePath,
+        projectRoot: context.projectRoot,
+        ticketId: req.params.ticketId,
+        actorUserId: access?.identity?.userId || "",
+        currentHref: req.originalUrl || joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(req.params.ticketId)}`),
+        returnTo: req.query.returnTo,
+        query: req.query as Record<string, unknown>,
+        configService,
+        runtimeBridge,
+        ticketWorkbenchAccessible: Boolean(access && hasDashboardCapability(access, "ticket.workbench"))
+      })
+
+      if (model.available && !model.detailRecord) {
+        return res.status(404).send(routeText.ticketNotFound)
+      }
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `${req.params.ticketId} | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.detail.eyebrow"),
+        pageHeadline: model.detailRecord
+          ? i18n.t("qualityReview.detail.headline", { id: model.detailRecord.ticketId })
+          : i18n.t("qualityReview.detail.unavailableTitle"),
+        pageSubtitle: i18n.t("qualityReview.detail.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        heroActions: [
+          { href: model.backHref, label: i18n.t("qualityReview.detail.backAction"), variant: "secondary" }
+        ],
+        pageClass: "page-quality-review-detail",
+        contentView: "sections/quality-review-detail",
+        qualityReviewDetail: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
   app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
     try {
       const model = await buildTicketWorkbenchWorkspaceModel(
         req.query as Record<string, unknown>,
-        req.originalUrl || joinBasePath(basePath, "admin/tickets")
+        req.originalUrl || joinBasePath(basePath, "admin/tickets"),
+        qualityReviewHrefForAccess(res)
       )
 
       renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
@@ -1223,7 +1306,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
 
     try {
-      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo)
+      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo, qualityReviewHrefForAccess(res))
       const payload = await buildTicketWorkbenchExportPayload(model, format)
       await recordAdminAuditEvent(context, req, actor, {
         eventType: "ticket-export",

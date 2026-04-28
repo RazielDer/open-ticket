@@ -1,0 +1,226 @@
+<%
+  const detail = qualityReviewDetail.detailRecord
+%>
+
+<% if (!qualityReviewDetail.available) { %>
+  <section class="section-card transcript-workspace-shell quality-review-detail-shell">
+    <div class="empty-panel">
+      <h3><%= t("qualityReview.detail.unavailableTitle") %></h3>
+      <p><%= qualityReviewDetail.warningMessage %></p>
+    </div>
+  </section>
+<% } else if (detail) { %>
+  <% if (detail.telemetryWarning) { %>
+    <div class="inline-alert warning"><%= detail.telemetryWarning %></div>
+  <% } %>
+
+  <section class="section-card transcript-workspace-shell quality-review-detail-shell">
+    <div class="transcript-workspace-header">
+      <div class="transcript-workspace-copy">
+        <h2 class="transcript-workspace-title"><%= detail.ticketId %></h2>
+        <p class="item-copy"><%= detail.historicalSummary.live ? t("qualityReview.detail.liveBody") : t("qualityReview.detail.historicalOnlyBody") %></p>
+      </div>
+      <div class="card-actions">
+        <% if (qualityReviewDetail.ticketWorkbenchHref) { %>
+          <a class="btn secondary" href="<%= qualityReviewDetail.ticketWorkbenchHref %>"><%= t("qualityReview.detail.ticketWorkbenchAction") %></a>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.currentTicketTitle") %></h3>
+      <% if (!detail.historicalSummary.live) { %>
+        <span class="status-pill tone-muted"><%= t("qualityReview.detail.noLongerActiveBadge") %></span>
+      <% } %>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.facts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.latestFeedbackTitle") %></h3>
+    </div>
+    <% if (detail.latestFeedbackSession) { %>
+      <div class="facts-grid">
+        <% qualityReviewDetail.latestFeedbackFacts.forEach((fact) => { %>
+          <div class="fact-row">
+            <span class="fact-label"><%= fact.label %></span>
+            <strong><%= fact.value %></strong>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noFeedbackTitle") %></h3>
+        <p><%= t("qualityReview.detail.noFeedbackBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.ratingAnswersTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.ratingRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.question") %></th>
+              <th><%= t("qualityReview.detail.table.rating") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.ratingRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.label %></strong></td>
+                <td><%= row.value %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noRatingsTitle") %></h3>
+        <p><%= t("qualityReview.detail.noRatingsBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.feedbackHistoryTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.feedbackRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.session") %></th>
+              <th><%= t("qualityReview.detail.table.status") %></th>
+              <th><%= t("qualityReview.detail.table.triggered") %></th>
+              <th><%= t("qualityReview.detail.table.completed") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.feedbackRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.status %></td>
+                <td><%= row.triggeredAt %></td>
+                <td><%= row.completedAt %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noFeedbackTitle") %></h3>
+        <p><%= t("qualityReview.detail.noFeedbackBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.reopenHistoryTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.reopenRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.event") %></th>
+              <th><%= t("qualityReview.detail.table.occurred") %></th>
+              <th><%= t("qualityReview.detail.table.actor") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.reopenRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.occurredAt %></td>
+                <td><%= row.actor %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noReopenTitle") %></h3>
+        <p><%= t("qualityReview.detail.noReopenBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.lifecycleTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.lifecycleRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.event") %></th>
+              <th><%= t("qualityReview.detail.table.type") %></th>
+              <th><%= t("qualityReview.detail.table.occurred") %></th>
+              <th><%= t("qualityReview.detail.table.actor") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.lifecycleRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.type %></td>
+                <td><%= row.occurredAt %></td>
+                <td><%= row.actor %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noLifecycleTitle") %></h3>
+        <p><%= t("qualityReview.detail.noLifecycleBody") %></p>
+      </div>
+    <% } %>
+  </section>
+<% } %>

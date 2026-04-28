@@ -120,6 +120,7 @@ export interface TicketWorkbenchListModel {
     csvAction: string
     returnTo: string
   }
+  qualityReviewHref: string | null
   options: Array<{ id: string; label: string }>
   panels: Array<{ id: string; label: string }>
   supportTeams: Array<{ id: string; label: string }>
@@ -525,6 +526,7 @@ export function buildTicketWorkbenchListModel(input: {
   warningMessage?: string
   telemetryWarningMessage?: string
   writesSupported?: boolean
+  qualityReviewHref?: string | null
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
   const telemetrySupported = input.readsSupported && input.telemetrySupported === true
@@ -652,6 +654,7 @@ export function buildTicketWorkbenchListModel(input: {
       csvAction: joinBasePath(input.basePath, "admin/tickets/export/csv"),
       returnTo: currentHref
     },
+    qualityReviewHref: input.qualityReviewHref || null,
     options: lookups.options
       .filter((option) => normalizeString(option.type) === "ticket")
       .map((option) => ({ id: normalizeString(option.id), label: labelFromRecord(option, normalizeString(option.id)) }))

@@ -1016,12 +1016,15 @@ async function listRuntimeLifecycleTelemetry(
 
   try {
     const eventTypes = new Set(Array.isArray(query.eventTypes) ? query.eventTypes.map(normalizeString).filter(Boolean) : [])
+    const ticketId = normalizeString(query.ticketId)
     const records = (await service.listLifecycleHistory({
       since: numberOrNull(query.since),
-      until: numberOrNull(query.until)
+      until: numberOrNull(query.until),
+      ticketId: ticketId || undefined
     }) as unknown[])
       .map(normalizeLifecycleTelemetryRecord)
       .filter((record): record is DashboardTicketLifecycleTelemetryRecord => Boolean(record))
+      .filter((record) => !ticketId || record.ticketId === ticketId)
       .filter((record) => eventTypes.size < 1 || eventTypes.has(record.eventType))
       .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
       .sort((left, right) => left.occurredAt - right.occurredAt || left.recordId.localeCompare(right.recordId))
@@ -1043,12 +1046,15 @@ async function listRuntimeFeedbackTelemetry(
 
   try {
     const statuses = new Set(Array.isArray(query.statuses) ? query.statuses.map(normalizeFeedbackStatus).filter((status): status is DashboardTicketFeedbackStoredStatus => Boolean(status)) : [])
+    const ticketId = normalizeString(query.ticketId)
     const records = (await service.listFeedbackHistory({
       since: numberOrNull(query.since),
-      until: numberOrNull(query.until)
+      until: numberOrNull(query.until),
+      ticketId: ticketId || undefined
     }) as unknown[])
       .map(normalizeFeedbackTelemetryRecord)
       .filter((record): record is DashboardTicketFeedbackTelemetryRecord => Boolean(record))
+      .filter((record) => !ticketId || record.ticketId === ticketId)
       .filter((record) => statuses.size < 1 || statuses.has(record.status))
       .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
       .sort((left, right) => left.triggeredAt - right.triggeredAt || left.sessionId.localeCompare(right.sessionId))

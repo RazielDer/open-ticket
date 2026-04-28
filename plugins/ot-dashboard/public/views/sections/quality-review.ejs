@@ -1,0 +1,257 @@
+<%
+  const hasActiveFilters = qualityReview.request.activeFilters.length > 0
+%>
+
+<section class="section-card transcript-workspace-shell quality-review-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("qualityReview.page.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("qualityReview.page.workspaceBody") %></p>
+    </div>
+  </div>
+
+  <% if (!qualityReview.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("qualityReview.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= qualityReview.warningMessage %></p>
+    </div>
+  <% } %>
+
+  <% if (qualityReview.telemetryWarningMessage) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("qualityReview.page.telemetryDegradedBadge") %></span>
+      <p class="item-copy"><%= qualityReview.telemetryWarningMessage %></p>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell quality-review-filter-shell" data-responsive-disclosure="quality-review-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("qualityReview.page.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("qualityReview.page.filtersBody") %></p>
+    </div>
+    <% if (hasActiveFilters) { %>
+      <span class="pill-tag"><%= t("qualityReview.page.activeFilterCount", { count: qualityReview.request.activeFilters.length }) %></span>
+    <% } %>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= qualityReview.filterAction %>" class="stack-form">
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.windowLabel") %></span>
+          <select class="select-input" name="window">
+            <% qualityReview.request.windowOptions.forEach((option) => { %>
+              <option value="<%= option %>" <%= qualityReview.request.window === option ? 'selected' : '' %>><%= t(`qualityReview.page.windows.${option}`) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.fromLabel") %></span>
+          <input class="text-input" type="date" name="from" value="<%= qualityReview.request.from %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.toLabel") %></span>
+          <input class="text-input" type="date" name="to" value="<%= qualityReview.request.to %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.signalLabel") %></span>
+          <select class="select-input" name="signal">
+            <% qualityReview.request.signalOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= qualityReview.request.signal === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.searchLabel") %></span>
+          <input class="text-input" type="search" name="q" value="<%= qualityReview.request.q %>" placeholder="<%= t('qualityReview.page.filters.searchPlaceholder') %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("qualityReview.page.filters.sortLabel") %></span>
+          <select class="select-input" name="sort">
+            <% qualityReview.request.sortOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= qualityReview.request.sort === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <details class="editor-disclosure transcript-filter-advanced" <%= (qualityReview.request.feedback !== 'all' || qualityReview.request.reopened !== 'all' || qualityReview.request.status !== 'all' || qualityReview.request.transport !== 'all' || qualityReview.request.teamId || qualityReview.request.assigneeId || qualityReview.request.limit !== 25) ? 'open' : '' %>>
+        <summary class="transcript-filter-advanced-summary">
+          <div>
+            <h4><%= t("qualityReview.page.filters.moreTitle") %></h4>
+            <p class="item-copy"><%= t("qualityReview.page.filters.moreBody") %></p>
+          </div>
+        </summary>
+        <div class="editor-disclosure-body">
+          <div class="form-grid three-up transcript-filter-grid transcript-filter-grid-advanced">
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.feedbackLabel") %></span>
+              <select class="select-input" name="feedback">
+                <% qualityReview.request.feedbackOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= qualityReview.request.feedback === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.reopenedLabel") %></span>
+              <select class="select-input" name="reopened">
+                <% qualityReview.request.reopenedOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= qualityReview.request.reopened === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.statusLabel") %></span>
+              <select class="select-input" name="status">
+                <% qualityReview.request.statusOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= qualityReview.request.status === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.transportLabel") %></span>
+              <select class="select-input" name="transport">
+                <% qualityReview.request.transportOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= qualityReview.request.transport === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.teamLabel") %></span>
+              <select class="select-input" name="teamId">
+                <option value=""><%= t("qualityReview.page.filters.anyTeam") %></option>
+                <% qualityReview.supportTeams.forEach((team) => { %>
+                  <option value="<%= team.id %>" <%= qualityReview.request.teamId === team.id ? 'selected' : '' %>><%= team.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.assigneeLabel") %></span>
+              <input class="text-input" type="text" name="assigneeId" value="<%= qualityReview.request.assigneeId %>" placeholder="<%= t('qualityReview.page.filters.assigneePlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("qualityReview.page.filters.rowsLabel") %></span>
+              <select class="select-input" name="limit">
+                <% qualityReview.request.limitOptions.forEach((value) => { %>
+                  <option value="<%= value %>" <%= qualityReview.request.limit === value ? 'selected' : '' %>><%= value %></option>
+                <% }) %>
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("qualityReview.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= qualityReview.clearFiltersHref %>"><%= t("qualityReview.page.filters.clearAction") %></a>
+        </div>
+
+        <% if (hasActiveFilters) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("qualityReview.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% qualityReview.request.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="section-card transcript-records-shell quality-review-records-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("qualityReview.page.inventoryTitle") %></h3>
+    </div>
+    <span class="pill-tag"><%= t("qualityReview.page.inventoryCount", { count: qualityReview.total }) %></span>
+  </div>
+
+  <% if (!qualityReview.available) { %>
+    <div class="empty-panel">
+      <h3><%= t("qualityReview.page.unavailableTitle") %></h3>
+      <p><%= qualityReview.warningMessage %></p>
+    </div>
+  <% } else if (qualityReview.items.length) { %>
+    <div class="table-wrap">
+      <table class="data-table transcript-records-table quality-review-table">
+        <thead>
+          <tr>
+            <th><%= t("qualityReview.page.table.ticket") %></th>
+            <th><%= t("qualityReview.page.table.signal") %></th>
+            <th><%= t("qualityReview.page.table.route") %></th>
+            <th><%= t("qualityReview.page.table.owner") %></th>
+            <th><%= t("qualityReview.page.table.feedback") %></th>
+            <th><%= t("qualityReview.page.table.reopened") %></th>
+            <th><%= t("qualityReview.page.table.latestSignal") %></th>
+            <th><%= t("qualityReview.page.table.access") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% qualityReview.items.forEach((item) => { %>
+            <tr data-filter-item="<%= item.searchText %>">
+              <td class="transcript-record-cell">
+                <strong class="transcript-record-title"><%= item.record.ticketId %></strong>
+                <div class="field-help"><%= item.record.resourceName || t("qualityReview.page.historicalOnly") %> / <%= item.transportLabel %></div>
+              </td>
+              <td>
+                <span class="status-pill tone-muted"><%= item.matchedSignalLabel %></span>
+                <span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span>
+              </td>
+              <td>
+                <strong><%= item.record.optionLabel %></strong>
+                <div class="field-help"><%= item.record.live ? t("qualityReview.page.liveTicket") : t("qualityReview.page.historicalOnly") %></div>
+              </td>
+              <td>
+                <strong><%= item.record.assigneeLabel %></strong>
+                <div class="field-help"><%= item.record.teamLabel %> / <%= item.record.creatorLabel %></div>
+              </td>
+              <td><span class="status-pill tone-<%= item.feedbackBadge.tone %>"><%= item.feedbackBadge.label %></span></td>
+              <td>
+                <% if (item.reopenBadge) { %>
+                  <span class="status-pill tone-<%= item.reopenBadge.tone %>"><%= item.reopenBadge.label %></span>
+                <% } else { %>
+                  <span class="status-pill tone-muted"><%= t("qualityReview.page.noReopen") %></span>
+                <% } %>
+              </td>
+              <td>
+                <div><%= item.latestSignalLabel %></div>
+                <div class="field-help"><%= t("qualityReview.page.table.openedMeta", { value: item.openedLabel }) %></div>
+              </td>
+              <td><a class="transcript-table-link" href="<%= item.detailHref %>"><%= t("qualityReview.page.openAction") %></a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar">
+      <p class="pagination-summary"><%= t("qualityReview.page.paginationShowing", { start: qualityReview.pageStart, end: qualityReview.pageEnd, total: qualityReview.total }) %></p>
+      <div class="sticky-actions">
+        <% if (qualityReview.previousHref) { %>
+          <a class="btn secondary" href="<%= qualityReview.previousHref %>"><%= t("common.previous") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.previous") %></span>
+        <% } %>
+        <% qualityReview.pageLinks.forEach((pageLink) => { %>
+          <a class="btn <%= pageLink.active ? 'primary' : 'subtle' %>" href="<%= pageLink.href %>"><%= pageLink.page %></a>
+        <% }) %>
+        <% if (qualityReview.nextHref) { %>
+          <a class="btn secondary" href="<%= qualityReview.nextHref %>"><%= t("common.next") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.next") %></span>
+        <% } %>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("qualityReview.page.emptyTitle") %></h3>
+      <p><%= t("qualityReview.page.emptyBody") %></p>
+    </div>
+  <% } %>
+</section>

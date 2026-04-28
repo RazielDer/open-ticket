@@ -1000,7 +1000,7 @@ test("admin and viewer Discord auth flows persist success and failure audit rows
   })
 
   const failedAdmin = await startAdminLogin(runtime)
-  const deniedAdmin = await finishAdminLogin(runtime, failedAdmin.cookie, failedAdmin.state, "reviewer-user")
+  const deniedAdmin = await finishAdminLogin(runtime, failedAdmin.cookie, failedAdmin.state, "viewer-1")
   await deniedAdmin.response.arrayBuffer()
   assert.equal(deniedAdmin.response.status, 302)
   assert.match(decodeURIComponent(String(deniedAdmin.response.headers.get("location") || "")), /admin-host access/i)
@@ -1021,7 +1021,7 @@ test("admin and viewer Discord auth flows persist success and failure audit rows
 
   const adminFailure = await runtime.context.authStore.listAuditEvents({
     eventType: "admin-login-failure",
-    actorUserId: "reviewer-user"
+    actorUserId: "viewer-1"
   })
   const adminSuccess = await runtime.context.authStore.listAuditEvents({
     eventType: "admin-login-success",
