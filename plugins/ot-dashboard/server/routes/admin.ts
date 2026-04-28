@@ -71,6 +71,7 @@ import {
   supportsTicketTelemetryReads,
   supportsTicketWorkbenchReads,
   supportsTicketWorkbenchWrites,
+  type DashboardRuntimeBridge,
   type DashboardRuntimeGuildMember
 } from "../runtime-bridge"
 import {
@@ -138,11 +139,26 @@ function memberHasAdminTier(context: DashboardAppContext, member: DashboardRunti
   return member.roleIds.some((roleId) => adminRoleIds.has(String(roleId || "").trim()))
 }
 
+function dashboardRuntimeMemberLabel(member: DashboardRuntimeGuildMember, fallback: string) {
+  return member.displayName || member.globalName || member.username || fallback
+}
+
 async function resolveQualityReviewOwnerLabel(context: DashboardAppContext, userId: string) {
   const member = typeof context.runtimeBridge.resolveGuildMember === "function"
     ? await context.runtimeBridge.resolveGuildMember(userId).catch(() => null)
     : null
-  return member?.displayName || member?.globalName || member?.username || `Unknown owner (${userId})`
+  return member ? dashboardRuntimeMemberLabel(member, userId) : `Unknown owner (${userId})`
+}
+
+async function resolveCurrentQualityReviewOwnerLabel(context: DashboardAppContext, userId: string) {
+  const normalizedUserId = String(userId || "").trim()
+  if (!normalizedUserId) return "Unassigned"
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(normalizedUserId).catch(() => null)
+    : null
+  return member && memberHasAdminTier(context, member)
+    ? dashboardRuntimeMemberLabel(member, normalizedUserId)
+    : `Unknown owner (${normalizedUserId})`
 }
 
 async function buildQualityReviewOwnerChoices(context: DashboardAppContext, currentUserId: string | null | undefined) {
@@ -424,6 +440,10 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     return access && hasDashboardCapability(access, "quality.review")
       ? joinBasePath(basePath, "admin/quality-review")
       : null
+  }
+  const qualityReviewRuntimeBridge: DashboardRuntimeBridge = {
+    ...runtimeBridge,
+    resolveQualityReviewOwnerLabel: (userId) => resolveCurrentQualityReviewOwnerLabel(context, userId)
   }
   const managedConfigRequirement = (req: express.Request) => {
     const definition = requireManagedConfig(req.params.id)
@@ -1253,7 +1273,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review"),
         query: req.query as Record<string, unknown>,
         configService,
-        runtimeBridge,
+        runtimeBridge: qualityReviewRuntimeBridge,
         actorUserId: access?.identity?.userId || ""
       })
 
@@ -1287,7 +1307,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         returnTo: req.query.returnTo,
         query: req.query as Record<string, unknown>,
         configService,
-        runtimeBridge,
+        runtimeBridge: qualityReviewRuntimeBridge,
         ticketWorkbenchAccessible: Boolean(access && hasDashboardCapability(access, "ticket.workbench")),
         canManage,
         ownerChoices: canManage ? await buildQualityReviewOwnerChoices(context, access?.identity?.userId) : []

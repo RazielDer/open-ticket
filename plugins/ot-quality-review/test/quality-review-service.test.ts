@@ -204,3 +204,36 @@ test("asset resolution rejects traversal paths even when storage is tampered", a
   const result = await service.resolveQualityReviewAsset("ticket-1", "session-1", "uuid-1")
   assert.equal(result.status, "missing")
 })
+
+test("asset resolution rejects symlink escapes even when storage is tampered", async (t) => {
+  const { root, database, service } = createService()
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ot-quality-review-outside-"))
+  const linkDir = path.join(root, "runtime", "ot-quality-review", "assets", "ticket-1", "session-1", "escaped")
+  t.after(() => {
+    try {
+      fs.unlinkSync(linkDir)
+    } catch {
+      try {
+        fs.rmdirSync(linkDir)
+      } catch {}
+    }
+    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(outsideRoot, { recursive: true, force: true })
+  })
+
+  await service.captureFeedbackPayload(payload())
+  fs.writeFileSync(path.join(outsideRoot, "outside.txt"), "escaped", "utf8")
+  fs.mkdirSync(path.dirname(linkDir), { recursive: true })
+  try {
+    fs.symlinkSync(outsideRoot, linkDir, process.platform === "win32" ? "junction" : "dir")
+  } catch {
+    t.skip("symlink support unavailable")
+    return
+  }
+
+  const stored = database.get(QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY, "session-1")
+  stored.answers[3].assets[0].relativePath = "ticket-1/session-1/escaped/outside.txt"
+
+  const result = await service.resolveQualityReviewAsset("ticket-1", "session-1", "uuid-1")
+  assert.equal(result.status, "missing")
+})

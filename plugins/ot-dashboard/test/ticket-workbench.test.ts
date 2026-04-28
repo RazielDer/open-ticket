@@ -536,6 +536,20 @@ async function startServer(options: {
       userIds: { reviewer: [], editor: [], admin: [] }
     }
   }
+  async function resolveFixtureQualityReviewOwnerLabel(userId: string | null | undefined) {
+    const normalizedUserId = String(userId || "").trim()
+    if (!normalizedUserId) return "Unassigned"
+    const resolved = members.get(normalizedUserId) || null
+    const adminRoleIds = new Set(config.rbac.roleIds.admin)
+    const hasManageAccess = Boolean(resolved && (
+      config.rbac.ownerUserIds.includes(resolved.userId)
+      || config.rbac.userIds.admin.includes(resolved.userId)
+      || resolved.roleIds.some((roleId) => adminRoleIds.has(roleId))
+    ))
+    return hasManageAccess
+      ? (resolved?.displayName || resolved?.globalName || resolved?.username || normalizedUserId)
+      : `Unknown owner (${normalizedUserId})`
+  }
   const runtimeBridge: DashboardRuntimeBridge = {
     getSnapshot() {
       return {
@@ -650,16 +664,34 @@ async function startServer(options: {
     } : {}),
     async listQualityReviewCases(query) {
       const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
+      const cases = await Promise.all(query.tickets.map(async (signal) => {
+        const record = caseByTicket.get(signal.ticketId)
+        return record
+          ? { ...record, ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId) }
+          : null
+      }))
       return {
-        cases: query.tickets.map((signal) => caseByTicket.get(signal.ticketId)).filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
+        cases: cases.filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
         warnings: []
       }
     },
     async getQualityReviewCase(ticketId) {
       if (options.qualityReviewDetail === null) return null
-      if (options.qualityReviewDetail) return options.qualityReviewDetail
+      if (options.qualityReviewDetail) {
+        return {
+          ...options.qualityReviewDetail,
+          ownerLabel: await resolveFixtureQualityReviewOwnerLabel(options.qualityReviewDetail.ownerUserId)
+        }
+      }
       const summary = (options.qualityReviewCases || []).find((record) => record.ticketId === ticketId)
-      return summary ? { ...summary, notes: [], rawFeedback: [] } : null
+      return summary
+        ? {
+            ...summary,
+            ownerLabel: await resolveFixtureQualityReviewOwnerLabel(summary.ownerUserId),
+            notes: [],
+            rawFeedback: []
+          }
+        : null
     },
     async runQualityReviewAction(input) {
       qualityReviewActionRequests.push(input)
@@ -678,6 +710,9 @@ async function startServer(options: {
         byteSize: 0,
         message: "Missing test asset."
       }
+    },
+    async resolveQualityReviewOwnerLabel(userId) {
+      return resolveFixtureQualityReviewOwnerLabel(userId)
     },
     ...(options.writes === false ? {} : {
       async runTicketAction(input: DashboardTicketActionRequest) {
@@ -1313,6 +1348,61 @@ test("quality review list merges adjudication state and raw-feedback filters", a
   assert.equal(model.items[0].reviewStateBadge.label, "In review")
   assert.equal(model.items[0].rawFeedbackBadge.label, "Raw feedback available")
   assert.equal(model.items[0].record.reviewCase.noteCount, 1)
+})
+
+test("quality review list and detail mark stale non-manager owners as unknown", async (t) => {
+  const now = Date.parse("2026-04-20T12:00:00.000Z")
+  const staleCase = qualityReviewCase({
+    ticketId: "ticket-1",
+    state: "in_review",
+    ownerUserId: "staff-1",
+    ownerLabel: "staff-1"
+  })
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        sessionId: "feedback-1",
+        triggeredAt: now - 60_000,
+        completedAt: now - 30_000,
+        status: "completed"
+      })
+    ],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [staleCase],
+    qualityReviewDetail: { ...staleCase, notes: [], rawFeedback: [] }
+  })
+  t.after(() => stopServer(runtime))
+
+  const listModel = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+  const listItem = listModel.items.find((item) => item.record.reviewCase.ticketId === "ticket-1")
+  assert.ok(listItem)
+  assert.equal(listItem.record.reviewCase.ownerLabel, "Unknown owner (staff-1)")
+
+  const detailModel = await buildDashboardQualityReviewDetailModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    ticketId: "ticket-1",
+    actorUserId: "admin-user",
+    currentHref: "/dash/admin/quality-review/ticket-1",
+    returnTo: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    ticketWorkbenchAccessible: false,
+    now
+  })
+  assert.equal(detailModel.detailRecord?.reviewCase.ownerLabel, "Unknown owner (staff-1)")
 })
 
 test("quality review raw-feedback filter uses latest completed answered session outside the active window", async (t) => {

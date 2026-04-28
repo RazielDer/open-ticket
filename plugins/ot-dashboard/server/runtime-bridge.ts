@@ -79,6 +79,7 @@ export interface DashboardRuntimeBridge {
   getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
   runQualityReviewAction?: (input: DashboardQualityReviewActionRequest) => Promise<DashboardQualityReviewActionResult>
   resolveQualityReviewAsset?: (ticketId: string, sessionId: string, assetId: string, actorUserId: string) => Promise<DashboardQualityReviewAssetResult>
+  resolveQualityReviewOwnerLabel?: (userId: string) => Promise<string>
   getRuntimeSource?: () => DashboardRuntimeSource | null
   resolveGuildMember?: (userId: string) => Promise<DashboardRuntimeGuildMember | null>
   getGuildId?: () => string | null
@@ -1224,6 +1225,11 @@ function normalizeRawFeedbackStatus(value: unknown): DashboardQualityReviewRawFe
 async function resolveRuntimeUserLabel(runtimeBridge: DashboardRuntimeBridge, userId: string | null) {
   const normalizedUserId = normalizeString(userId)
   if (!normalizedUserId) return "Unassigned"
+  if (typeof runtimeBridge.resolveQualityReviewOwnerLabel === "function") {
+    const ownerLabel = await runtimeBridge.resolveQualityReviewOwnerLabel(normalizedUserId).catch(() => "")
+    const normalizedOwnerLabel = normalizeString(ownerLabel)
+    if (normalizedOwnerLabel) return normalizedOwnerLabel
+  }
   const member = runtimeBridge.resolveGuildMember
     ? await runtimeBridge.resolveGuildMember(normalizedUserId).catch(() => null)
     : null

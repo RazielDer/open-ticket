@@ -444,10 +444,8 @@ export class OTQualityReviewService {
         }
         if (asset.captureStatus !== "mirrored" || !asset.relativePath) return assetMissing("Quality review asset is missing.")
 
-        const resolved = this.resolveAssetPath(asset.relativePath)
+        const resolved = await this.resolveExistingAssetFilePath(asset.relativePath)
         if (!resolved) return assetMissing("Quality review asset is missing.")
-        const exists = await fs.promises.stat(resolved).then((stat) => stat.isFile()).catch(() => false)
-        if (!exists) return assetMissing("Quality review asset is missing.")
 
         return {
             status: "available",
@@ -660,9 +658,33 @@ export class OTQualityReviewService {
             return null
         }
         const resolved = path.resolve(this.assetRoot, ...normalized.split("/"))
-        const rootWithSeparator = this.assetRoot.endsWith(path.sep) ? this.assetRoot : `${this.assetRoot}${path.sep}`
-        if (resolved !== this.assetRoot && !resolved.startsWith(rootWithSeparator)) return null
+        if (!this.pathIsInsideOrSame(resolved, this.assetRoot)) return null
         return resolved
+    }
+
+    private async resolveExistingAssetFilePath(relativePath: string | null | undefined) {
+        const resolved = this.resolveAssetPath(relativePath)
+        if (!resolved) return null
+
+        const rootRealPath = await fs.promises.realpath(this.assetRoot).catch(() => null)
+        if (!rootRealPath) return null
+
+        const stat = await fs.promises.lstat(resolved).catch(() => null)
+        if (!stat || stat.isSymbolicLink() || !stat.isFile()) return null
+
+        const fileRealPath = await fs.promises.realpath(resolved).catch(() => null)
+        if (!fileRealPath || !this.pathIsInsideOrSame(fileRealPath, rootRealPath)) return null
+
+        return fileRealPath
+    }
+
+    private pathIsInsideOrSame(candidate: string, root: string) {
+        const resolvedRoot = path.resolve(root)
+        const resolvedCandidate = path.resolve(candidate)
+        const comparableRoot = process.platform === "win32" ? resolvedRoot.toLowerCase() : resolvedRoot
+        const comparableCandidate = process.platform === "win32" ? resolvedCandidate.toLowerCase() : resolvedCandidate
+        const rootWithSeparator = comparableRoot.endsWith(path.sep) ? comparableRoot : `${comparableRoot}${path.sep}`
+        return comparableCandidate === comparableRoot || comparableCandidate.startsWith(rootWithSeparator)
     }
 
     private async readCase(ticketId: string) {
