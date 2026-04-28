@@ -10,6 +10,12 @@ import type {
   DashboardTicketFeedbackStoredStatus,
   DashboardTicketFeedbackTelemetryRecord,
   DashboardTicketLifecycleTelemetryRecord,
+  DashboardQualityReviewCaseDetailRecord,
+  DashboardQualityReviewCaseSignal,
+  DashboardQualityReviewCaseSummary,
+  DashboardQualityReviewRawFeedbackRecord,
+  DashboardQualityReviewRawFeedbackStatus,
+  DashboardQualityReviewState,
   DashboardTicketTelemetrySignals,
   DashboardTicketTelemetrySnapshot,
   DashboardTicketTransportMode
@@ -21,6 +27,8 @@ export const QUALITY_REVIEW_FEEDBACK_FILTERS = ["all", "completed", "ignored", "
 export const QUALITY_REVIEW_REOPENED_FILTERS = ["all", "ever", "never"] as const
 export const QUALITY_REVIEW_STATUS_FILTERS = ["all", "open", "closed"] as const
 export const QUALITY_REVIEW_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
+export const QUALITY_REVIEW_STATE_FILTERS = ["active", "unreviewed", "in_review", "resolved", "all"] as const
+export const QUALITY_REVIEW_RAW_FEEDBACK_FILTERS = ["all", "available", "partial", "expired", "none"] as const
 export const QUALITY_REVIEW_SORTS = ["signal-desc", "signal-asc", "opened-desc", "opened-asc"] as const
 export const QUALITY_REVIEW_LIMITS = [10, 25, 50, 100] as const
 
@@ -30,6 +38,8 @@ export type DashboardQualityReviewFeedbackFilter = (typeof QUALITY_REVIEW_FEEDBA
 export type DashboardQualityReviewReopenedFilter = (typeof QUALITY_REVIEW_REOPENED_FILTERS)[number]
 export type DashboardQualityReviewStatusFilter = (typeof QUALITY_REVIEW_STATUS_FILTERS)[number]
 export type DashboardQualityReviewTransportFilter = (typeof QUALITY_REVIEW_TRANSPORT_FILTERS)[number]
+export type DashboardQualityReviewStateFilter = (typeof QUALITY_REVIEW_STATE_FILTERS)[number]
+export type DashboardQualityReviewRawFeedbackFilter = (typeof QUALITY_REVIEW_RAW_FEEDBACK_FILTERS)[number]
 export type DashboardQualityReviewSort = (typeof QUALITY_REVIEW_SORTS)[number]
 export type DashboardQualityReviewSignalKind = "feedback" | "reopened"
 
@@ -46,6 +56,9 @@ export interface DashboardQualityReviewQuery {
   teamId: string
   assigneeId: string
   transport: DashboardQualityReviewTransportFilter
+  reviewState: DashboardQualityReviewStateFilter
+  ownerId: string
+  rawFeedback: DashboardQualityReviewRawFeedbackFilter
   q: string
   sort: DashboardQualityReviewSort
   limit: number
@@ -56,6 +69,9 @@ export interface DashboardQualityReviewQuery {
   reopenedOptions: Array<{ value: DashboardQualityReviewReopenedFilter; label: string }>
   statusOptions: Array<{ value: DashboardQualityReviewStatusFilter; label: string }>
   transportOptions: Array<{ value: DashboardQualityReviewTransportFilter; label: string }>
+  reviewStateOptions: Array<{ value: DashboardQualityReviewStateFilter; label: string }>
+  ownerOptions: Array<{ value: string; label: string }>
+  rawFeedbackOptions: Array<{ value: DashboardQualityReviewRawFeedbackFilter; label: string }>
   sortOptions: Array<{ value: DashboardQualityReviewSort; label: string }>
   limitOptions: number[]
   activeFilters: Array<{ label: string; value: string }>
@@ -87,6 +103,7 @@ export interface DashboardQualityReviewRecord {
   latestFeedbackStatus: DashboardTicketFeedbackStoredStatus | "none"
   reopenCount: number
   lastReopenedAt: number | null
+  reviewCase: DashboardQualityReviewCaseSummary
   matchedSignalKinds: DashboardQualityReviewSignalKind[]
   latestMatchedSignalAt: number
 }
@@ -99,6 +116,8 @@ export interface DashboardQualityReviewDetailRecord {
   feedbackHistory: DashboardTicketFeedbackTelemetryRecord[]
   reopenEvents: DashboardTicketLifecycleTelemetryRecord[]
   lifecycleEvents: DashboardTicketLifecycleTelemetryRecord[]
+  reviewCase: DashboardQualityReviewCaseDetailRecord
+  completedAnsweredFeedbackSessionIds: string[]
   matchedWindowEventIds: string[]
   telemetryWarning: string | null
 }
@@ -108,6 +127,8 @@ export interface DashboardQualityReviewListItem {
   detailHref: string
   statusBadge: { label: string; tone: DashboardTone }
   feedbackBadge: { label: string; tone: DashboardTone }
+  reviewStateBadge: { label: string; tone: DashboardTone }
+  rawFeedbackBadge: { label: string; tone: DashboardTone }
   reopenBadge: { label: string; tone: DashboardTone } | null
   transportLabel: string
   openedLabel: string
@@ -147,9 +168,42 @@ export interface DashboardQualityReviewDetailModel {
   facts: Array<{ label: string; value: string }>
   latestFeedbackFacts: Array<{ label: string; value: string }>
   ratingRows: Array<{ label: string; value: string; answered: boolean }>
+  adjudicationFacts: Array<{ label: string; value: string }>
+  canManage: boolean
+  stateActionHref: string
+  assignOwnerActionHref: string
+  clearOwnerActionHref: string
+  addNoteActionHref: string
+  ownerChoices: Array<{ value: string; label: string }>
+  rawFeedbackSessions: DashboardQualityReviewRawFeedbackSessionModel[]
   feedbackRows: Array<{ id: string; status: string; triggeredAt: string; completedAt: string; matched: boolean }>
   reopenRows: Array<{ id: string; occurredAt: string; actor: string; matched: boolean }>
   lifecycleRows: Array<{ id: string; type: string; occurredAt: string; actor: string; matched: boolean }>
+}
+
+export interface DashboardQualityReviewRawFeedbackSessionModel {
+  sessionId: string
+  statusLabel: string
+  statusTone: DashboardTone
+  capturedAt: string
+  expiresAt: string
+  warnings: string[]
+  answers: Array<{
+    position: number
+    type: string
+    label: string
+    answered: boolean
+    value: string
+    assets: Array<{
+      assetId: string
+      fileName: string
+      contentType: string
+      byteSize: string
+      status: string
+      reason: string
+      downloadHref: string | null
+    }>
+  }>
 }
 
 interface ConfigRecord {
@@ -317,6 +371,50 @@ function transportLabel(value: DashboardQualityReviewTransportFilter | Dashboard
   }
 }
 
+function reviewStateLabel(value: DashboardQualityReviewStateFilter | DashboardQualityReviewState) {
+  switch (value) {
+    case "unreviewed": return "Unreviewed"
+    case "in_review": return "In review"
+    case "resolved": return "Resolved"
+    case "all": return "All review states"
+    default: return "Active review"
+  }
+}
+
+function reviewStateBadge(state: DashboardQualityReviewState) {
+  switch (state) {
+    case "resolved":
+      return { label: "Resolved", tone: "success" as DashboardTone }
+    case "in_review":
+      return { label: "In review", tone: "warning" as DashboardTone }
+    default:
+      return { label: "Unreviewed", tone: "muted" as DashboardTone }
+  }
+}
+
+function rawFeedbackLabel(value: DashboardQualityReviewRawFeedbackFilter | DashboardQualityReviewRawFeedbackStatus) {
+  switch (value) {
+    case "available": return "Raw feedback available"
+    case "partial": return "Partial raw feedback"
+    case "expired": return "Raw feedback expired"
+    case "none": return "Raw feedback not captured"
+    default: return "All raw feedback"
+  }
+}
+
+function rawFeedbackBadge(status: DashboardQualityReviewRawFeedbackStatus) {
+  switch (status) {
+    case "available":
+      return { label: "Raw feedback available", tone: "success" as DashboardTone }
+    case "partial":
+      return { label: "Partial raw feedback", tone: "warning" as DashboardTone }
+    case "expired":
+      return { label: "Raw feedback expired", tone: "muted" as DashboardTone }
+    default:
+      return { label: "Raw feedback not captured", tone: "muted" as DashboardTone }
+  }
+}
+
 function sortLabel(value: DashboardQualityReviewSort) {
   switch (value) {
     case "signal-asc": return "Oldest signal first"
@@ -334,6 +432,9 @@ function buildActiveFilters(query: Omit<DashboardQualityReviewQuery, "activeFilt
   if (query.reopened !== "all") filters.push({ label: "Reopened", value: reopenedLabel(query.reopened) })
   if (query.status !== "all") filters.push({ label: "Status", value: statusLabel(query.status) })
   if (query.transport !== "all") filters.push({ label: "Transport", value: transportLabel(query.transport) })
+  if (query.reviewState !== "active") filters.push({ label: "Review state", value: reviewStateLabel(query.reviewState) })
+  if (query.ownerId) filters.push({ label: "Owner", value: query.ownerId === "me" ? "Me" : query.ownerId === "unassigned" ? "Unassigned" : query.ownerId })
+  if (query.rawFeedback !== "all") filters.push({ label: "Raw feedback", value: rawFeedbackLabel(query.rawFeedback) })
   if (query.teamId) filters.push({ label: "Team", value: query.teamId })
   if (query.assigneeId) filters.push({ label: "Assignee", value: query.assigneeId })
   if (query.q) filters.push({ label: "Search", value: query.q })
@@ -364,6 +465,9 @@ export function parseDashboardQualityReviewQuery(
     teamId: normalizeString(query.teamId),
     assigneeId: normalizeString(query.assigneeId),
     transport: enumOrDefault(query.transport, QUALITY_REVIEW_TRANSPORT_FILTERS, "all"),
+    reviewState: enumOrDefault(query.reviewState, QUALITY_REVIEW_STATE_FILTERS, "active"),
+    ownerId: normalizeString(query.ownerId),
+    rawFeedback: enumOrDefault(query.rawFeedback, QUALITY_REVIEW_RAW_FEEDBACK_FILTERS, "all"),
     q: normalizeString(query.q),
     sort: enumOrDefault(query.sort, QUALITY_REVIEW_SORTS, "signal-desc"),
     limit: limitOrDefault(query.limit),
@@ -374,6 +478,13 @@ export function parseDashboardQualityReviewQuery(
     reopenedOptions: QUALITY_REVIEW_REOPENED_FILTERS.map((value) => ({ value, label: reopenedLabel(value) })),
     statusOptions: QUALITY_REVIEW_STATUS_FILTERS.map((value) => ({ value, label: statusLabel(value) })),
     transportOptions: QUALITY_REVIEW_TRANSPORT_FILTERS.map((value) => ({ value, label: transportLabel(value) })),
+    reviewStateOptions: QUALITY_REVIEW_STATE_FILTERS.map((value) => ({ value, label: reviewStateLabel(value) })),
+    ownerOptions: [
+      { value: "", label: "Any owner" },
+      { value: "me", label: "Assigned to me" },
+      { value: "unassigned", label: "Unassigned" }
+    ],
+    rawFeedbackOptions: QUALITY_REVIEW_RAW_FEEDBACK_FILTERS.map((value) => ({ value, label: rawFeedbackLabel(value) })),
     sortOptions: QUALITY_REVIEW_SORTS.map((value) => ({ value, label: sortLabel(value) })),
     limitOptions: [...QUALITY_REVIEW_LIMITS]
   }
@@ -393,6 +504,8 @@ function appendQualityReviewQuery(href: string, request: DashboardQualityReviewQ
     reopened: request.reopened,
     status: request.status,
     transport: request.transport,
+    reviewState: request.reviewState,
+    rawFeedback: request.rawFeedback,
     sort: request.sort,
     limit: request.limit,
     page
@@ -403,6 +516,7 @@ function appendQualityReviewQuery(href: string, request: DashboardQualityReviewQ
   }
   if (request.teamId) entries.teamId = request.teamId
   if (request.assigneeId) entries.assigneeId = request.assigneeId
+  if (request.ownerId) entries.ownerId = request.ownerId
   if (request.q) entries.q = request.q
   for (const [key, value] of Object.entries(entries)) {
     url.searchParams.set(key, String(value))
@@ -520,6 +634,17 @@ function feedbackEventTime(record: DashboardTicketFeedbackTelemetryRecord) {
   return record.completedAt || record.triggeredAt
 }
 
+function completedAnsweredFeedback(records: DashboardTicketFeedbackTelemetryRecord[]) {
+  return records
+    .filter((record) => record.status === "completed")
+    .filter((record) => record.questionSummaries.some((question) => question.answered))
+    .sort((left, right) => feedbackEventTime(right) - feedbackEventTime(left) || left.sessionId.localeCompare(right.sessionId))
+}
+
+function latestCompletedAnsweredSessionId(records: DashboardTicketFeedbackTelemetryRecord[]) {
+  return completedAnsweredFeedback(records)[0]?.sessionId || null
+}
+
 function inRange(value: number | null | undefined, request: DashboardQualityReviewQuery) {
   return typeof value === "number" && Number.isFinite(value) && value >= request.fromMs && value <= request.toMs
 }
@@ -550,6 +675,54 @@ function earliestTelemetryTime(
     ...lifecycleRecords.filter((record) => record.ticketId === ticketId).map((record) => record.occurredAt)
   ].filter((value) => Number.isFinite(value))
   return times.length ? Math.min(...times) : null
+}
+
+function latestTelemetryTime(
+  ticketId: string,
+  feedbackRecords: DashboardTicketFeedbackTelemetryRecord[],
+  lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[],
+  fallback: number
+) {
+  const times = [
+    ...feedbackRecords.filter((record) => record.ticketId === ticketId).map(feedbackEventTime),
+    ...lifecycleRecords.filter((record) => record.ticketId === ticketId).map((record) => record.occurredAt)
+  ].filter((value) => Number.isFinite(value))
+  return times.length ? Math.max(...times) : fallback
+}
+
+function syntheticReviewCase(input: {
+  ticketId: string
+  firstKnownAt: number | null
+  lastSignalAt: number
+  latestCompletedAnsweredSessionId: string | null
+}): DashboardQualityReviewCaseSummary {
+  return {
+    ticketId: input.ticketId,
+    stored: false,
+    state: "unreviewed",
+    ownerUserId: null,
+    ownerLabel: "Unassigned",
+    createdAt: input.firstKnownAt || input.lastSignalAt,
+    updatedAt: input.firstKnownAt || input.lastSignalAt,
+    resolvedAt: null,
+    lastSignalAt: input.lastSignalAt,
+    noteCount: 0,
+    rawFeedbackStatus: "none",
+    latestRawFeedbackSessionId: null
+  }
+}
+
+function buildCaseSignals(records: QualityReviewRecordWithMatches[]): DashboardQualityReviewCaseSignal[] {
+  return records.map((item) => {
+    const feedbackRecords = item.allWindowFeedback
+    const lifecycleRecords = item.allWindowReopens
+    return {
+      ticketId: item.record.ticketId,
+      firstKnownAt: item.record.openedAt,
+      lastSignalAt: item.record.latestMatchedSignalAt,
+      latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionId(feedbackRecords)
+    }
+  })
 }
 
 function statusBadge(status: "open" | "closed") {
@@ -612,16 +785,34 @@ function recordSearchText(record: DashboardQualityReviewRecord) {
     record.optionId || "",
     record.optionLabel,
     record.transportMode || "",
-    record.currentStatus
+    record.currentStatus,
+    record.reviewCase.state,
+    record.reviewCase.ownerUserId || "",
+    record.reviewCase.ownerLabel,
+    record.reviewCase.rawFeedbackStatus
   ].join(" ").toLowerCase()
 }
 
-function matchesFilters(record: DashboardQualityReviewRecord, request: DashboardQualityReviewQuery) {
+function matchesFilters(record: DashboardQualityReviewRecord, request: DashboardQualityReviewQuery, actorUserId = "") {
+  if (request.status !== "all" && record.currentStatus !== request.status) return false
+  if (request.transport !== "all" && record.transportMode !== request.transport) return false
+  if (request.reviewState === "active" && record.reviewCase.state === "resolved") return false
+  if (request.reviewState !== "active" && request.reviewState !== "all" && record.reviewCase.state !== request.reviewState) return false
+  if (request.ownerId === "me" && (!actorUserId || record.reviewCase.ownerUserId !== actorUserId)) return false
+  if (request.ownerId === "unassigned" && record.reviewCase.ownerUserId) return false
+  if (request.ownerId && request.ownerId !== "me" && request.ownerId !== "unassigned" && record.reviewCase.ownerUserId !== request.ownerId) return false
+  if (request.rawFeedback !== "all" && record.reviewCase.rawFeedbackStatus !== request.rawFeedback) return false
+  if (request.teamId && record.teamId !== request.teamId) return false
+  if (request.assigneeId && record.assigneeUserId !== request.assigneeId) return false
+  if (request.q && !recordSearchText(record).includes(request.q.toLowerCase())) return false
+  return true
+}
+
+function matchesTelemetryFilters(record: DashboardQualityReviewRecord, request: DashboardQualityReviewQuery) {
   if (request.status !== "all" && record.currentStatus !== request.status) return false
   if (request.transport !== "all" && record.transportMode !== request.transport) return false
   if (request.teamId && record.teamId !== request.teamId) return false
   if (request.assigneeId && record.assigneeUserId !== request.assigneeId) return false
-  if (request.q && !recordSearchText(record).includes(request.q.toLowerCase())) return false
   return true
 }
 
@@ -712,11 +903,17 @@ function buildReviewRecord(input: {
     latestFeedbackStatus,
     reopenCount: allWindowReopens.length,
     lastReopenedAt,
+    reviewCase: syntheticReviewCase({
+      ticketId,
+      firstKnownAt: openedAt,
+      lastSignalAt: matchedTimes.length ? Math.max(...matchedTimes) : (openedAt || request.fromMs),
+      latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionId(allWindowFeedback)
+    }),
     matchedSignalKinds,
     latestMatchedSignalAt: matchedTimes.length ? Math.max(...matchedTimes) : (openedAt || request.fromMs)
   }
 
-  if (!matchesFilters(record, request)) {
+  if (!matchesTelemetryFilters(record, request)) {
     return null
   }
 
@@ -845,6 +1042,7 @@ export async function buildDashboardQualityReviewListModel(input: {
   query: Record<string, unknown>
   configService: DashboardConfigService
   runtimeBridge: DashboardRuntimeBridge
+  actorUserId?: string
   now?: number
 }): Promise<DashboardQualityReviewListModel> {
   const request = parseDashboardQualityReviewQuery(input.query, { now: input.now })
@@ -889,7 +1087,7 @@ export async function buildDashboardQualityReviewListModel(input: {
   feedback.items.forEach((record) => ids.add(record.ticketId))
   lifecycle.items.forEach((record) => ids.add(record.ticketId))
 
-  const records = sortReviewRecords([...ids].map((ticketId) => buildReviewRecord({
+  const telemetryRecords = sortReviewRecords([...ids].map((ticketId) => buildReviewRecord({
     ticketId,
     liveTicket: liveById.get(ticketId) || null,
     snapshot: snapshotForTicket(ticketId, feedback.items, lifecycle.items),
@@ -898,6 +1096,25 @@ export async function buildDashboardQualityReviewListModel(input: {
     request,
     configService: input.configService
   })).filter((record): record is QualityReviewRecordWithMatches => Boolean(record)), request.sort)
+  const qualityReviewWarnings: string[] = []
+  let records = telemetryRecords
+  if (input.runtimeBridge.listQualityReviewCases && telemetryRecords.length > 0) {
+    try {
+      const caseResult = await input.runtimeBridge.listQualityReviewCases({ tickets: buildCaseSignals(telemetryRecords) }, normalizeString(input.actorUserId))
+      qualityReviewWarnings.push(...caseResult.warnings)
+      const caseByTicket = new Map(caseResult.cases.map((reviewCase) => [reviewCase.ticketId, reviewCase]))
+      records = telemetryRecords.map((item) => ({
+        ...item,
+        record: {
+          ...item.record,
+          reviewCase: caseByTicket.get(item.record.ticketId) || item.record.reviewCase
+        }
+      }))
+    } catch {
+      qualityReviewWarnings.push("Quality review cases could not be read.")
+    }
+  }
+  records = records.filter((item) => matchesFilters(item.record, request, normalizeString(input.actorUserId)))
 
   const totalPages = Math.max(1, Math.ceil(records.length / request.limit))
   const page = Math.min(request.page, totalPages)
@@ -910,6 +1127,7 @@ export async function buildDashboardQualityReviewListModel(input: {
 
   const summary = buildSummary(records)
   const telemetryWarnings = uniqueWarnings(feedback.warnings, lifecycle.warnings)
+  telemetryWarnings.push(...uniqueWarnings(qualityReviewWarnings))
   if (feedback.truncated || lifecycle.truncated) {
     telemetryWarnings.push("Ticket telemetry exceeded the quality-review scan ceiling; results may be incomplete.")
   }
@@ -944,6 +1162,8 @@ export async function buildDashboardQualityReviewListModel(input: {
         detailHref: buildQualityReviewDetailHref(input.basePath, request, record.ticketId, currentHref),
         statusBadge: statusBadge(record.currentStatus),
         feedbackBadge: feedbackBadge(record.latestFeedbackStatus),
+        reviewStateBadge: reviewStateBadge(record.reviewCase.state),
+        rawFeedbackBadge: rawFeedbackBadge(record.reviewCase.rawFeedbackStatus),
         reopenBadge: record.reopenCount > 0
           ? { label: `Reopened x${record.reopenCount}`, tone: "warning" as DashboardTone }
           : null,
@@ -1010,9 +1230,94 @@ function buildStandaloneRecord(input: {
     latestFeedbackStatus: allFeedback[0]?.status || "none" as const,
     reopenCount: allReopens.length,
     lastReopenedAt: allReopens[0]?.occurredAt || null,
+    reviewCase: syntheticReviewCase({
+      ticketId: input.ticketId,
+      firstKnownAt: openedAt,
+      lastSignalAt: latestSignal,
+      latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionId(allFeedback)
+    }),
     matchedSignalKinds: [] as DashboardQualityReviewSignalKind[],
     latestMatchedSignalAt: latestSignal
   }
+}
+
+function defaultCaseDetailFromSummary(summary: DashboardQualityReviewCaseSummary): DashboardQualityReviewCaseDetailRecord {
+  return {
+    ...summary,
+    notes: [],
+    rawFeedback: []
+  }
+}
+
+function rawFeedbackBySession(records: DashboardQualityReviewRawFeedbackRecord[]) {
+  return new Map(records.map((record) => [record.sessionId, record]))
+}
+
+function rawAnswerValue(answer: DashboardQualityReviewRawFeedbackRecord["answers"][number]) {
+  if (!answer.answered) return "No answer"
+  if (answer.type === "text") return answer.textValue || ""
+  if (answer.type === "rating") return answer.ratingValue === null ? "Unavailable" : String(answer.ratingValue)
+  if (answer.type === "choice") return answer.choiceLabel || (answer.choiceIndex === null ? "Unavailable" : String(answer.choiceIndex))
+  return answer.assets.length > 0 ? `${answer.assets.length} mirrored asset${answer.assets.length === 1 ? "" : "s"}` : "No mirrored asset"
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value < 1) return "0 B"
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function buildRawAssetHref(basePath: string, ticketId: string, sessionId: string, assetId: string) {
+  return joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(ticketId)}/feedback/${encodeURIComponent(sessionId)}/assets/${encodeURIComponent(assetId)}`)
+}
+
+function buildRawFeedbackSessionModels(input: {
+  basePath: string
+  ticketId: string
+  feedbackHistory: DashboardTicketFeedbackTelemetryRecord[]
+  reviewCase: DashboardQualityReviewCaseDetailRecord
+  canManage: boolean
+}): DashboardQualityReviewRawFeedbackSessionModel[] {
+  const completedSessionOrder = new Map(completedAnsweredFeedback(input.feedbackHistory).map((session, index) => [session.sessionId, index]))
+  return [...input.reviewCase.rawFeedback]
+    .sort((left, right) => {
+      const leftOrder = completedSessionOrder.get(left.sessionId)
+      const rightOrder = completedSessionOrder.get(right.sessionId)
+      if (leftOrder !== undefined || rightOrder !== undefined) {
+        return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER)
+      }
+      return right.capturedAt - left.capturedAt || left.sessionId.localeCompare(right.sessionId)
+    })
+    .map((raw) => {
+    const badge = rawFeedbackBadge(raw.storageStatus)
+    return {
+      sessionId: raw.sessionId,
+      statusLabel: badge.label,
+      statusTone: badge.tone,
+      capturedAt: formatDate(raw.capturedAt),
+      expiresAt: formatDate(raw.retentionExpiresAt),
+      warnings: raw.warnings,
+      answers: raw.answers.map((answer) => ({
+        position: answer.position,
+        type: answer.type,
+        label: answer.label,
+        answered: answer.answered,
+        value: rawAnswerValue(answer),
+        assets: answer.assets.map((asset) => ({
+          assetId: asset.assetId,
+          fileName: asset.fileName,
+          contentType: asset.contentType || "application/octet-stream",
+          byteSize: formatBytes(asset.byteSize),
+          status: asset.captureStatus,
+          reason: asset.reason || "",
+          downloadHref: input.canManage && asset.captureStatus === "mirrored"
+            ? buildRawAssetHref(input.basePath, input.ticketId, raw.sessionId, asset.assetId)
+            : null
+        }))
+      }))
+    }
+  })
 }
 
 export async function buildDashboardQualityReviewDetailModel(input: {
@@ -1026,11 +1331,24 @@ export async function buildDashboardQualityReviewDetailModel(input: {
   configService: DashboardConfigService
   runtimeBridge: DashboardRuntimeBridge
   ticketWorkbenchAccessible?: boolean
+  canManage?: boolean
+  ownerChoices?: Array<{ value: string; label: string }>
   now?: number
 }): Promise<DashboardQualityReviewDetailModel> {
   const request = parseDashboardQualityReviewQuery(input.query, { now: input.now })
   const backHref = sanitizeQualityReviewReturnTo(input.basePath, input.returnTo)
   const currentHref = input.currentHref || joinBasePath(input.basePath, `admin/quality-review/${encodeURIComponent(input.ticketId)}`)
+  const actionHref = (actionId: string) => joinBasePath(input.basePath, `admin/quality-review/${encodeURIComponent(input.ticketId)}/actions/${actionId}`)
+  const baseEmpty = {
+    adjudicationFacts: [] as Array<{ label: string; value: string }>,
+    canManage: Boolean(input.canManage),
+    stateActionHref: actionHref("set-state"),
+    assignOwnerActionHref: actionHref("assign-owner"),
+    clearOwnerActionHref: actionHref("clear-owner"),
+    addNoteActionHref: actionHref("add-note"),
+    ownerChoices: input.ownerChoices || [],
+    rawFeedbackSessions: [] as DashboardQualityReviewRawFeedbackSessionModel[]
+  }
   if (!supportsTicketTelemetryReads(input.runtimeBridge)) {
     return {
       available: false,
@@ -1043,6 +1361,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
       facts: [],
       latestFeedbackFacts: [],
       ratingRows: [],
+      ...baseEmpty,
       feedbackRows: [],
       reopenRows: [],
       lifecycleRows: []
@@ -1070,6 +1389,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
       facts: [],
       latestFeedbackFacts: [],
       ratingRows: [],
+      ...baseEmpty,
       feedbackRows: [],
       reopenRows: [],
       lifecycleRows: []
@@ -1094,6 +1414,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
       facts: [],
       latestFeedbackFacts: [],
       ratingRows: [],
+      ...baseEmpty,
       feedbackRows: [],
       reopenRows: [],
       lifecycleRows: []
@@ -1101,7 +1422,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
   }
   const loadedFeedback = allFeedback.slice(0, DETAIL_FEEDBACK_LIMIT)
   const loadedLifecycle = allLifecycle.slice(0, DETAIL_LIFECYCLE_LIMIT)
-  const historicalSummary = buildStandaloneRecord({
+  let historicalSummary = buildStandaloneRecord({
     ticketId: input.ticketId,
     liveTicket,
     feedbackRecords: allFeedback,
@@ -1122,6 +1443,17 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     ...allFeedback.filter((record) => inRange(feedbackEventTime(record), request)).map((record) => record.sessionId),
     ...allLifecycle.filter((record) => record.eventType === "reopened" && inRange(record.occurredAt, request)).map((record) => record.recordId)
   ]
+  let reviewCase = defaultCaseDetailFromSummary(historicalSummary.reviewCase)
+  if (typeof input.runtimeBridge.getQualityReviewCase === "function") {
+    const loaded = await input.runtimeBridge.getQualityReviewCase(input.ticketId, input.actorUserId).catch(() => null)
+    if (loaded) {
+      reviewCase = loaded
+      historicalSummary = {
+        ...historicalSummary,
+        reviewCase
+      }
+    }
+  }
   const matchedSet = new Set(matchedWindowEventIds)
   const telemetryWarning = allFeedback.length > DETAIL_FEEDBACK_LIMIT || allLifecycle.length > DETAIL_LIFECYCLE_LIMIT || feedbackCollection.truncated || lifecycleCollection.truncated
     ? HISTORY_TRUNCATED_WARNING
@@ -1136,6 +1468,8 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     feedbackHistory: loadedFeedback,
     reopenEvents,
     lifecycleEvents: loadedLifecycle,
+    reviewCase,
+    completedAnsweredFeedbackSessionIds: completedAnsweredFeedback(loadedFeedback).map((record) => record.sessionId),
     matchedWindowEventIds,
     telemetryWarning
   }
@@ -1157,6 +1491,14 @@ export async function buildDashboardQualityReviewDetailModel(input: {
         { label: "Respondent", value: normalizeString(latestFeedbackSession.respondentUserId) || "Unknown respondent" }
       ]
     : []
+  const adjudicationFacts = [
+    { label: "Review state", value: reviewStateLabel(reviewCase.state) },
+    { label: "Owner", value: reviewCase.ownerLabel },
+    { label: "Notes", value: String(reviewCase.noteCount) },
+    { label: "Raw feedback", value: rawFeedbackLabel(reviewCase.rawFeedbackStatus) },
+    { label: "Last signal", value: formatDate(reviewCase.lastSignalAt) },
+    { label: "Resolved", value: formatDate(reviewCase.resolvedAt) }
+  ]
 
   return {
     available: true,
@@ -1183,6 +1525,20 @@ export async function buildDashboardQualityReviewDetailModel(input: {
         value: question.ratingValue === null ? "Unavailable" : String(question.ratingValue),
         answered: question.ratingValue !== null
       })),
+    adjudicationFacts,
+    canManage: Boolean(input.canManage),
+    stateActionHref: actionHref("set-state"),
+    assignOwnerActionHref: actionHref("assign-owner"),
+    clearOwnerActionHref: actionHref("clear-owner"),
+    addNoteActionHref: actionHref("add-note"),
+    ownerChoices: input.ownerChoices || [],
+    rawFeedbackSessions: buildRawFeedbackSessionModels({
+      basePath: input.basePath,
+      ticketId: input.ticketId,
+      feedbackHistory: loadedFeedback,
+      reviewCase,
+      canManage: Boolean(input.canManage)
+    }),
     feedbackRows: loadedFeedback.map((record) => ({
       id: record.sessionId,
       status: feedbackLabel(record.status),

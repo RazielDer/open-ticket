@@ -1,6 +1,8 @@
 export type DashboardTicketTransportMode = "channel_text" | "private_thread"
 export type DashboardTicketFeedbackStatus = "completed" | "ignored" | "delivery_failed" | "none"
 export type DashboardTicketFeedbackStoredStatus = Exclude<DashboardTicketFeedbackStatus, "none">
+export type DashboardQualityReviewState = "unreviewed" | "in_review" | "resolved"
+export type DashboardQualityReviewRawFeedbackStatus = "available" | "partial" | "expired" | "none"
 
 export interface DashboardTicketTelemetrySnapshot {
   creatorUserId: string | null
@@ -89,6 +91,110 @@ export interface DashboardTicketFeedbackTelemetryResult {
   nextCursor: string | null
   truncated: boolean
   warnings: string[]
+}
+
+export interface DashboardQualityReviewCaseSignal {
+  ticketId: string
+  firstKnownAt: number | null
+  lastSignalAt: number | null
+  latestCompletedAnsweredSessionId: string | null
+}
+
+export interface DashboardQualityReviewCaseQuery {
+  tickets: DashboardQualityReviewCaseSignal[]
+}
+
+export interface DashboardQualityReviewCaseSummary {
+  ticketId: string
+  stored: boolean
+  state: DashboardQualityReviewState
+  ownerUserId: string | null
+  ownerLabel: string
+  createdAt: number
+  updatedAt: number
+  resolvedAt: number | null
+  lastSignalAt: number
+  noteCount: number
+  rawFeedbackStatus: DashboardQualityReviewRawFeedbackStatus
+  latestRawFeedbackSessionId: string | null
+}
+
+export interface DashboardQualityReviewNoteRecord {
+  noteId: string
+  ticketId: string
+  authorUserId: string
+  authorLabel: string
+  createdAt: number
+  body: string
+}
+
+export interface DashboardQualityReviewRawAssetRecord {
+  assetId: string
+  fileName: string
+  contentType: string | null
+  byteSize: number
+  relativePath: string | null
+  captureStatus: "mirrored" | "failed" | "expired"
+  reason: string | null
+}
+
+export interface DashboardQualityReviewRawAnswerRecord {
+  position: number
+  type: "text" | "rating" | "image" | "attachment" | "choice"
+  label: string
+  answered: boolean
+  textValue: string | null
+  ratingValue: number | null
+  choiceIndex: number | null
+  choiceLabel: string | null
+  assets: DashboardQualityReviewRawAssetRecord[]
+}
+
+export interface DashboardQualityReviewRawFeedbackRecord {
+  sessionId: string
+  ticketId: string
+  capturedAt: number
+  retentionExpiresAt: number
+  storageStatus: Exclude<DashboardQualityReviewRawFeedbackStatus, "none">
+  warnings: string[]
+  answers: DashboardQualityReviewRawAnswerRecord[]
+}
+
+export interface DashboardQualityReviewCaseDetailRecord extends DashboardQualityReviewCaseSummary {
+  notes: DashboardQualityReviewNoteRecord[]
+  rawFeedback: DashboardQualityReviewRawFeedbackRecord[]
+}
+
+export interface DashboardQualityReviewCaseListResult {
+  cases: DashboardQualityReviewCaseSummary[]
+  warnings: string[]
+}
+
+export type DashboardQualityReviewActionId = "set-state" | "assign-owner" | "clear-owner" | "add-note"
+
+export interface DashboardQualityReviewActionRequest {
+  ticketId: string
+  action: DashboardQualityReviewActionId
+  actorUserId: string
+  state?: DashboardQualityReviewState | string | null
+  ownerUserId?: string | null
+  note?: string | null
+}
+
+export interface DashboardQualityReviewActionResult {
+  ok: boolean
+  status: "success" | "warning" | "danger"
+  message: string
+  warnings?: string[]
+}
+
+export interface DashboardQualityReviewAssetResult {
+  status: "available" | "missing" | "expired"
+  filePath: string | null
+  fileName: string | null
+  contentType: string | null
+  byteSize: number
+  message: string
 }
 
 export interface DashboardTicketFeedbackRatingSignal {

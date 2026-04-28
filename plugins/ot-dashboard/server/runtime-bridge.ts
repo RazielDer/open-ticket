@@ -40,7 +40,18 @@ import {
   type DashboardTicketTelemetrySignals,
   type DashboardTicketTelemetrySnapshot,
   type DashboardTicketTransferCandidateChoice,
-  type DashboardTicketTransportMode
+  type DashboardTicketTransportMode,
+  type DashboardQualityReviewActionRequest,
+  type DashboardQualityReviewActionResult,
+  type DashboardQualityReviewAssetResult,
+  type DashboardQualityReviewCaseDetailRecord,
+  type DashboardQualityReviewCaseListResult,
+  type DashboardQualityReviewCaseQuery,
+  type DashboardQualityReviewCaseSignal,
+  type DashboardQualityReviewCaseSummary,
+  type DashboardQualityReviewRawFeedbackRecord,
+  type DashboardQualityReviewRawFeedbackStatus,
+  type DashboardQualityReviewState
 } from "./ticket-workbench-types"
 
 export interface DashboardRuntimeGuildMember {
@@ -64,6 +75,10 @@ export interface DashboardRuntimeBridge {
   listLifecycleTelemetry?: (query: DashboardTicketLifecycleTelemetryQuery) => Promise<DashboardTicketLifecycleTelemetryResult>
   listFeedbackTelemetry?: (query: DashboardTicketFeedbackTelemetryQuery) => Promise<DashboardTicketFeedbackTelemetryResult>
   getTicketTelemetrySignals?: (ticketIds: string[]) => Promise<Record<string, DashboardTicketTelemetrySignals>>
+  listQualityReviewCases?: (query: DashboardQualityReviewCaseQuery, actorUserId: string) => Promise<DashboardQualityReviewCaseListResult>
+  getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
+  runQualityReviewAction?: (input: DashboardQualityReviewActionRequest) => Promise<DashboardQualityReviewActionResult>
+  resolveQualityReviewAsset?: (ticketId: string, sessionId: string, assetId: string, actorUserId: string) => Promise<DashboardQualityReviewAssetResult>
   getRuntimeSource?: () => DashboardRuntimeSource | null
   resolveGuildMember?: (userId: string) => Promise<DashboardRuntimeGuildMember | null>
   getGuildId?: () => string | null
@@ -99,6 +114,18 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async getTicketTelemetrySignals(ticketIds) {
     return await getRuntimeTicketTelemetrySignals(defaultDashboardRuntimeBridge, ticketIds)
+  },
+  async listQualityReviewCases(query, actorUserId) {
+    return await listRuntimeQualityReviewCases(defaultDashboardRuntimeBridge, query, actorUserId)
+  },
+  async getQualityReviewCase(ticketId, actorUserId) {
+    return await getRuntimeQualityReviewCase(defaultDashboardRuntimeBridge, ticketId, actorUserId)
+  },
+  async runQualityReviewAction(input) {
+    return await runRuntimeQualityReviewAction(defaultDashboardRuntimeBridge, input)
+  },
+  async resolveQualityReviewAsset(ticketId, sessionId, assetId, actorUserId) {
+    return await resolveRuntimeQualityReviewAsset(defaultDashboardRuntimeBridge, ticketId, sessionId, assetId, actorUserId)
   },
   getRuntimeSource() {
     return getDashboardRuntimeSource()
@@ -1130,6 +1157,267 @@ async function getRuntimeTicketTelemetrySignals(
   }
 
   return signals
+}
+
+const QUALITY_REVIEW_SERVICE_ID = "ot-quality-review:service"
+
+function getRuntimeQualityReviewService(runtimeBridge: DashboardRuntimeBridge) {
+  const runtime = runtimeBridge.getRuntimeSource?.() as any
+  try {
+    return runtime?.plugins?.classes?.get?.(QUALITY_REVIEW_SERVICE_ID) || null
+  } catch {
+    return null
+  }
+}
+
+function feedbackTelemetryTime(record: DashboardTicketFeedbackTelemetryRecord) {
+  return record.completedAt || record.triggeredAt
+}
+
+function completedAnsweredSessionId(records: DashboardTicketFeedbackTelemetryRecord[]) {
+  const latest = records
+    .filter((record) => record.status === "completed")
+    .filter((record) => record.questionSummaries.some((question) => question.answered))
+    .sort((left, right) => feedbackTelemetryTime(right) - feedbackTelemetryTime(left) || left.sessionId.localeCompare(right.sessionId))[0]
+  return latest?.sessionId || null
+}
+
+async function buildRuntimeQualityReviewSignal(
+  runtimeBridge: DashboardRuntimeBridge,
+  ticketId: string
+): Promise<DashboardQualityReviewCaseSignal> {
+  const normalizedTicketId = normalizeString(ticketId)
+  const signal: DashboardQualityReviewCaseSignal = {
+    ticketId: normalizedTicketId,
+    firstKnownAt: null,
+    lastSignalAt: null,
+    latestCompletedAnsweredSessionId: null
+  }
+  if (!normalizedTicketId || !hasRuntimeTelemetryService(runtimeBridge)) return signal
+
+  try {
+    const [feedback, lifecycle] = await Promise.all([
+      listRuntimeFeedbackTelemetry(runtimeBridge, { ticketId: normalizedTicketId, order: "desc", limit: TELEMETRY_MAX_LIMIT }),
+      listRuntimeLifecycleTelemetry(runtimeBridge, { ticketId: normalizedTicketId, order: "desc", limit: TELEMETRY_MAX_LIMIT })
+    ])
+    const feedbackTimes = feedback.items.map(feedbackTelemetryTime)
+    const lifecycleTimes = lifecycle.items.map((record) => record.occurredAt)
+    const times = [...feedbackTimes, ...lifecycleTimes].filter((value) => Number.isFinite(value))
+    signal.firstKnownAt = times.length ? Math.min(...times) : null
+    signal.lastSignalAt = times.length ? Math.max(...times) : null
+    signal.latestCompletedAnsweredSessionId = completedAnsweredSessionId(feedback.items)
+  } catch {
+    return signal
+  }
+
+  return signal
+}
+
+function normalizeQualityReviewState(value: unknown): DashboardQualityReviewState {
+  return value === "in_review" || value === "resolved" ? value : "unreviewed"
+}
+
+function normalizeRawFeedbackStatus(value: unknown): DashboardQualityReviewRawFeedbackStatus {
+  return value === "available" || value === "partial" || value === "expired" ? value : "none"
+}
+
+async function resolveRuntimeUserLabel(runtimeBridge: DashboardRuntimeBridge, userId: string | null) {
+  const normalizedUserId = normalizeString(userId)
+  if (!normalizedUserId) return "Unassigned"
+  const member = runtimeBridge.resolveGuildMember
+    ? await runtimeBridge.resolveGuildMember(normalizedUserId).catch(() => null)
+    : null
+  return member ? runtimeMemberLabel(member, normalizedUserId) : `Unknown owner (${normalizedUserId})`
+}
+
+function normalizeQualityReviewRawFeedback(value: any): DashboardQualityReviewRawFeedbackRecord | null {
+  if (!value || typeof value !== "object") return null
+  const storageStatus = normalizeRawFeedbackStatus(value.storageStatus)
+  if (storageStatus === "none") return null
+  return {
+    sessionId: normalizeString(value.sessionId),
+    ticketId: normalizeString(value.ticketId),
+    capturedAt: numberOrNull(value.capturedAt) || 0,
+    retentionExpiresAt: numberOrNull(value.retentionExpiresAt) || 0,
+    storageStatus,
+    warnings: Array.isArray(value.warnings) ? value.warnings.map(normalizeString).filter(Boolean) : [],
+    answers: Array.isArray(value.answers) ? value.answers.map((answer: any, index: number) => ({
+      position: numberOrNull(answer?.position) || index + 1,
+      type: answer?.type === "rating" || answer?.type === "image" || answer?.type === "attachment" || answer?.type === "choice" ? answer.type : "text",
+      label: normalizeString(answer?.label),
+      answered: answer?.answered === true,
+      textValue: stringOrNull(answer?.textValue),
+      ratingValue: numberOrNull(answer?.ratingValue),
+      choiceIndex: numberOrNull(answer?.choiceIndex),
+      choiceLabel: stringOrNull(answer?.choiceLabel),
+      assets: Array.isArray(answer?.assets) ? answer.assets.map((asset: any) => ({
+        assetId: normalizeString(asset?.assetId),
+        fileName: normalizeString(asset?.fileName),
+        contentType: stringOrNull(asset?.contentType),
+        byteSize: numberOrNull(asset?.byteSize) || 0,
+        relativePath: stringOrNull(asset?.relativePath),
+        captureStatus: asset?.captureStatus === "mirrored" || asset?.captureStatus === "expired" ? asset.captureStatus : "failed",
+        reason: stringOrNull(asset?.reason)
+      })).filter((asset: any) => asset.assetId) : []
+    })) : []
+  }
+}
+
+async function normalizeQualityReviewCaseSummary(
+  runtimeBridge: DashboardRuntimeBridge,
+  value: any
+): Promise<DashboardQualityReviewCaseSummary | null> {
+  const ticketId = normalizeString(value?.ticketId)
+  if (!ticketId) return null
+  const ownerUserId = stringOrNull(value?.ownerUserId)
+  return {
+    ticketId,
+    stored: value?.stored === true,
+    state: normalizeQualityReviewState(value?.state),
+    ownerUserId,
+    ownerLabel: await resolveRuntimeUserLabel(runtimeBridge, ownerUserId),
+    createdAt: numberOrNull(value?.createdAt) || 0,
+    updatedAt: numberOrNull(value?.updatedAt) || 0,
+    resolvedAt: numberOrNull(value?.resolvedAt),
+    lastSignalAt: numberOrNull(value?.lastSignalAt) || 0,
+    noteCount: numberOrNull(value?.noteCount) || 0,
+    rawFeedbackStatus: normalizeRawFeedbackStatus(value?.rawFeedbackStatus),
+    latestRawFeedbackSessionId: stringOrNull(value?.latestRawFeedbackSessionId)
+  }
+}
+
+async function normalizeQualityReviewCaseDetail(
+  runtimeBridge: DashboardRuntimeBridge,
+  value: any
+): Promise<DashboardQualityReviewCaseDetailRecord | null> {
+  const summary = await normalizeQualityReviewCaseSummary(runtimeBridge, value)
+  if (!summary) return null
+  return {
+    ...summary,
+    notes: Array.isArray(value?.notes) ? value.notes.map((note: any) => ({
+      noteId: normalizeString(note?.noteId),
+      ticketId: normalizeString(note?.ticketId),
+      authorUserId: normalizeString(note?.authorUserId),
+      authorLabel: normalizeString(note?.authorLabel) || normalizeString(note?.authorUserId) || "Unknown author",
+      createdAt: numberOrNull(note?.createdAt) || 0,
+      body: normalizeString(note?.body)
+    })).filter((note: any) => note.noteId && note.ticketId) : [],
+    rawFeedback: Array.isArray(value?.rawFeedback)
+      ? value.rawFeedback.map(normalizeQualityReviewRawFeedback).filter((record: DashboardQualityReviewRawFeedbackRecord | null): record is DashboardQualityReviewRawFeedbackRecord => Boolean(record))
+      : []
+  }
+}
+
+async function listRuntimeQualityReviewCases(
+  runtimeBridge: DashboardRuntimeBridge,
+  query: DashboardQualityReviewCaseQuery,
+  _actorUserId: string
+): Promise<DashboardQualityReviewCaseListResult> {
+  const service = getRuntimeQualityReviewService(runtimeBridge)
+  if (!service || typeof service.listDashboardQualityReviewCases !== "function") {
+    return { cases: [], warnings: ["Quality review service is unavailable."] }
+  }
+
+  try {
+    const result = await service.listDashboardQualityReviewCases(query)
+    const cases = await Promise.all((Array.isArray(result?.cases) ? result.cases : []).map((record: any) => normalizeQualityReviewCaseSummary(runtimeBridge, record)))
+    return {
+      cases: cases.filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
+      warnings: Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
+    }
+  } catch {
+    return { cases: [], warnings: ["Quality review cases could not be read."] }
+  }
+}
+
+async function getRuntimeQualityReviewCase(
+  runtimeBridge: DashboardRuntimeBridge,
+  ticketId: string,
+  _actorUserId: string
+): Promise<DashboardQualityReviewCaseDetailRecord | null> {
+  const service = getRuntimeQualityReviewService(runtimeBridge)
+  if (!service || typeof service.getDashboardQualityReviewCase !== "function") return null
+
+  try {
+    const signal = await buildRuntimeQualityReviewSignal(runtimeBridge, ticketId)
+    return await normalizeQualityReviewCaseDetail(runtimeBridge, await service.getDashboardQualityReviewCase(ticketId, signal))
+  } catch {
+    return null
+  }
+}
+
+async function runRuntimeQualityReviewAction(
+  runtimeBridge: DashboardRuntimeBridge,
+  input: DashboardQualityReviewActionRequest
+): Promise<DashboardQualityReviewActionResult> {
+  const service = getRuntimeQualityReviewService(runtimeBridge)
+  if (!service || typeof service.runDashboardQualityReviewAction !== "function") {
+    return { ok: false, status: "warning", message: "Quality review service is unavailable." }
+  }
+
+  try {
+    const signal = await buildRuntimeQualityReviewSignal(runtimeBridge, input.ticketId)
+    const actorLabel = await resolveRuntimeUserLabel(runtimeBridge, input.actorUserId)
+    const result = await service.runDashboardQualityReviewAction({
+      ...input,
+      actorLabel,
+      firstKnownAt: signal.firstKnownAt,
+      lastSignalAt: signal.lastSignalAt
+    })
+    return {
+      ok: result?.ok === true,
+      status: result?.status === "success" || result?.status === "danger" ? result.status : "warning",
+      message: normalizeString(result?.message) || "Quality review action completed.",
+      warnings: Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: "danger",
+      message: error instanceof Error ? error.message : "Quality review action failed."
+    }
+  }
+}
+
+async function resolveRuntimeQualityReviewAsset(
+  runtimeBridge: DashboardRuntimeBridge,
+  ticketId: string,
+  sessionId: string,
+  assetId: string,
+  _actorUserId: string
+): Promise<DashboardQualityReviewAssetResult> {
+  const service = getRuntimeQualityReviewService(runtimeBridge)
+  if (!service || typeof service.resolveQualityReviewAsset !== "function") {
+    return {
+      status: "missing",
+      filePath: null,
+      fileName: null,
+      contentType: null,
+      byteSize: 0,
+      message: "Quality review service is unavailable."
+    }
+  }
+
+  try {
+    const result = await service.resolveQualityReviewAsset(ticketId, sessionId, assetId)
+    return {
+      status: result?.status === "available" || result?.status === "expired" ? result.status : "missing",
+      filePath: stringOrNull(result?.filePath),
+      fileName: stringOrNull(result?.fileName),
+      contentType: stringOrNull(result?.contentType),
+      byteSize: numberOrNull(result?.byteSize) || 0,
+      message: normalizeString(result?.message) || "Quality review asset lookup completed."
+    }
+  } catch {
+    return {
+      status: "missing",
+      filePath: null,
+      fileName: null,
+      contentType: null,
+      byteSize: 0,
+      message: "Quality review asset could not be read."
+    }
+  }
 }
 
 async function getRuntimeTicketDetail(runtimeBridge: DashboardRuntimeBridge, ticketId: string, actorUserId = ""): Promise<DashboardTicketDetailRecord | null> {

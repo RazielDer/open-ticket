@@ -1,0 +1,5 @@
+{
+    "rawFeedbackRetentionDays":90,
+    "maxMirroredFileBytes":26214400,
+    "maxMirroredSessionBytes":262144000
+}

@@ -26,6 +26,10 @@ import {
   type DashboardTicketActionId,
   type DashboardTicketActionRequest,
   type DashboardTicketAiAssistRequest,
+  type DashboardQualityReviewActionRequest,
+  type DashboardQualityReviewAssetResult,
+  type DashboardQualityReviewCaseDetailRecord,
+  type DashboardQualityReviewCaseSummary,
   type DashboardTicketDetailRecord,
   type DashboardTicketFeedbackTelemetryRecord,
   type DashboardTicketLifecycleTelemetryRecord,
@@ -205,6 +209,24 @@ function lifecycleTelemetry(overrides: Partial<DashboardTicketLifecycleTelemetry
     actorUserId: "staff-1",
     snapshot: telemetrySnapshot(),
     previousSnapshot: telemetrySnapshot({ closed: true }),
+    ...overrides
+  }
+}
+
+function qualityReviewCase(overrides: Partial<DashboardQualityReviewCaseSummary> = {}): DashboardQualityReviewCaseSummary {
+  return {
+    ticketId: "ticket-1",
+    stored: true,
+    state: "in_review",
+    ownerUserId: "admin-user",
+    ownerLabel: "admin-user",
+    createdAt: 1710000000000,
+    updatedAt: 1710000010000,
+    resolvedAt: null,
+    lastSignalAt: 1710000010000,
+    noteCount: 1,
+    rawFeedbackStatus: "available",
+    latestRawFeedbackSessionId: "feedback-1",
     ...overrides
   }
 }
@@ -469,10 +491,14 @@ async function startServer(options: {
   lifecycleTelemetry?: DashboardTicketLifecycleTelemetryRecord[]
   feedbackTelemetry?: DashboardTicketFeedbackTelemetryRecord[]
   telemetrySignalCalls?: string[][]
+  qualityReviewCases?: DashboardQualityReviewCaseSummary[]
+  qualityReviewDetail?: DashboardQualityReviewCaseDetailRecord | null
+  qualityReviewAsset?: DashboardQualityReviewAssetResult
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
   const actionRequests: DashboardTicketActionRequest[] = []
+  const qualityReviewActionRequests: DashboardQualityReviewActionRequest[] = []
   const aiAssistRequests: DashboardTicketAiAssistRequest[] = []
   const telemetryEnabled = Boolean(options.telemetrySignals || options.lifecycleTelemetry || options.feedbackTelemetry)
   const members = new Map([
@@ -622,6 +648,37 @@ async function startServer(options: {
         ]))
       }
     } : {}),
+    async listQualityReviewCases(query) {
+      const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
+      return {
+        cases: query.tickets.map((signal) => caseByTicket.get(signal.ticketId)).filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
+        warnings: []
+      }
+    },
+    async getQualityReviewCase(ticketId) {
+      if (options.qualityReviewDetail === null) return null
+      if (options.qualityReviewDetail) return options.qualityReviewDetail
+      const summary = (options.qualityReviewCases || []).find((record) => record.ticketId === ticketId)
+      return summary ? { ...summary, notes: [], rawFeedback: [] } : null
+    },
+    async runQualityReviewAction(input) {
+      qualityReviewActionRequests.push(input)
+      return {
+        ok: true,
+        status: "success" as const,
+        message: `${input.action} through test quality review.`
+      }
+    },
+    async resolveQualityReviewAsset() {
+      return options.qualityReviewAsset || {
+        status: "missing" as const,
+        filePath: null,
+        fileName: null,
+        contentType: null,
+        byteSize: 0,
+        message: "Missing test asset."
+      }
+    },
     ...(options.writes === false ? {} : {
       async runTicketAction(input: DashboardTicketActionRequest) {
         actionRequests.push(input)
@@ -693,6 +750,7 @@ async function startServer(options: {
     connections,
     context,
     actionRequests,
+    qualityReviewActionRequests,
     aiAssistRequests,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   }
@@ -1210,6 +1268,195 @@ test("quality review model preserves filter semantics and unavailable telemetry 
   assert.equal(model.available, false)
   assert.match(model.warningMessage, /Ticket telemetry reads are unavailable/)
   assert.equal(model.items.length, 0)
+})
+
+test("quality review list merges adjudication state and raw-feedback filters", async (t) => {
+  const now = Date.parse("2026-04-20T12:00:00.000Z")
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        sessionId: "feedback-1",
+        triggeredAt: now - 60_000,
+        completedAt: now - 30_000,
+        status: "completed"
+      })
+    ],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [
+      qualityReviewCase({
+        ticketId: "ticket-1",
+        state: "in_review",
+        ownerUserId: "admin-user",
+        ownerLabel: "admin-user",
+        rawFeedbackStatus: "available"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?ownerId=me&rawFeedback=available",
+    query: { ownerId: "me", rawFeedback: "available" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+
+  assert.equal(model.items.length, 1)
+  assert.equal(model.items[0].record.reviewCase.state, "in_review")
+  assert.equal(model.items[0].record.reviewCase.ownerUserId, "admin-user")
+  assert.equal(model.items[0].reviewStateBadge.label, "In review")
+  assert.equal(model.items[0].rawFeedbackBadge.label, "Raw feedback available")
+  assert.equal(model.items[0].record.reviewCase.noteCount, 1)
+})
+
+test("quality review detail renders admin adjudication controls and keeps reviewer asset links hidden", async (t) => {
+  const now = Date.parse("2026-04-20T12:00:00.000Z")
+  const detailCase: DashboardQualityReviewCaseDetailRecord = {
+    ...qualityReviewCase({
+      ticketId: "ticket-1",
+      state: "in_review",
+      ownerUserId: "admin-user",
+      ownerLabel: "admin-user",
+      noteCount: 1,
+      rawFeedbackStatus: "available"
+    }),
+    notes: [
+      { noteId: "note-1", ticketId: "ticket-1", authorUserId: "admin-user", authorLabel: "admin-user", createdAt: now, body: "Private review note" }
+    ],
+    rawFeedback: [
+      {
+        sessionId: "feedback-1",
+        ticketId: "ticket-1",
+        capturedAt: now,
+        retentionExpiresAt: now + 86_400_000,
+        storageStatus: "available",
+        warnings: [],
+        answers: [
+          { position: 1, type: "text", label: "Freeform", answered: true, textValue: "raw private comment", ratingValue: null, choiceIndex: null, choiceLabel: null, assets: [] },
+          {
+            position: 2,
+            type: "image",
+            label: "Screenshot",
+            answered: true,
+            textValue: null,
+            ratingValue: null,
+            choiceIndex: null,
+            choiceLabel: null,
+            assets: [{ assetId: "asset-1", fileName: "asset-1.png", contentType: "image/png", byteSize: 12, relativePath: "ticket-1/feedback-1/asset-1.png", captureStatus: "mirrored", reason: null }]
+          }
+        ]
+      }
+    ]
+  }
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        sessionId: "feedback-1",
+        triggeredAt: now - 60_000,
+        completedAt: now - 30_000,
+        status: "completed",
+        questionSummaries: [
+          { position: 1, type: "text", label: "Freeform", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null },
+          { position: 2, type: "image", label: "Screenshot", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null }
+        ]
+      })
+    ],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [detailCase],
+    qualityReviewDetail: detailCase
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/ticket-1")
+  const adminResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: admin.cookie } })
+  const adminHtml = await adminResponse.text()
+  assert.equal(adminResponse.status, 200)
+  assert.match(adminHtml, /Adjudication/)
+  assert.match(adminHtml, /Private review note/)
+  assert.match(adminHtml, /raw private comment/)
+  assert.match(adminHtml, /Set state/)
+  assert.match(adminHtml, /href="\/dash\/admin\/quality-review\/ticket-1\/feedback\/feedback-1\/assets\/asset-1"/)
+  assert.doesNotMatch(adminHtml, /cdn\.discordapp|discord\.com\/channels|webhook/i)
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review/ticket-1")
+  const reviewerResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: reviewer.cookie } })
+  const reviewerHtml = await reviewerResponse.text()
+  assert.equal(reviewerResponse.status, 200)
+  assert.match(reviewerHtml, /raw private comment/)
+  assert.doesNotMatch(reviewerHtml, /Set state|Assign owner|Download/)
+})
+
+test("quality review action and asset routes are admin-only and audit successful reads", async (t) => {
+  const assetPath = path.join(os.tmpdir(), `quality-review-asset-${Date.now()}.txt`)
+  fs.writeFileSync(assetPath, "asset body", "utf8")
+  t.after(() => fs.rmSync(assetPath, { force: true }))
+  const runtime = await startServer({
+    feedbackTelemetry: [feedbackTelemetry()],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [qualityReviewCase()],
+    qualityReviewAsset: {
+      status: "available",
+      filePath: assetPath,
+      fileName: "asset.txt",
+      contentType: "text/plain",
+      byteSize: 10,
+      message: "ok"
+    }
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/ticket-1")
+  const detail = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: admin.cookie } })
+  const csrfToken = csrfFrom(await detail.text())
+  const actionResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/set-state`, {
+    method: "POST",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      state: "resolved",
+      returnTo: "/dash/admin/quality-review/ticket-1"
+    }),
+    redirect: "manual"
+  })
+  await actionResponse.arrayBuffer()
+  assert.equal(actionResponse.status, 302)
+  assert.equal(runtime.qualityReviewActionRequests[0].action, "set-state")
+  assert.equal(runtime.qualityReviewActionRequests[0].state, "resolved")
+
+  const assetResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/feedback/feedback-1/assets/asset-1`, {
+    headers: { cookie: admin.cookie }
+  })
+  assert.equal(assetResponse.status, 200)
+  assert.equal(assetResponse.headers.get("cache-control"), "no-store, private")
+  assert.equal(await assetResponse.text(), "asset body")
+  const assetAudits = await runtime.context.authStore.listAuditEvents({ eventType: "quality-review-asset-access" })
+  assert.equal(assetAudits.length, 1)
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review/ticket-1")
+  const denied = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/set-state`, {
+    method: "POST",
+    headers: {
+      cookie: reviewer.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ csrfToken, state: "resolved" }),
+    redirect: "manual"
+  })
+  await denied.arrayBuffer()
+  assert.equal(denied.status, 403)
+  assert.equal(runtime.qualityReviewActionRequests.length, 1)
 })
 
 test("ticket detail shows provider locks, safe back links, and form-post runtime actions", async (t) => {
@@ -2788,12 +3035,14 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
+  assert.match(routesSource, /admin\/quality-review\/:ticketId\/actions\/:actionId"\), adminGuard\.form\("quality\.review\.manage"\)/)
+  assert.match(routesSource, /admin\/quality-review\/:ticketId\/feedback\/:sessionId\/assets\/:assetId"\), adminGuard\.page\("quality\.review\.manage"\)/)
   assert.match(routesSource, /admin\/tickets\/bulk\/:actionId"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)
   assert.match(routesSource, /eventType: "ticket-bulk-action"/)
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
   assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
-  assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"|api\/quality-review/i)
+  assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review/i)
   assert.doesNotMatch(controlCenterSource, /admin\/quality-review/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)

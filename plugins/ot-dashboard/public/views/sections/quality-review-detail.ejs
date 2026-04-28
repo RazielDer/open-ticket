@@ -47,6 +47,155 @@
 
   <section class="section-card">
     <div class="section-heading">
+      <h3>Adjudication</h3>
+      <span class="status-pill tone-<%= detail.reviewCase.state === 'resolved' ? 'success' : detail.reviewCase.state === 'in_review' ? 'warning' : 'muted' %>"><%= detail.reviewCase.state === 'in_review' ? 'In review' : detail.reviewCase.state === 'resolved' ? 'Resolved' : 'Unreviewed' %></span>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.adjudicationFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
+    <% if (qualityReviewDetail.canManage) { %>
+      <div class="stack-form">
+        <form method="post" action="<%= qualityReviewDetail.stateActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Review state</span>
+            <select class="select-input" name="state">
+              <option value="unreviewed" <%= detail.reviewCase.state === 'unreviewed' ? 'selected' : '' %>>Unreviewed</option>
+              <option value="in_review" <%= detail.reviewCase.state === 'in_review' ? 'selected' : '' %>>In review</option>
+              <option value="resolved" <%= detail.reviewCase.state === 'resolved' ? 'selected' : '' %>>Resolved</option>
+            </select>
+          </label>
+          <button class="btn primary" type="submit">Set state</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.assignOwnerActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Assign owner</span>
+            <% if (qualityReviewDetail.ownerChoices.length) { %>
+              <select class="select-input" name="ownerUserId">
+                <% qualityReviewDetail.ownerChoices.forEach((choice) => { %>
+                  <option value="<%= choice.value %>" <%= detail.reviewCase.ownerUserId === choice.value ? 'selected' : '' %>><%= choice.label %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input class="text-input" type="text" name="ownerUserId" value="<%= detail.reviewCase.ownerUserId || '' %>">
+            <% } %>
+          </label>
+          <button class="btn secondary" type="submit">Assign owner</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.clearOwnerActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <button class="btn secondary" type="submit">Clear owner</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.addNoteActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Add note</span>
+            <textarea class="text-input" name="note" maxlength="4000" rows="4"></textarea>
+          </label>
+          <button class="btn primary" type="submit">Add note</button>
+        </form>
+      </div>
+    <% } %>
+
+    <% if (detail.reviewCase.notes.length) { %>
+      <div class="entry-stack">
+        <% detail.reviewCase.notes.forEach((note) => { %>
+          <article class="inline-panel">
+            <strong><%= note.authorLabel %></strong>
+            <div class="field-help"><%= new Date(note.createdAt).toLocaleString() %></div>
+            <p><%= note.body %></p>
+          </article>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3>No notes</h3>
+        <p>No quality-review notes have been recorded for this case.</p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3>Raw feedback</h3>
+    </div>
+    <% if (qualityReviewDetail.rawFeedbackSessions.length) { %>
+      <div class="entry-stack">
+        <% qualityReviewDetail.rawFeedbackSessions.forEach((session) => { %>
+          <article class="inline-panel">
+            <div class="section-heading">
+              <h4><%= session.sessionId %></h4>
+              <span class="status-pill tone-<%= session.statusTone %>"><%= session.statusLabel %></span>
+            </div>
+            <div class="field-help">Captured <%= session.capturedAt %> / expires <%= session.expiresAt %></div>
+            <% session.warnings.forEach((warning) => { %>
+              <div class="inline-alert warning"><%= warning %></div>
+            <% }) %>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>Type</th>
+                    <th>Answer</th>
+                    <th>Assets</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% session.answers.forEach((answer) => { %>
+                    <tr>
+                      <td><strong><%= answer.label || ('Question ' + answer.position) %></strong></td>
+                      <td><%= answer.type %></td>
+                      <td><%= answer.value %></td>
+                      <td>
+                        <% if (answer.assets.length) { %>
+                          <ul class="entry-stack">
+                            <% answer.assets.forEach((asset) => { %>
+                              <li>
+                                <strong><%= asset.fileName %></strong>
+                                <div class="field-help"><%= asset.contentType %> / <%= asset.byteSize %> / <%= asset.status %><%= asset.reason ? ' / ' + asset.reason : '' %></div>
+                                <% if (asset.downloadHref) { %>
+                                  <a class="transcript-table-link" href="<%= asset.downloadHref %>">Download</a>
+                                <% } %>
+                              </li>
+                            <% }) %>
+                          </ul>
+                        <% } else { %>
+                          <span class="status-pill tone-muted">No mirrored assets</span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3>Raw feedback not captured</h3>
+        <p>No completed answered feedback session has a raw-feedback custody record for this case.</p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
       <h3><%= t("qualityReview.detail.latestFeedbackTitle") %></h3>
     </div>
     <% if (detail.latestFeedbackSession) { %>

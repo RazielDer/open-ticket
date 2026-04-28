@@ -70,11 +70,13 @@ import {
 import {
   supportsTicketTelemetryReads,
   supportsTicketWorkbenchReads,
-  supportsTicketWorkbenchWrites
+  supportsTicketWorkbenchWrites,
+  type DashboardRuntimeGuildMember
 } from "../runtime-bridge"
 import {
   buildDashboardQualityReviewDetailModel,
-  buildDashboardQualityReviewListModel
+  buildDashboardQualityReviewListModel,
+  sanitizeQualityReviewReturnTo
 } from "../quality-review"
 import {
   buildFallbackTicketDetail,
@@ -86,7 +88,7 @@ import {
   sanitizeTicketWorkbenchReturnTo,
   translateTicketWorkbenchMessage
 } from "../ticket-workbench"
-import type { DashboardTicketTelemetrySignals } from "../ticket-workbench-types"
+import type { DashboardQualityReviewActionId, DashboardTicketTelemetrySignals } from "../ticket-workbench-types"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
   const access = res.locals.dashboardAccess as { capabilities?: string[] } | undefined
@@ -120,6 +122,57 @@ function normalizeStringListInput(value: unknown) {
 
 function appendAlertQuery(href: string, status: string, message: string) {
   return `${href}${href.includes("?") ? "&" : "?"}alertStatus=${encodeURIComponent(status)}&msg=${encodeURIComponent(message)}`
+}
+
+function parseQualityReviewActionId(value: string): DashboardQualityReviewActionId | null {
+  return value === "set-state" || value === "assign-owner" || value === "clear-owner" || value === "add-note"
+    ? value
+    : null
+}
+
+function memberHasAdminTier(context: DashboardAppContext, member: DashboardRuntimeGuildMember | null) {
+  if (!member) return false
+  if (context.config.rbac.ownerUserIds.includes(member.userId)) return true
+  if (context.config.rbac.userIds.admin.includes(member.userId)) return true
+  const adminRoleIds = new Set(context.config.rbac.roleIds.admin.map((roleId) => String(roleId || "").trim()).filter(Boolean))
+  return member.roleIds.some((roleId) => adminRoleIds.has(String(roleId || "").trim()))
+}
+
+async function resolveQualityReviewOwnerLabel(context: DashboardAppContext, userId: string) {
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(userId).catch(() => null)
+    : null
+  return member?.displayName || member?.globalName || member?.username || `Unknown owner (${userId})`
+}
+
+async function buildQualityReviewOwnerChoices(context: DashboardAppContext, currentUserId: string | null | undefined) {
+  const ids = new Set<string>()
+  for (const userId of context.config.rbac.ownerUserIds) ids.add(userId)
+  for (const userId of context.config.rbac.userIds.admin) ids.add(userId)
+  if (currentUserId) ids.add(currentUserId)
+
+  const choices = await Promise.all([...ids].map(async (userId) => ({
+    value: userId,
+    label: await resolveQualityReviewOwnerLabel(context, userId)
+  })))
+  return choices
+    .filter((choice) => choice.value.trim().length > 0)
+    .sort((left, right) => left.label.localeCompare(right.label) || left.value.localeCompare(right.value))
+}
+
+async function canAssignQualityReviewOwner(
+  context: DashboardAppContext,
+  access: ReturnType<ReturnType<typeof createAdminGuard>["getAccess"]>,
+  ownerUserId: string
+) {
+  const normalizedOwner = String(ownerUserId || "").trim()
+  if (!normalizedOwner || !access || !hasDashboardCapability(access, "quality.review.manage")) return false
+  if (access.identity?.userId === normalizedOwner) return true
+  if (context.config.rbac.ownerUserIds.includes(normalizedOwner) || context.config.rbac.userIds.admin.includes(normalizedOwner)) return true
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(normalizedOwner).catch(() => null)
+    : null
+  return memberHasAdminTier(context, member)
 }
 
 function sanitizeAnalyticsWorkspaceReturnTo(basePath: string, candidate: unknown) {
@@ -1193,13 +1246,15 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
   app.get(joinBasePath(basePath, "admin/quality-review"), adminGuard.page("quality.review"), async (req, res, next) => {
     try {
+      const access = adminGuard.getAccess(res)
       const model = await buildDashboardQualityReviewListModel({
         basePath,
         projectRoot: context.projectRoot,
         currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review"),
         query: req.query as Record<string, unknown>,
         configService,
-        runtimeBridge
+        runtimeBridge,
+        actorUserId: access?.identity?.userId || ""
       })
 
       renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
@@ -1222,6 +1277,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   app.get(joinBasePath(basePath, "admin/quality-review/:ticketId"), adminGuard.page("quality.review"), async (req, res, next) => {
     try {
       const access = adminGuard.getAccess(res)
+      const canManage = Boolean(access && hasDashboardCapability(access, "quality.review.manage"))
       const model = await buildDashboardQualityReviewDetailModel({
         basePath,
         projectRoot: context.projectRoot,
@@ -1232,7 +1288,9 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         query: req.query as Record<string, unknown>,
         configService,
         runtimeBridge,
-        ticketWorkbenchAccessible: Boolean(access && hasDashboardCapability(access, "ticket.workbench"))
+        ticketWorkbenchAccessible: Boolean(access && hasDashboardCapability(access, "ticket.workbench")),
+        canManage,
+        ownerChoices: canManage ? await buildQualityReviewOwnerChoices(context, access?.identity?.userId) : []
       })
 
       if (model.available && !model.detailRecord) {
@@ -1258,6 +1316,107 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     } catch (error) {
       next(error)
     }
+  })
+
+  app.post(joinBasePath(basePath, "admin/quality-review/:ticketId/actions/:actionId"), adminGuard.form("quality.review.manage"), async (req, res) => {
+    const action = parseQualityReviewActionId(req.params.actionId)
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const returnTo = sanitizeQualityReviewReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const detailHref = joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(req.params.ticketId)}`)
+    const redirectToDetail = (status: string, message: string) => {
+      const params = new URLSearchParams({ status, msg: message, returnTo })
+      return `${detailHref}?${params.toString()}`
+    }
+
+    if (!action) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "quality-review-action",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "invalid-action",
+        details: { actionId: req.params.actionId, actorUserId }
+      })
+      return res.redirect(redirectToDetail("warning", "Unsupported quality review action."))
+    }
+
+    if (action === "assign-owner") {
+      const ownerUserId = typeof req.body?.ownerUserId === "string" ? req.body.ownerUserId.trim() : ""
+      if (!await canAssignQualityReviewOwner(context, access, ownerUserId)) {
+        await recordAdminAuditEvent(context, req, access?.identity, {
+          eventType: "quality-review-action",
+          target: req.params.ticketId,
+          outcome: "failure",
+          reason: "invalid-owner",
+          details: { action, ownerUserId, actorUserId }
+        })
+        return res.redirect(redirectToDetail("warning", "Quality review owner must be a current dashboard admin."))
+      }
+    }
+
+    const result = typeof runtimeBridge.runQualityReviewAction === "function"
+      ? await runtimeBridge.runQualityReviewAction({
+          ticketId: req.params.ticketId,
+          action,
+          actorUserId,
+          state: typeof req.body?.state === "string" ? req.body.state : undefined,
+          ownerUserId: typeof req.body?.ownerUserId === "string" ? req.body.ownerUserId : undefined,
+          note: typeof req.body?.note === "string" ? req.body.note : undefined
+        })
+      : { ok: false, status: "warning" as const, message: "Quality review service is unavailable." }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "quality-review-action",
+      target: req.params.ticketId,
+      outcome: result.ok ? "success" : "failure",
+      reason: action,
+      details: {
+        action,
+        actorUserId,
+        status: result.status,
+        warnings: result.warnings || []
+      }
+    })
+
+    return res.redirect(redirectToDetail(result.status, result.message))
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/:ticketId/feedback/:sessionId/assets/:assetId"), adminGuard.page("quality.review.manage"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const result = typeof runtimeBridge.resolveQualityReviewAsset === "function"
+      ? await runtimeBridge.resolveQualityReviewAsset(req.params.ticketId, req.params.sessionId, req.params.assetId, actorUserId)
+      : {
+          status: "missing" as const,
+          filePath: null,
+          fileName: null,
+          contentType: null,
+          byteSize: 0,
+          message: "Quality review service is unavailable."
+        }
+
+    res.setHeader("Cache-Control", "no-store, private")
+    res.setHeader("X-Content-Type-Options", "nosniff")
+    if (result.status === "expired") return res.status(410).send(result.message)
+    if (result.status !== "available" || !result.filePath) return res.status(404).send(result.message)
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "quality-review-asset-access",
+      target: req.params.ticketId,
+      outcome: "success",
+      reason: "raw-feedback-asset",
+      details: {
+        ticketId: req.params.ticketId,
+        sessionId: req.params.sessionId,
+        assetId: req.params.assetId,
+        actorUserId,
+        byteSize: result.byteSize
+      }
+    })
+
+    if (result.contentType) res.type(result.contentType)
+    if (result.fileName) res.setHeader("Content-Disposition", `attachment; filename="${result.fileName.replace(/"/g, "")}"`)
+    return res.sendFile(result.filePath)
   })
 
   app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
