@@ -5,6 +5,13 @@ import { buildDashboardAuditActor, createAdminGuard, sanitizeReturnTo } from "..
 import { buildDashboardAnalyticsModel } from "../analytics"
 import type { DashboardAppContext } from "../create-app"
 import {
+  buildAnalyticsExportPayload,
+  buildTicketWorkbenchExportPayload,
+  getAnalyticsExportAuditDetails,
+  getTicketWorkbenchExportAuditDetails,
+  parseDashboardExportFormat
+} from "../export-serializers"
+import {
   getDashboardSecurityWarnings,
   getDashboardViewerReadiness,
   joinBasePath,
@@ -109,6 +116,36 @@ function normalizeStringListInput(value: unknown) {
 
 function appendAlertQuery(href: string, status: string, message: string) {
   return `${href}${href.includes("?") ? "&" : "?"}alertStatus=${encodeURIComponent(status)}&msg=${encodeURIComponent(message)}`
+}
+
+function sanitizeAnalyticsWorkspaceReturnTo(basePath: string, candidate: unknown) {
+  const fallback = joinBasePath(basePath, "admin/analytics")
+  if (typeof candidate !== "string" || candidate.length === 0) return fallback
+  if (!candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("://") || candidate.includes("\\")) return fallback
+  if (basePath !== "/" && !candidate.startsWith(basePath)) return fallback
+  const rawPath = candidate.split(/[?#]/, 1)[0]
+  for (const segment of rawPath.split("/")) {
+    let decoded = segment
+    try {
+      decoded = decodeURIComponent(segment)
+    } catch {
+      return fallback
+    }
+    if (decoded === "." || decoded === ".." || decoded.includes("\\")) return fallback
+  }
+
+  const normalizedBasePath = basePath === "/" ? "" : basePath
+  const analyticsRoot = `${normalizedBasePath}/admin/analytics`
+  if (candidate === analyticsRoot) return candidate
+  if (candidate.startsWith(`${analyticsRoot}?`)) return candidate
+  if (candidate.startsWith(`${analyticsRoot}/`)) return candidate
+  return fallback
+}
+
+function sendDashboardExport(res: express.Response, payload: { fileName: string; contentType: string; body: Buffer | string }) {
+  res.setHeader("Content-Type", payload.contentType)
+  res.setHeader("Content-Disposition", `attachment; filename="${payload.fileName}"`)
+  res.send(payload.body)
 }
 
 function registerPreparedExportCleanup(
@@ -338,6 +375,87 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     return definition.id === "transcripts"
       ? "transcript.manage" as const
       : "config.write.general" as const
+  }
+
+  const buildAnalyticsWorkspaceModel = async (query: Record<string, unknown>) => {
+    const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
+    const transcriptService = transcriptIntegration.state === "ready" && supportsTranscriptTicketAnalyticsHistory(transcriptIntegration.service)
+      ? transcriptIntegration.service
+      : null
+    return await buildDashboardAnalyticsModel({
+      basePath,
+      query,
+      configService,
+      runtimeBridge,
+      transcriptService,
+      t: i18n.t
+    })
+  }
+
+  const buildTicketWorkbenchWorkspaceModel = async (query: Record<string, unknown>, currentHref: string) => {
+    const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+    const runtimeAvailable = snapshot.ticketSummary.available === true
+    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
+    const request = parseTicketWorkbenchListRequest(query)
+    const tickets = readsSupported ? runtimeBridge.listTickets() : []
+    let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
+    let telemetrySignals: Record<string, DashboardTicketTelemetrySignals> = {}
+    let telemetryFilterSignals: Record<string, DashboardTicketTelemetrySignals> = {}
+    let telemetryWarningMessage = ""
+
+    if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
+      try {
+        const telemetryFiltersActive = request.feedback !== "all" || request.reopened !== "all"
+        if (telemetryFiltersActive) {
+          telemetryFilterSignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
+        }
+        const preview = buildTicketWorkbenchListModel({
+          basePath,
+          currentHref,
+          request,
+          tickets,
+          configService,
+          readsSupported,
+          writesSupported,
+          telemetrySupported,
+          telemetrySignals: telemetryFilterSignals,
+          telemetryFilterSignals,
+          warningMessage: runtimeAvailable
+            ? ""
+            : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+          telemetryWarningMessage
+        })
+        const visibleTicketIds = preview.items.map((item) => item.id)
+        telemetrySignals = visibleTicketIds.length > 0
+          ? await runtimeBridge.getTicketTelemetrySignals(visibleTicketIds)
+          : {}
+      } catch {
+        telemetrySupported = false
+        telemetryFilterSignals = {}
+        telemetrySignals = {}
+        telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+      }
+    } else if (readsSupported) {
+      telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+    }
+
+    return buildTicketWorkbenchListModel({
+      basePath,
+      currentHref,
+      request,
+      tickets,
+      configService,
+      readsSupported,
+      writesSupported,
+      telemetrySupported,
+      telemetrySignals,
+      telemetryFilterSignals,
+      warningMessage: runtimeAvailable
+        ? ""
+        : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+      telemetryWarningMessage
+    })
   }
 
   app.get(joinBasePath(basePath, "admin"), adminGuard.page("admin.shell"), (req, res) => {
@@ -996,18 +1114,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
   app.get(joinBasePath(basePath, "admin/analytics"), adminGuard.page("analytics.view"), async (req, res, next) => {
     try {
-      const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
-      const transcriptService = transcriptIntegration.state === "ready" && supportsTranscriptTicketAnalyticsHistory(transcriptIntegration.service)
-        ? transcriptIntegration.service
-        : null
-      const model = await buildDashboardAnalyticsModel({
-        basePath,
-        query: req.query as Record<string, unknown>,
-        configService,
-        runtimeBridge,
-        transcriptService,
-        t: i18n.t
-      })
+      const model = await buildAnalyticsWorkspaceModel(req.query as Record<string, unknown>)
 
       renderPage(res, "admin-shell", buildAdminShell(context, "analytics", {
         pageTitle: `${i18n.t("analytics.title")} | ${brand.title}`,
@@ -1025,71 +1132,58 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
+  app.post(joinBasePath(basePath, "admin/analytics/export/:format"), adminGuard.form("analytics.view"), async (req, res) => {
+    const returnTo = sanitizeAnalyticsWorkspaceReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.params.format)
+    const actor = adminGuard.getAccess(res)?.identity
+    if (!format) {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: {
+          format: String(req.params.format || ""),
+          warningCount: 0,
+          unavailableSectionCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+
+    try {
+      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>)
+      const payload = await buildAnalyticsExportPayload(model, format)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "success",
+        reason: "analytics-export",
+        details: getAnalyticsExportAuditDetails(model, format)
+      })
+      return sendDashboardExport(res, payload)
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: {
+          format,
+          warningCount: 0,
+          unavailableSectionCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
   app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
     try {
-      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
-      const runtimeAvailable = snapshot.ticketSummary.available === true
-      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
-      const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
-      const request = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
-      const tickets = readsSupported ? runtimeBridge.listTickets() : []
-      let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
-      let telemetrySignals: Record<string, DashboardTicketTelemetrySignals> = {}
-      let telemetryFilterSignals: Record<string, DashboardTicketTelemetrySignals> = {}
-      let telemetryWarningMessage = ""
-
-      if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
-        try {
-          const telemetryFiltersActive = request.feedback !== "all" || request.reopened !== "all"
-          if (telemetryFiltersActive) {
-            telemetryFilterSignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
-          }
-          const preview = buildTicketWorkbenchListModel({
-            basePath,
-            currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
-            request,
-            tickets,
-            configService,
-            readsSupported,
-            writesSupported,
-            telemetrySupported,
-            telemetrySignals: telemetryFilterSignals,
-            telemetryFilterSignals,
-            warningMessage: runtimeAvailable
-              ? ""
-              : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
-            telemetryWarningMessage
-          })
-          const visibleTicketIds = preview.items.map((item) => item.id)
-          telemetrySignals = visibleTicketIds.length > 0
-            ? await runtimeBridge.getTicketTelemetrySignals(visibleTicketIds)
-            : {}
-        } catch {
-          telemetrySupported = false
-          telemetryFilterSignals = {}
-          telemetrySignals = {}
-          telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
-        }
-      } else if (readsSupported) {
-        telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
-      }
-
-      const model = buildTicketWorkbenchListModel({
-        basePath,
-        currentHref: req.originalUrl || joinBasePath(basePath, "admin/tickets"),
-        request,
-        tickets,
-        configService,
-        readsSupported,
-        writesSupported,
-        telemetrySupported,
-        telemetrySignals,
-        telemetryFilterSignals,
-        warningMessage: runtimeAvailable
-          ? ""
-          : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
-        telemetryWarningMessage
-      })
+      const model = await buildTicketWorkbenchWorkspaceModel(
+        req.query as Record<string, unknown>,
+        req.originalUrl || joinBasePath(basePath, "admin/tickets")
+      )
 
       renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
         pageTitle: `${i18n.t("tickets.title")} | ${brand.title}`,
@@ -1104,6 +1198,56 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       }))
     } catch (error) {
       next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/export/:format"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.params.format)
+    const actor = adminGuard.getAccess(res)?.identity
+    if (!format) {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: {
+          format: String(req.params.format || ""),
+          page: 0,
+          limit: 0,
+          rowCount: 0,
+          warningCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+
+    try {
+      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo)
+      const payload = await buildTicketWorkbenchExportPayload(model, format)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "success",
+        reason: "ticket-workbench-export",
+        details: getTicketWorkbenchExportAuditDetails(model, format)
+      })
+      return sendDashboardExport(res, payload)
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: {
+          format,
+          page: 0,
+          limit: 0,
+          rowCount: 0,
+          warningCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
     }
   })
 

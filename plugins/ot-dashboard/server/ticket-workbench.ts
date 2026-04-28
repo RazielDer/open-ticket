@@ -67,6 +67,28 @@ export interface TicketWorkbenchListRequest {
   limitOptions: number[]
 }
 
+export interface TicketWorkbenchExportRow {
+  ticketId: string
+  resourceName: string
+  closed: boolean
+  claimed: boolean
+  transportMode: DashboardTicketTransportMode | null
+  panelId: string | null
+  panelLabel: string
+  optionId: string | null
+  optionLabel: string
+  creatorUserId: string | null
+  creatorLabel: string
+  assignedTeamId: string | null
+  teamLabel: string
+  assignedStaffUserId: string | null
+  assigneeLabel: string
+  telemetryAvailable: boolean
+  latestFeedbackStatus: DashboardTicketFeedbackStatus | null
+  reopenCount: number | null
+  lastReopenedAt: number | null
+}
+
 export interface TicketWorkbenchListModel {
   available: boolean
   warningMessage: string
@@ -93,9 +115,15 @@ export interface TicketWorkbenchListModel {
     closeAction: string
     reopenAction: string
   } | null
+  exportActions: {
+    jsonAction: string
+    csvAction: string
+    returnTo: string
+  }
   options: Array<{ id: string; label: string }>
   panels: Array<{ id: string; label: string }>
   supportTeams: Array<{ id: string; label: string }>
+  exportRows: TicketWorkbenchExportRow[]
   items: Array<{
     id: string
     optionLabel: string
@@ -515,6 +543,67 @@ export function buildTicketWorkbenchListModel(input: {
   const startIndex = (page - 1) * effectiveRequest.limit
   const pageItems = filtered.slice(startIndex, startIndex + effectiveRequest.limit)
   const currentHref = input.currentHref || buildPageHref(input.basePath, effectiveRequest, page)
+  const pageRows = pageItems.map((ticket) => {
+    const panel = resolvePanelMapping(lookups.panelForOption, ticket.optionId)
+    const optionLabel = resolveOptionLabel(lookups.optionById, ticket.optionId)
+    const teamLabel = resolveTeamLabel(lookups.teamById, ticket.assignedTeamId)
+    const assigneeLabel = unknownUserLabel(ticket.assignedStaffUserId)
+    const creatorLabel = unknownUserLabel(ticket.creatorId)
+    const channelNameLabel = normalizeString(ticket.channelName) || normalizeString(ticket.channelSuffix) || ticket.id
+    const detailHref = `${joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(ticket.id)}`)}?returnTo=${encodeURIComponent(currentHref)}`
+    const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
+    return {
+      item: {
+        id: ticket.id,
+        optionLabel,
+        panelLabel: panel.panelLabel,
+        creatorLabel,
+        teamLabel,
+        assigneeLabel,
+        transportLabel: transportLabel(ticket.transportMode),
+        channelNameLabel,
+        statusBadge: statusBadge(ticket),
+        feedbackBadge: telemetrySupported ? feedbackBadge(telemetry.latestFeedbackStatus) : null,
+        reopenBadge: telemetrySupported && telemetry.reopenCount > 0 ? { label: `Reopened x${telemetry.reopenCount}`, tone: "warning" as DashboardTone } : null,
+        openedLabel: formatDate(ticket.openedOn),
+        activityLabel: formatDate(activityTime(ticket) || null),
+        detailHref,
+        searchText: [
+          ticket.id,
+          channelNameLabel,
+          optionLabel,
+          panel.panelLabel,
+          creatorLabel,
+          teamLabel,
+          assigneeLabel,
+          ticket.transportMode || "",
+          telemetrySupported ? telemetry.latestFeedbackStatus : "",
+          telemetrySupported && telemetry.hasEverReopened ? "reopened" : ""
+        ].join(" ").toLowerCase()
+      },
+      exportRow: {
+        ticketId: ticket.id,
+        resourceName: channelNameLabel,
+        closed: ticket.closed,
+        claimed: ticket.claimed,
+        transportMode: ticket.transportMode,
+        panelId: panel.panelId || null,
+        panelLabel: panel.panelLabel,
+        optionId: normalizeString(ticket.optionId) || null,
+        optionLabel,
+        creatorUserId: normalizeString(ticket.creatorId) || null,
+        creatorLabel,
+        assignedTeamId: normalizeString(ticket.assignedTeamId) || null,
+        teamLabel,
+        assignedStaffUserId: normalizeString(ticket.assignedStaffUserId) || null,
+        assigneeLabel,
+        telemetryAvailable: telemetrySupported,
+        latestFeedbackStatus: telemetrySupported ? telemetry.latestFeedbackStatus : null,
+        reopenCount: telemetrySupported ? telemetry.reopenCount : null,
+        lastReopenedAt: telemetrySupported ? telemetry.lastReopenedAt : null
+      }
+    }
+  })
 
   return {
     available: input.readsSupported,
@@ -558,6 +647,11 @@ export function buildTicketWorkbenchListModel(input: {
           reopenAction: joinBasePath(input.basePath, "admin/tickets/bulk/reopen")
         }
       : null,
+    exportActions: {
+      jsonAction: joinBasePath(input.basePath, "admin/tickets/export/json"),
+      csvAction: joinBasePath(input.basePath, "admin/tickets/export/csv"),
+      returnTo: currentHref
+    },
     options: lookups.options
       .filter((option) => normalizeString(option.type) === "ticket")
       .map((option) => ({ id: normalizeString(option.id), label: labelFromRecord(option, normalizeString(option.id)) }))
@@ -568,44 +662,8 @@ export function buildTicketWorkbenchListModel(input: {
     supportTeams: lookups.supportTeams
       .map((team) => ({ id: normalizeString(team.id), label: labelFromRecord(team, normalizeString(team.id)) }))
       .filter((team) => team.id),
-    items: pageItems.map((ticket) => {
-      const panel = resolvePanelMapping(lookups.panelForOption, ticket.optionId)
-      const optionLabel = resolveOptionLabel(lookups.optionById, ticket.optionId)
-      const teamLabel = resolveTeamLabel(lookups.teamById, ticket.assignedTeamId)
-      const assigneeLabel = unknownUserLabel(ticket.assignedStaffUserId)
-      const creatorLabel = unknownUserLabel(ticket.creatorId)
-      const channelNameLabel = normalizeString(ticket.channelName) || normalizeString(ticket.channelSuffix) || ticket.id
-      const detailHref = `${joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(ticket.id)}`)}?returnTo=${encodeURIComponent(currentHref)}`
-      const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
-      return {
-        id: ticket.id,
-        optionLabel,
-        panelLabel: panel.panelLabel,
-        creatorLabel,
-        teamLabel,
-        assigneeLabel,
-        transportLabel: transportLabel(ticket.transportMode),
-        channelNameLabel,
-        statusBadge: statusBadge(ticket),
-        feedbackBadge: telemetrySupported ? feedbackBadge(telemetry.latestFeedbackStatus) : null,
-        reopenBadge: telemetrySupported && telemetry.reopenCount > 0 ? { label: `Reopened x${telemetry.reopenCount}`, tone: "warning" as DashboardTone } : null,
-        openedLabel: formatDate(ticket.openedOn),
-        activityLabel: formatDate(activityTime(ticket) || null),
-        detailHref,
-        searchText: [
-          ticket.id,
-          channelNameLabel,
-          optionLabel,
-          panel.panelLabel,
-          creatorLabel,
-          teamLabel,
-          assigneeLabel,
-          ticket.transportMode || "",
-          telemetrySupported ? telemetry.latestFeedbackStatus : "",
-          telemetrySupported && telemetry.hasEverReopened ? "reopened" : ""
-        ].join(" ").toLowerCase()
-      }
-    })
+    exportRows: pageRows.map((row) => row.exportRow),
+    items: pageRows.map((row) => row.item)
   }
 }
 

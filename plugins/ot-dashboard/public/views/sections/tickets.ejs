@@ -159,6 +159,44 @@
         <% } %>
       </div>
     </form>
+    <div class="sticky-actions transcript-filter-actions">
+      <form method="post" action="<%= ticketList.exportActions.jsonAction %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= ticketList.exportActions.returnTo %>">
+        <input type="hidden" name="q" value="<%= ticketList.request.q %>">
+        <input type="hidden" name="status" value="<%= ticketList.request.status %>">
+        <input type="hidden" name="transport" value="<%= ticketList.request.transport %>">
+        <input type="hidden" name="teamId" value="<%= ticketList.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= ticketList.request.assigneeId %>">
+        <input type="hidden" name="optionId" value="<%= ticketList.request.optionId %>">
+        <input type="hidden" name="panelId" value="<%= ticketList.request.panelId %>">
+        <input type="hidden" name="creatorId" value="<%= ticketList.request.creatorId %>">
+        <input type="hidden" name="feedback" value="<%= ticketList.request.feedback %>">
+        <input type="hidden" name="reopened" value="<%= ticketList.request.reopened %>">
+        <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
+        <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
+        <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <button class="btn secondary" type="submit"><%= t("tickets.page.exportJsonAction") %></button>
+      </form>
+      <form method="post" action="<%= ticketList.exportActions.csvAction %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= ticketList.exportActions.returnTo %>">
+        <input type="hidden" name="q" value="<%= ticketList.request.q %>">
+        <input type="hidden" name="status" value="<%= ticketList.request.status %>">
+        <input type="hidden" name="transport" value="<%= ticketList.request.transport %>">
+        <input type="hidden" name="teamId" value="<%= ticketList.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= ticketList.request.assigneeId %>">
+        <input type="hidden" name="optionId" value="<%= ticketList.request.optionId %>">
+        <input type="hidden" name="panelId" value="<%= ticketList.request.panelId %>">
+        <input type="hidden" name="creatorId" value="<%= ticketList.request.creatorId %>">
+        <input type="hidden" name="feedback" value="<%= ticketList.request.feedback %>">
+        <input type="hidden" name="reopened" value="<%= ticketList.request.reopened %>">
+        <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
+        <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
+        <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <button class="btn secondary" type="submit"><%= t("tickets.page.exportCsvAction") %></button>
+      </form>
+    </div>
   </div>
 </details>
 

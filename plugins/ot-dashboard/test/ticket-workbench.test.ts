@@ -1120,6 +1120,141 @@ test("ticket bulk actions require csrf, keep return filters, and map claim-self 
   assert.equal(closeAudit?.details?.skipped, 2)
 })
 
+test("ticket workbench export is editor csrf-protected current-page JSON and CSV", async (t) => {
+  const tickets = [
+    ticket({
+      id: "ticket-b",
+      channelName: "=cmd, \"quoted\"\nline",
+      transportParentMessageId: "https://discord.com/channels/guild/channel/message",
+      integrationProfileId: "secret-integration-profile",
+      aiAssistProfileId: "secret-ai-profile",
+      openedOn: 1710000100000
+    }),
+    ...Array.from({ length: 10 }, (_item, index) => ticket({
+      id: `ticket-new-${index}`,
+      channelName: `new-${index}`,
+      openedOn: 1710000200000 + index
+    }))
+  ]
+  const telemetrySignalCalls: string[][] = []
+  const runtime = await startServer({
+    tickets,
+    telemetrySignalCalls,
+    telemetrySignals: {
+      "ticket-b": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 2,
+        lastReopenedAt: 1710000300000,
+        latestFeedbackStatus: "completed"
+      })
+    }
+  })
+  t.after(() => stopServer(runtime))
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets?limit=10&page=2&sort=opened-desc")
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&page=2&sort=opened-desc`, { headers: { cookie: editor.cookie } })
+  const listHtml = await listResponse.text()
+  assert.equal(listResponse.status, 200)
+  assert.match(listHtml, /Export JSON/)
+  assert.match(listHtml, /Export CSV/)
+  const csrfToken = csrfFrom(listHtml)
+
+  const missingCsrf = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export/json`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ limit: "10", page: "2", sort: "opened-desc" })
+  })
+  await missingCsrf.arrayBuffer()
+  assert.equal(missingCsrf.status, 403)
+
+  const jsonExport = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export/json`, {
+    method: "POST",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?limit=10&page=2&sort=opened-desc",
+      limit: "10",
+      page: "2",
+      sort: "opened-desc"
+    })
+  })
+  assert.equal(jsonExport.status, 200)
+  assert.match(String(jsonExport.headers.get("content-type")), /application\/json/)
+  assert.match(String(jsonExport.headers.get("content-disposition")), /ticket-workbench-page\.json/)
+  const jsonBody = await jsonExport.json() as any
+  assert.equal(jsonBody.report, "ticket-workbench-page")
+  assert.equal(jsonBody.currentPageOnly, true)
+  assert.equal(jsonBody.page, 2)
+  assert.equal(jsonBody.limit, 10)
+  assert.equal(jsonBody.total, 11)
+  assert.deepEqual(jsonBody.items.map((item: any) => item.ticketId), ["ticket-b"])
+  assert.equal(jsonBody.items[0].resourceName, "=cmd, \"quoted\"\nline")
+  assert.equal(jsonBody.items[0].telemetryAvailable, true)
+  assert.equal(jsonBody.items[0].latestFeedbackStatus, "completed")
+  assert.equal(jsonBody.items[0].reopenCount, 2)
+  const jsonText = JSON.stringify(jsonBody)
+  assert.doesNotMatch(jsonText, /discord\.com\/channels/)
+  assert.doesNotMatch(jsonText, /secret-integration-profile|secret-ai-profile/)
+  assert.doesNotMatch(jsonText, /questionSummaries|attachment|transcript/)
+
+  const csvExport = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export/csv`, {
+    method: "POST",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?limit=10&page=2&sort=opened-desc",
+      limit: "10",
+      page: "2",
+      sort: "opened-desc"
+    })
+  })
+  assert.equal(csvExport.status, 200)
+  assert.match(String(csvExport.headers.get("content-type")), /text\/csv/)
+  assert.match(String(csvExport.headers.get("content-disposition")), /ticket-workbench-page\.csv/)
+  const csvText = await csvExport.text()
+  assert.match(csvText, /^ticketId,resourceName,closed,claimed,transportMode,panelId,panelLabel/m)
+  assert.match(csvText, /ticket-b/)
+  assert.ok(csvText.includes('"\'=cmd, ""quoted""\nline"'))
+  assert.doesNotMatch(csvText, /ticket-new-/)
+  assert.doesNotMatch(csvText, /discord\.com\/channels|secret-integration-profile|secret-ai-profile/)
+
+  const invalidFormat = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export/xlsx`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/transcripts"
+    })
+  })
+  await invalidFormat.arrayBuffer()
+  assert.equal(invalidFormat.status, 302)
+  assert.match(String(invalidFormat.headers.get("location")), /^\/dash\/admin\/tickets\?alertStatus=warning&msg=/)
+  assert.match(String(redirectMessage(invalidFormat.headers.get("location"))), /Export format must be JSON or CSV/)
+
+  assert.ok(telemetrySignalCalls.some((ids) => ids.length === 1 && ids[0] === "ticket-b"))
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ticket-export" })
+  assert.equal(audits.length, 3)
+  const successAudit = audits.find((event) => event.outcome === "success" && event.details?.format === "json")
+  assert.equal(successAudit?.target, "ticket-workbench")
+  assert.equal(successAudit?.reason, "ticket-workbench-export")
+  assert.equal(successAudit?.details?.rowCount, 1)
+  assert.equal(Object.prototype.hasOwnProperty.call(successAudit?.details || {}, "query"), false)
+})
+
 test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {
   const baseTicket = ticket({ id: "ticket-1", aiAssistProfileId: "assist-1" })
   const detail = enabledDetail(baseTicket)
@@ -1679,6 +1814,133 @@ test("analytics workspace is admin-only and degrades when transcript history is 
   assert.equal(editorAnalytics.headers.get("location"), "/dash/visual/options")
 })
 
+test("analytics export routes require admin csrf and stream JSON or ZIP downloads", async (t) => {
+  const runtime = await startServer({
+    tickets: [
+      ticket({
+        id: "unknown-ticket",
+        assignedTeamId: null,
+        assignedStaffUserId: null,
+        transportMode: null,
+        channelName: "unknown-channel",
+        openedOn: Date.parse("2026-04-20T10:00:00.000Z")
+      })
+    ],
+    lifecycleTelemetry: [],
+    feedbackTelemetry: [],
+    telemetrySignals: {}
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/analytics")
+  const analyticsResponse = await fetch(`${runtime.baseUrl}/dash/admin/analytics?window=7d&teamId=triage`, { headers: { cookie: admin.cookie } })
+  const analyticsHtml = await analyticsResponse.text()
+  assert.equal(analyticsResponse.status, 200)
+  assert.match(analyticsHtml, /Export JSON/)
+  assert.match(analyticsHtml, /Export CSV/)
+  const csrfToken = csrfFrom(analyticsHtml)
+
+  const missingCsrf = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/json`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ window: "7d" })
+  })
+  await missingCsrf.arrayBuffer()
+  assert.equal(missingCsrf.status, 403)
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/visual/options")
+  const editorOptions = await fetch(`${runtime.baseUrl}/dash/visual/options`, { headers: { cookie: editor.cookie } })
+  const editorCsrf = csrfFrom(await editorOptions.text())
+  const editorDenied = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/json`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ csrfToken: editorCsrf })
+  })
+  await editorDenied.arrayBuffer()
+  assert.equal(editorDenied.status, 403)
+
+  const jsonExport = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/json`, {
+    method: "POST",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/analytics?window=7d&teamId=triage",
+      window: "7d",
+      teamId: "triage"
+    })
+  })
+  assert.equal(jsonExport.status, 200)
+  assert.match(String(jsonExport.headers.get("content-type")), /application\/json/)
+  assert.match(String(jsonExport.headers.get("content-disposition")), /ticket-analytics-report\.json/)
+  const jsonBody = await jsonExport.json() as any
+  assert.equal(jsonBody.report, "ticket-analytics")
+  assert.equal(jsonBody.formatVersion, 1)
+  assert.equal(jsonBody.filters.window, "7d")
+  assert.equal(jsonBody.summaryCards.length, 12)
+  assert.ok(jsonBody.summaryCards.every((card: any) => typeof card.key === "string" && typeof card.status === "string"))
+  assert.equal(jsonBody.tables.cohortPerformanceByTeam.status, "unavailable")
+  assert.ok(Array.isArray(jsonBody.unavailableSections))
+  assert.equal(jsonBody.tables.backlogByTeam.status, "available")
+
+  const zipExport = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/csv`, {
+    method: "POST",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/analytics",
+      window: "7d"
+    })
+  })
+  assert.equal(zipExport.status, 200)
+  assert.match(String(zipExport.headers.get("content-type")), /application\/zip/)
+  assert.match(String(zipExport.headers.get("content-disposition")), /ticket-analytics-report\.zip/)
+  const zipText = Buffer.from(await zipExport.arrayBuffer()).toString("utf8")
+  assert.match(zipText, /manifest\.json/)
+  assert.match(zipText, /summary-cards\.csv/)
+  assert.match(zipText, /backlog-by-team\.csv/)
+  assert.match(zipText, /feedback-outcomes-by-team\.csv/)
+  assert.match(zipText, /cohortPerformanceByTeam/)
+  assert.doesNotMatch(zipText, /raw feedback|attachment|discord\.com\/channels/)
+
+  const invalidFormat = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/pdf`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "https://example.invalid/steal"
+    })
+  })
+  await invalidFormat.arrayBuffer()
+  assert.equal(invalidFormat.status, 302)
+  assert.match(String(invalidFormat.headers.get("location")), /^\/dash\/admin\/analytics\?alertStatus=warning&msg=/)
+  assert.match(String(redirectMessage(invalidFormat.headers.get("location"))), /Export format must be JSON or CSV/)
+
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "analytics-export" })
+  assert.equal(audits.length, 3)
+  const successAudit = audits.find((event) => event.outcome === "success" && event.details?.format === "json")
+  assert.equal(successAudit?.target, "analytics")
+  assert.equal(successAudit?.reason, "analytics-export")
+  assert.equal(Object.prototype.hasOwnProperty.call(successAudit?.details || {}, "query"), false)
+})
+
 test("analytics model reports feedback outcomes, rating summaries, and reopen telemetry", async (t) => {
   const ticketA = ticket({ id: "ticket-a", channelName: "ticket-a", openedOn: Date.parse("2026-04-20T08:00:00.000Z") })
   const ticketB = ticket({
@@ -2130,12 +2392,16 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
 
   assert.match(authSource, /ticket\.workbench/)
   assert.match(authSource, /"\/admin\/tickets"/)
+  assert.doesNotMatch(authSource, /\/admin\/tickets\/export\/:format/)
   assert.match(authSource, /if \(tier === "editor" \|\| tier === "admin"\) \{\s+capabilities\.push\("config\.write\.visual", "admin\.shell", "ticket\.workbench"\)/)
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
+  assert.match(routesSource, /admin\/analytics\/export\/:format"\), adminGuard\.form\("analytics\.view"\)/)
+  assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /admin\/tickets\/bulk\/:actionId"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)
   assert.match(routesSource, /eventType: "ticket-bulk-action"/)
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
+  assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport|review workspace/i)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
   assert.match(workflowSource, /superseded by the workspace SLICE-010 controller contract/)

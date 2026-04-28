@@ -221,6 +221,30 @@
         <% } %>
       </div>
     </form>
+    <div class="sticky-actions transcript-filter-actions">
+      <form method="post" action="<%= analytics.exportActions.jsonAction %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= analytics.exportActions.returnTo %>">
+        <input type="hidden" name="window" value="<%= analytics.request.window %>">
+        <input type="hidden" name="from" value="<%= analytics.request.from %>">
+        <input type="hidden" name="to" value="<%= analytics.request.to %>">
+        <input type="hidden" name="transport" value="<%= analytics.request.transport %>">
+        <input type="hidden" name="teamId" value="<%= analytics.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= analytics.request.assigneeId %>">
+        <button class="btn secondary" type="submit"><%= t("analytics.page.exportJsonAction") %></button>
+      </form>
+      <form method="post" action="<%= analytics.exportActions.csvAction %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= analytics.exportActions.returnTo %>">
+        <input type="hidden" name="window" value="<%= analytics.request.window %>">
+        <input type="hidden" name="from" value="<%= analytics.request.from %>">
+        <input type="hidden" name="to" value="<%= analytics.request.to %>">
+        <input type="hidden" name="transport" value="<%= analytics.request.transport %>">
+        <input type="hidden" name="teamId" value="<%= analytics.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= analytics.request.assigneeId %>">
+        <button class="btn secondary" type="submit"><%= t("analytics.page.exportCsvAction") %></button>
+      </form>
+    </div>
   </div>
 </details>
 

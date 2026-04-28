@@ -53,6 +53,16 @@ export interface DashboardAnalyticsMetricCell {
   lowSample: boolean
 }
 
+export type DashboardAnalyticsExportSummaryCardStatus = "available" | "unavailable" | "low-sample"
+
+export interface DashboardAnalyticsExportSummaryCard {
+  key: string
+  label: string
+  value: string
+  status: DashboardAnalyticsExportSummaryCardStatus
+  warning: string | null
+}
+
 export interface DashboardAnalyticsTableRow {
   key: string
   label: string
@@ -107,6 +117,12 @@ export interface DashboardAnalyticsModel {
   telemetryState: DashboardAnalyticsHistoryState
   telemetryWarnings: string[]
   summaryCards: DashboardSummaryCardInput[]
+  exportSummaryCards: DashboardAnalyticsExportSummaryCard[]
+  exportActions: {
+    jsonAction: string
+    csvAction: string
+    returnTo: string
+  }
   backlogByTeam: DashboardAnalyticsBacklogRow[]
   backlogByAssignee: DashboardAnalyticsBacklogRow[]
   backlogByTransport: DashboardAnalyticsBacklogRow[]
@@ -160,6 +176,27 @@ function parseUtcDateStart(value: string) {
 
 function yyyyMmDd(timestamp: number) {
   return new Date(timestamp).toISOString().slice(0, 10)
+}
+
+function appendQuery(href: string, entries: Record<string, string | number>) {
+  const url = new URL(`http://dashboard.local${href}`)
+  for (const [key, value] of Object.entries(entries)) {
+    if (String(value).length > 0) {
+      url.searchParams.set(key, String(value))
+    }
+  }
+  return `${url.pathname}${url.search}`
+}
+
+function buildAnalyticsHref(basePath: string, request: DashboardAnalyticsRequest) {
+  return appendQuery(joinBasePath(basePath, "admin/analytics"), {
+    window: request.window,
+    from: request.from,
+    to: request.to,
+    transport: request.transport === "all" ? "" : request.transport,
+    teamId: request.teamId,
+    assigneeId: request.assigneeId
+  })
 }
 
 function buildWindowRange(query: Record<string, unknown>, now: number) {
@@ -401,6 +438,39 @@ function rateCard(label: string, cell: DashboardAnalyticsMetricCell): DashboardS
     value: cell.value,
     detail: cell.detail,
     tone: cell.available ? cell.lowSample ? "warning" : "success" : "muted"
+  }
+}
+
+function metricExportSummaryCard(
+  key: string,
+  label: string,
+  cell: DashboardAnalyticsMetricCell
+): DashboardAnalyticsExportSummaryCard {
+  const status: DashboardAnalyticsExportSummaryCardStatus = cell.available
+    ? cell.lowSample ? "low-sample" : "available"
+    : "unavailable"
+  return {
+    key,
+    label,
+    value: cell.value,
+    status,
+    warning: status === "available" ? null : cell.detail
+  }
+}
+
+function countExportSummaryCard(
+  key: string,
+  label: string,
+  value: number | null,
+  unavailableWarning: string | null = null
+): DashboardAnalyticsExportSummaryCard {
+  const available = value != null
+  return {
+    key,
+    label,
+    value: available ? String(value) : "Unavailable",
+    status: available ? "available" : "unavailable",
+    warning: available ? null : unavailableWarning
   }
 }
 
@@ -832,6 +902,61 @@ export async function buildDashboardAnalyticsModel(input: {
   const feedbackIgnoredRate = rateMetricCell(feedbackIgnored, feedbackRateDenominator, t)
   const reopenRate = rateMetricCell(reopenedTickets, closedTickets, t)
   const unavailableRate = rateMetricCell(0, 0, t)
+  const telemetryUnavailableWarning = telemetry.warnings[0] || t("analytics.telemetry.unavailableWarning")
+  const historyUnavailableWarning = history.warnings[0] || cohortUnavailableDetail
+  const telemetryUnavailableRate = {
+    ...unavailableRate,
+    detail: telemetryUnavailableWarning
+  }
+  const firstResponseMedianExport = history.state === "available" ? firstResponseMedian : { ...firstResponseMedian, detail: historyUnavailableWarning }
+  const firstResponseP95Export = history.state === "available" ? firstResponseP95 : { ...firstResponseP95, detail: historyUnavailableWarning }
+  const resolutionMedianExport = history.state === "available" ? resolutionMedian : { ...resolutionMedian, detail: historyUnavailableWarning }
+  const resolutionP95Export = history.state === "available" ? resolutionP95 : { ...resolutionP95, detail: historyUnavailableWarning }
+  const openedLabel = t("analytics.summary.opened")
+  const backlogLabel = t("analytics.summary.backlog")
+  const medianFirstResponseLabel = t("analytics.summary.medianFirstResponse")
+  const p95FirstResponseLabel = t("analytics.summary.p95FirstResponse")
+  const medianResolutionLabel = t("analytics.summary.medianResolution")
+  const p95ResolutionLabel = t("analytics.summary.p95Resolution")
+  const feedbackTriggeredLabel = t("analytics.summary.feedbackTriggered")
+  const feedbackCompletionRateLabel = t("analytics.summary.feedbackCompletionRate")
+  const feedbackIgnoredRateLabel = t("analytics.summary.feedbackIgnoredRate")
+  const feedbackDeliveryFailedLabel = t("analytics.summary.feedbackDeliveryFailed")
+  const reopenedTicketsLabel = t("analytics.summary.reopenedTickets")
+  const reopenRateLabel = t("analytics.summary.reopenRate")
+  const openedTicketCount = history.state === "available" ? cohortRecords.length : null
+  const feedbackTriggeredCount = telemetryAvailable ? telemetry.feedbackRecords.length : null
+  const feedbackDeliveryFailedCount = telemetryAvailable ? feedbackDeliveryFailed : null
+  const reopenedTicketCount = telemetryAvailable ? reopenedTickets : null
+  const summaryCards = [
+    countCard(openedLabel, openedTicketCount, cohortUnavailableDetail, history.state === "available" ? "success" : "muted"),
+    countCard(backlogLabel, backlogRecords.length, t("analytics.summary.backlogDetail")),
+    summaryMetricCard(medianFirstResponseLabel, firstResponseMedian),
+    summaryMetricCard(p95FirstResponseLabel, firstResponseP95),
+    summaryMetricCard(medianResolutionLabel, resolutionMedian),
+    summaryMetricCard(p95ResolutionLabel, resolutionP95),
+    countCard(feedbackTriggeredLabel, feedbackTriggeredCount, t("analytics.telemetry.feedbackTriggeredDetail"), telemetryAvailable ? "success" : "muted"),
+    rateCard(feedbackCompletionRateLabel, telemetryAvailable ? feedbackCompletionRate : unavailableRate),
+    rateCard(feedbackIgnoredRateLabel, telemetryAvailable ? feedbackIgnoredRate : unavailableRate),
+    countCard(feedbackDeliveryFailedLabel, feedbackDeliveryFailedCount, t("analytics.telemetry.feedbackDeliveryFailedDetail"), telemetryAvailable && feedbackDeliveryFailed > 0 ? "warning" : telemetryAvailable ? "success" : "muted"),
+    countCard(reopenedTicketsLabel, reopenedTicketCount, t("analytics.telemetry.reopenedTicketsDetail"), telemetryAvailable ? "warning" : "muted"),
+    rateCard(reopenRateLabel, telemetryAvailable ? reopenRate : unavailableRate)
+  ]
+  const exportSummaryCards = [
+    countExportSummaryCard("openedTickets", openedLabel, openedTicketCount, history.state === "available" ? null : cohortUnavailableDetail),
+    countExportSummaryCard("openBacklog", backlogLabel, backlogRecords.length),
+    metricExportSummaryCard("medianFirstResponse", medianFirstResponseLabel, firstResponseMedianExport),
+    metricExportSummaryCard("p95FirstResponse", p95FirstResponseLabel, firstResponseP95Export),
+    metricExportSummaryCard("medianResolution", medianResolutionLabel, resolutionMedianExport),
+    metricExportSummaryCard("p95Resolution", p95ResolutionLabel, resolutionP95Export),
+    countExportSummaryCard("feedbackTriggered", feedbackTriggeredLabel, feedbackTriggeredCount, telemetryAvailable ? null : telemetryUnavailableWarning),
+    metricExportSummaryCard("feedbackCompletionRate", feedbackCompletionRateLabel, telemetryAvailable ? feedbackCompletionRate : telemetryUnavailableRate),
+    metricExportSummaryCard("feedbackIgnoredRate", feedbackIgnoredRateLabel, telemetryAvailable ? feedbackIgnoredRate : telemetryUnavailableRate),
+    countExportSummaryCard("feedbackDeliveryFailed", feedbackDeliveryFailedLabel, feedbackDeliveryFailedCount, telemetryAvailable ? null : telemetryUnavailableWarning),
+    countExportSummaryCard("reopenedTickets", reopenedTicketsLabel, reopenedTicketCount, telemetryAvailable ? null : telemetryUnavailableWarning),
+    metricExportSummaryCard("reopenRate", reopenRateLabel, telemetryAvailable ? reopenRate : telemetryUnavailableRate)
+  ]
+  const currentHref = buildAnalyticsHref(input.basePath, request)
 
   return {
     request,
@@ -841,20 +966,13 @@ export async function buildDashboardAnalyticsModel(input: {
     historyWarnings: history.warnings,
     telemetryState: telemetry.state,
     telemetryWarnings: telemetry.warnings,
-    summaryCards: [
-      countCard(t("analytics.summary.opened"), history.state === "available" ? cohortRecords.length : null, cohortUnavailableDetail, history.state === "available" ? "success" : "muted"),
-      countCard(t("analytics.summary.backlog"), backlogRecords.length, t("analytics.summary.backlogDetail")),
-      summaryMetricCard(t("analytics.summary.medianFirstResponse"), firstResponseMedian),
-      summaryMetricCard(t("analytics.summary.p95FirstResponse"), firstResponseP95),
-      summaryMetricCard(t("analytics.summary.medianResolution"), resolutionMedian),
-      summaryMetricCard(t("analytics.summary.p95Resolution"), resolutionP95),
-      countCard(t("analytics.summary.feedbackTriggered"), telemetryAvailable ? telemetry.feedbackRecords.length : null, t("analytics.telemetry.feedbackTriggeredDetail"), telemetryAvailable ? "success" : "muted"),
-      rateCard(t("analytics.summary.feedbackCompletionRate"), telemetryAvailable ? feedbackCompletionRate : unavailableRate),
-      rateCard(t("analytics.summary.feedbackIgnoredRate"), telemetryAvailable ? feedbackIgnoredRate : unavailableRate),
-      countCard(t("analytics.summary.feedbackDeliveryFailed"), telemetryAvailable ? feedbackDeliveryFailed : null, t("analytics.telemetry.feedbackDeliveryFailedDetail"), telemetryAvailable && feedbackDeliveryFailed > 0 ? "warning" : telemetryAvailable ? "success" : "muted"),
-      countCard(t("analytics.summary.reopenedTickets"), telemetryAvailable ? reopenedTickets : null, t("analytics.telemetry.reopenedTicketsDetail"), telemetryAvailable ? "warning" : "muted"),
-      rateCard(t("analytics.summary.reopenRate"), telemetryAvailable ? reopenRate : unavailableRate)
-    ],
+    summaryCards,
+    exportSummaryCards,
+    exportActions: {
+      jsonAction: joinBasePath(input.basePath, "admin/analytics/export/json"),
+      csvAction: joinBasePath(input.basePath, "admin/analytics/export/csv"),
+      returnTo: currentHref
+    },
     backlogByTeam: backlogRows(backlogRecords, (record) => record.assignedTeamId || "unknown", teamLabel),
     backlogByAssignee: backlogRows(backlogRecords, (record) => record.assignedStaffUserId || "unknown", assigneeLabel),
     backlogByTransport: backlogRows(backlogRecords, (record) => record.transportMode || "unknown", (key) => transportLabel(key, t)),
