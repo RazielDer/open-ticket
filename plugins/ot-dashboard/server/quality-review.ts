@@ -10,6 +10,7 @@ import type {
   DashboardTicketFeedbackStoredStatus,
   DashboardTicketFeedbackTelemetryRecord,
   DashboardTicketLifecycleTelemetryRecord,
+  DashboardTicketTelemetrySignals,
   DashboardTicketTelemetrySnapshot,
   DashboardTicketTransportMode
 } from "./ticket-workbench-types"
@@ -570,6 +571,27 @@ function feedbackBadge(status: DashboardTicketFeedbackStoredStatus | "none") {
   }
 }
 
+function displayRecordWithTelemetrySignals(
+  record: DashboardQualityReviewRecord,
+  signal: DashboardTicketTelemetrySignals | null | undefined
+): DashboardQualityReviewRecord {
+  if (!signal) return record
+  const latestFeedbackStatus = signal.latestFeedbackStatus === "none"
+    ? record.latestFeedbackStatus
+    : signal.latestFeedbackStatus
+  const reopenCount = Math.max(record.reopenCount, Number.isFinite(signal.reopenCount) ? signal.reopenCount : 0)
+  const lastReopenedAt = signal.lastReopenedAt == null
+    ? record.lastReopenedAt
+    : Math.max(record.lastReopenedAt || 0, signal.lastReopenedAt)
+
+  return {
+    ...record,
+    latestFeedbackStatus,
+    reopenCount,
+    lastReopenedAt
+  }
+}
+
 function matchedSignalLabel(kinds: DashboardQualityReviewSignalKind[]) {
   if (kinds.includes("feedback") && kinds.includes("reopened")) return "Feedback and reopen"
   if (kinds.includes("feedback")) return "Feedback"
@@ -757,7 +779,8 @@ function unavailableListModel(basePath: string, query: DashboardQualityReviewQue
 async function collectFeedbackTelemetry(
   runtimeBridge: DashboardRuntimeBridge,
   query: Parameters<NonNullable<DashboardRuntimeBridge["listFeedbackTelemetry"]>>[0],
-  maxPages = TELEMETRY_MAX_PAGES
+  maxPages = TELEMETRY_MAX_PAGES,
+  pageLimit = TELEMETRY_PAGE_LIMIT
 ): Promise<QualityTelemetryCollection<DashboardTicketFeedbackTelemetryRecord>> {
   if (!runtimeBridge.listFeedbackTelemetry) return { items: [], warnings: ["Ticket telemetry reads are unavailable."], truncated: false, available: false }
   const items: DashboardTicketFeedbackTelemetryRecord[] = []
@@ -767,7 +790,7 @@ async function collectFeedbackTelemetry(
 
   try {
     for (let page = 0; page < maxPages; page += 1) {
-      const result = await runtimeBridge.listFeedbackTelemetry({ ...query, cursor, limit: TELEMETRY_PAGE_LIMIT })
+      const result = await runtimeBridge.listFeedbackTelemetry({ ...query, cursor, limit: pageLimit })
       items.push(...result.items)
       warnings.push(...result.warnings)
       truncated = truncated || result.truncated
@@ -785,7 +808,8 @@ async function collectFeedbackTelemetry(
 async function collectLifecycleTelemetry(
   runtimeBridge: DashboardRuntimeBridge,
   query: Parameters<NonNullable<DashboardRuntimeBridge["listLifecycleTelemetry"]>>[0],
-  maxPages = TELEMETRY_MAX_PAGES
+  maxPages = TELEMETRY_MAX_PAGES,
+  pageLimit = TELEMETRY_PAGE_LIMIT
 ): Promise<QualityTelemetryCollection<DashboardTicketLifecycleTelemetryRecord>> {
   if (!runtimeBridge.listLifecycleTelemetry) return { items: [], warnings: ["Ticket telemetry reads are unavailable."], truncated: false, available: false }
   const items: DashboardTicketLifecycleTelemetryRecord[] = []
@@ -795,7 +819,7 @@ async function collectLifecycleTelemetry(
 
   try {
     for (let page = 0; page < maxPages; page += 1) {
-      const result = await runtimeBridge.listLifecycleTelemetry({ ...query, cursor, limit: TELEMETRY_PAGE_LIMIT })
+      const result = await runtimeBridge.listLifecycleTelemetry({ ...query, cursor, limit: pageLimit })
       items.push(...result.items)
       warnings.push(...result.warnings)
       truncated = truncated || result.truncated
@@ -879,8 +903,9 @@ export async function buildDashboardQualityReviewListModel(input: {
   const page = Math.min(request.page, totalPages)
   const startIndex = (page - 1) * request.limit
   const pageRecords = records.slice(startIndex, startIndex + request.limit)
+  let visibleSignals: Record<string, DashboardTicketTelemetrySignals> = {}
   if (pageRecords.length > 0 && input.runtimeBridge.getTicketTelemetrySignals) {
-    await input.runtimeBridge.getTicketTelemetrySignals(pageRecords.map((item) => item.record.ticketId)).catch(() => ({}))
+    visibleSignals = await input.runtimeBridge.getTicketTelemetrySignals(pageRecords.map((item) => item.record.ticketId)).catch(() => ({}))
   }
 
   const summary = buildSummary(records)
@@ -913,7 +938,7 @@ export async function buildDashboardQualityReviewListModel(input: {
       })),
     supportTeams: buildConfigLookups(input.configService).supportTeams,
     items: pageRecords.map((item) => {
-      const record = item.record
+      const record = displayRecordWithTelemetrySignals(item.record, visibleSignals[item.record.ticketId])
       return {
         record,
         detailHref: buildQualityReviewDetailHref(input.basePath, request, record.ticketId, currentHref),
@@ -1029,8 +1054,8 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     ? input.runtimeBridge.listTickets().find((ticket) => ticket.id === input.ticketId) || null
     : null
   const [feedbackCollection, lifecycleCollection] = await Promise.all([
-    collectFeedbackTelemetry(input.runtimeBridge, { ticketId: input.ticketId }),
-    collectLifecycleTelemetry(input.runtimeBridge, { ticketId: input.ticketId })
+    collectFeedbackTelemetry(input.runtimeBridge, { ticketId: input.ticketId, order: "desc" }, 1, DETAIL_FEEDBACK_LIMIT),
+    collectLifecycleTelemetry(input.runtimeBridge, { ticketId: input.ticketId, order: "desc" }, 1, DETAIL_LIFECYCLE_LIMIT)
   ])
 
   if (!feedbackCollection.available || !lifecycleCollection.available) {

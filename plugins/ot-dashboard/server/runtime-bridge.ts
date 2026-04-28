@@ -1027,7 +1027,11 @@ async function listRuntimeLifecycleTelemetry(
       .filter((record) => !ticketId || record.ticketId === ticketId)
       .filter((record) => eventTypes.size < 1 || eventTypes.has(record.eventType))
       .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
-      .sort((left, right) => left.occurredAt - right.occurredAt || left.recordId.localeCompare(right.recordId))
+      .sort((left, right) => (
+        query.order === "desc"
+          ? right.occurredAt - left.occurredAt || left.recordId.localeCompare(right.recordId)
+          : left.occurredAt - right.occurredAt || left.recordId.localeCompare(right.recordId)
+      ))
 
     return pageTelemetryItems(records, query)
   } catch {
@@ -1057,7 +1061,11 @@ async function listRuntimeFeedbackTelemetry(
       .filter((record) => !ticketId || record.ticketId === ticketId)
       .filter((record) => statuses.size < 1 || statuses.has(record.status))
       .filter((record) => telemetrySnapshotMatches(record.snapshot, query))
-      .sort((left, right) => left.triggeredAt - right.triggeredAt || left.sessionId.localeCompare(right.sessionId))
+      .sort((left, right) => (
+        query.order === "desc"
+          ? right.triggeredAt - left.triggeredAt || left.sessionId.localeCompare(right.sessionId)
+          : left.triggeredAt - right.triggeredAt || left.sessionId.localeCompare(right.sessionId)
+      ))
 
     return pageTelemetryItems(records, query)
   } catch {

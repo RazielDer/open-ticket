@@ -59,6 +59,7 @@ export interface DashboardTicketLifecycleTelemetryQuery {
   assigneeId?: string | null
   transportMode?: DashboardTicketTransportMode | null
   eventTypes?: string[]
+  order?: "asc" | "desc"
   cursor?: string | null
   limit?: number
 }
@@ -71,6 +72,7 @@ export interface DashboardTicketFeedbackTelemetryQuery {
   assigneeId?: string | null
   transportMode?: DashboardTicketTransportMode | null
   statuses?: DashboardTicketFeedbackStoredStatus[]
+  order?: "asc" | "desc"
   cursor?: string | null
   limit?: number
 }

@@ -37,6 +37,7 @@ import {
   sanitizeTicketWorkbenchReturnTo
 } from "../server/ticket-workbench"
 import {
+  buildDashboardQualityReviewDetailModel,
   buildDashboardQualityReviewListModel,
   parseDashboardQualityReviewQuery,
   sanitizeQualityReviewReturnTo
@@ -1051,6 +1052,131 @@ test("quality review list is window-scoped, current-page drilldown only, and pri
   assert.match(detailHtml, /In current window/)
   assert.match(detailHtml, /href="\/dash\/admin\/quality-review"/)
   assert.doesNotMatch(detailHtml, /Private comment|raw feedback|attachment|discord\.com\/channels/)
+})
+
+test("quality review list consumes visible-page telemetry signals for row badges", async (t) => {
+  const now = Date.parse("2026-04-20T12:00:00.000Z")
+  const telemetrySignalCalls: string[][] = []
+  const runtime = await startServer({
+    tickets: [ticket({ id: "ticket-1", channelName: "signal-review-channel" })],
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        status: "ignored",
+        triggeredAt: now - 60_000,
+        completedAt: now - 30_000
+      })
+    ],
+    lifecycleTelemetry: [
+      lifecycleTelemetry({
+        ticketId: "ticket-1",
+        occurredAt: now - 20_000
+      })
+    ],
+    telemetrySignals: {
+      "ticket-1": telemetrySignals({
+        latestFeedbackStatus: "completed",
+        latestFeedbackTriggeredAt: now - 10_000,
+        latestFeedbackCompletedAt: now - 5_000,
+        hasEverReopened: true,
+        reopenCount: 3,
+        lastReopenedAt: now - 1_000
+      })
+    },
+    telemetrySignalCalls
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?window=custom&from=2026-04-20&to=2026-04-20",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    now
+  })
+
+  assert.deepEqual(telemetrySignalCalls, [["ticket-1"]])
+  assert.equal(model.items.length, 1)
+  assert.equal(model.items[0].feedbackBadge.label, "Completed feedback")
+  assert.equal(model.items[0].reopenBadge?.label, "Reopened x3")
+  assert.equal(model.items[0].record.latestFeedbackStatus, "completed")
+  assert.equal(model.items[0].record.reopenCount, 3)
+})
+
+test("quality review detail reads the newest bounded feedback and lifecycle telemetry", async (t) => {
+  const runtime = await startServer({ telemetrySignals: {} })
+  t.after(() => stopServer(runtime))
+  const base = Date.parse("2026-04-20T12:00:00.000Z")
+  const feedbackQueries: any[] = []
+  const lifecycleQueries: any[] = []
+  const feedbackRecords = Array.from({ length: 55 }, (_item, index) => feedbackTelemetry({
+    sessionId: `feedback-${index}`,
+    ticketId: "ticket-1",
+    triggeredAt: base + index * 1000,
+    completedAt: base + index * 1000 + 500,
+    status: "completed"
+  }))
+  const lifecycleRecords = Array.from({ length: 105 }, (_item, index) => lifecycleTelemetry({
+    recordId: `lifecycle-${index}`,
+    ticketId: "ticket-1",
+    eventType: "reopened",
+    occurredAt: base + index * 1000
+  }))
+  const runtimeBridge: DashboardRuntimeBridge = {
+    ...runtime.context.runtimeBridge,
+    async listFeedbackTelemetry(query) {
+      feedbackQueries.push(query)
+      const ordered = [...feedbackRecords].sort((left, right) => right.triggeredAt - left.triggeredAt)
+      const limit = query.limit || ordered.length
+      return {
+        items: ordered.slice(0, limit),
+        nextCursor: ordered.length > limit ? String(limit) : null,
+        truncated: false,
+        warnings: []
+      }
+    },
+    async listLifecycleTelemetry(query) {
+      lifecycleQueries.push(query)
+      const ordered = [...lifecycleRecords].sort((left, right) => right.occurredAt - left.occurredAt)
+      const limit = query.limit || ordered.length
+      return {
+        items: ordered.slice(0, limit),
+        nextCursor: ordered.length > limit ? String(limit) : null,
+        truncated: false,
+        warnings: []
+      }
+    }
+  }
+
+  const model = await buildDashboardQualityReviewDetailModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    ticketId: "ticket-1",
+    actorUserId: "admin-user",
+    currentHref: "/dash/admin/quality-review/ticket-1",
+    returnTo: "/dash/admin/quality-review",
+    query: { window: "custom", from: "2026-04-20", to: "2026-04-20" },
+    configService: runtime.context.configService,
+    runtimeBridge,
+    ticketWorkbenchAccessible: false,
+    now: base
+  })
+
+  assert.equal(feedbackQueries.length, 1)
+  assert.equal(feedbackQueries[0].order, "desc")
+  assert.equal(feedbackQueries[0].limit, 50)
+  assert.equal(lifecycleQueries.length, 1)
+  assert.equal(lifecycleQueries[0].order, "desc")
+  assert.equal(lifecycleQueries[0].limit, 100)
+  assert.equal(model.feedbackRows.length, 50)
+  assert.equal(model.lifecycleRows.length, 100)
+  assert.equal(model.feedbackRows[0].id, "feedback-54")
+  assert.equal(model.feedbackRows[49].id, "feedback-5")
+  assert.equal(model.lifecycleRows[0].id, "lifecycle-104")
+  assert.equal(model.lifecycleRows[99].id, "lifecycle-5")
+  assert.equal(model.detailRecord?.telemetryWarning, "History truncated at review workspace limit")
 })
 
 test("quality review model preserves filter semantics and unavailable telemetry state", async (t) => {
