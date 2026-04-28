@@ -1272,6 +1272,62 @@ function buildRawAssetHref(basePath: string, ticketId: string, sessionId: string
   return joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(ticketId)}/feedback/${encodeURIComponent(sessionId)}/assets/${encodeURIComponent(assetId)}`)
 }
 
+function rawFeedbackSessionModelFromRecord(input: {
+  basePath: string
+  ticketId: string
+  raw: DashboardQualityReviewRawFeedbackRecord
+  canManage: boolean
+}): DashboardQualityReviewRawFeedbackSessionModel {
+  const badge = rawFeedbackBadge(input.raw.storageStatus)
+  return {
+    sessionId: input.raw.sessionId,
+    statusLabel: badge.label,
+    statusTone: badge.tone,
+    capturedAt: formatDate(input.raw.capturedAt),
+    expiresAt: formatDate(input.raw.retentionExpiresAt),
+    warnings: input.raw.warnings,
+    answers: input.raw.answers.map((answer) => ({
+      position: answer.position,
+      type: answer.type,
+      label: answer.label,
+      answered: answer.answered,
+      value: rawAnswerValue(answer),
+      assets: answer.assets.map((asset) => ({
+        assetId: asset.assetId,
+        fileName: asset.fileName,
+        contentType: asset.contentType || "application/octet-stream",
+        byteSize: formatBytes(asset.byteSize),
+        status: asset.captureStatus,
+        reason: asset.reason || "",
+        downloadHref: input.canManage && asset.captureStatus === "mirrored"
+          ? buildRawAssetHref(input.basePath, input.ticketId, input.raw.sessionId, asset.assetId)
+          : null
+      }))
+    }))
+  }
+}
+
+function notCapturedRawFeedbackSessionModel(session: DashboardTicketFeedbackTelemetryRecord): DashboardQualityReviewRawFeedbackSessionModel {
+  return {
+    sessionId: session.sessionId,
+    statusLabel: "Raw feedback not captured",
+    statusTone: "muted",
+    capturedAt: "Not captured",
+    expiresAt: "Not applicable",
+    warnings: [],
+    answers: [
+      {
+        position: 1,
+        type: "not captured",
+        label: "Raw feedback",
+        answered: true,
+        value: "Raw feedback not captured",
+        assets: []
+      }
+    ]
+  }
+}
+
 function buildRawFeedbackSessionModels(input: {
   basePath: string
   ticketId: string
@@ -1279,45 +1335,24 @@ function buildRawFeedbackSessionModels(input: {
   reviewCase: DashboardQualityReviewCaseDetailRecord
   canManage: boolean
 }): DashboardQualityReviewRawFeedbackSessionModel[] {
-  const completedSessionOrder = new Map(completedAnsweredFeedback(input.feedbackHistory).map((session, index) => [session.sessionId, index]))
-  return [...input.reviewCase.rawFeedback]
-    .sort((left, right) => {
-      const leftOrder = completedSessionOrder.get(left.sessionId)
-      const rightOrder = completedSessionOrder.get(right.sessionId)
-      if (leftOrder !== undefined || rightOrder !== undefined) {
-        return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER)
-      }
-      return right.capturedAt - left.capturedAt || left.sessionId.localeCompare(right.sessionId)
-    })
-    .map((raw) => {
-    const badge = rawFeedbackBadge(raw.storageStatus)
-    return {
-      sessionId: raw.sessionId,
-      statusLabel: badge.label,
-      statusTone: badge.tone,
-      capturedAt: formatDate(raw.capturedAt),
-      expiresAt: formatDate(raw.retentionExpiresAt),
-      warnings: raw.warnings,
-      answers: raw.answers.map((answer) => ({
-        position: answer.position,
-        type: answer.type,
-        label: answer.label,
-        answered: answer.answered,
-        value: rawAnswerValue(answer),
-        assets: answer.assets.map((asset) => ({
-          assetId: asset.assetId,
-          fileName: asset.fileName,
-          contentType: asset.contentType || "application/octet-stream",
-          byteSize: formatBytes(asset.byteSize),
-          status: asset.captureStatus,
-          reason: asset.reason || "",
-          downloadHref: input.canManage && asset.captureStatus === "mirrored"
-            ? buildRawAssetHref(input.basePath, input.ticketId, raw.sessionId, asset.assetId)
-            : null
-        }))
-      }))
-    }
+  const completedSessions = completedAnsweredFeedback(input.feedbackHistory)
+  const rawBySession = rawFeedbackBySession(input.reviewCase.rawFeedback)
+  const renderedSessionIds = new Set<string>()
+  const sessionModels = completedSessions.map((session) => {
+    renderedSessionIds.add(session.sessionId)
+    const raw = rawBySession.get(session.sessionId)
+    return raw
+      ? rawFeedbackSessionModelFromRecord({ basePath: input.basePath, ticketId: input.ticketId, raw, canManage: input.canManage })
+      : notCapturedRawFeedbackSessionModel(session)
   })
+  const extraRawFeedback = input.reviewCase.rawFeedback
+    .filter((raw) => !renderedSessionIds.has(raw.sessionId))
+    .sort((left, right) => right.capturedAt - left.capturedAt || left.sessionId.localeCompare(right.sessionId))
+    .map((raw) => {
+      renderedSessionIds.add(raw.sessionId)
+      return rawFeedbackSessionModelFromRecord({ basePath: input.basePath, ticketId: input.ticketId, raw, canManage: input.canManage })
+    })
+  return [...sessionModels, ...extraRawFeedback]
 }
 
 export async function buildDashboardQualityReviewDetailModel(input: {

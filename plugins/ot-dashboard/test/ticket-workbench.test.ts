@@ -1366,6 +1366,16 @@ test("quality review detail renders admin adjudication controls and keeps review
           { position: 1, type: "text", label: "Freeform", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null },
           { position: 2, type: "image", label: "Screenshot", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null }
         ]
+      }),
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        sessionId: "feedback-legacy",
+        triggeredAt: now - 120_000,
+        completedAt: now - 90_000,
+        status: "completed",
+        questionSummaries: [
+          { position: 1, type: "text", label: "Legacy private comment", answered: true, ratingValue: null, choiceIndex: null, choiceLabel: null }
+        ]
       })
     ],
     lifecycleTelemetry: [],
@@ -1382,6 +1392,9 @@ test("quality review detail renders admin adjudication controls and keeps review
   assert.match(adminHtml, /Adjudication/)
   assert.match(adminHtml, /Private review note/)
   assert.match(adminHtml, /raw private comment/)
+  assert.match(adminHtml, /feedback-legacy/)
+  assert.match(adminHtml, /Raw feedback not captured/)
+  assert.doesNotMatch(adminHtml, /Legacy private comment/)
   assert.match(adminHtml, /Set state/)
   assert.match(adminHtml, /href="\/dash\/admin\/quality-review\/ticket-1\/feedback\/feedback-1\/assets\/asset-1"/)
   assert.doesNotMatch(adminHtml, /cdn\.discordapp|discord\.com\/channels|webhook/i)
@@ -1391,6 +1404,9 @@ test("quality review detail renders admin adjudication controls and keeps review
   const reviewerHtml = await reviewerResponse.text()
   assert.equal(reviewerResponse.status, 200)
   assert.match(reviewerHtml, /raw private comment/)
+  assert.match(reviewerHtml, /feedback-legacy/)
+  assert.match(reviewerHtml, /Raw feedback not captured/)
+  assert.doesNotMatch(reviewerHtml, /Legacy private comment/)
   assert.doesNotMatch(reviewerHtml, /Set state|Assign owner|Download/)
 })
 
