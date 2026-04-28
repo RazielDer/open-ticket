@@ -67,13 +67,16 @@ export function buildDashboardCsv<T>(headers: string[], rows: T[], columns: CsvC
   return `${lines.join("\r\n")}\r\n`
 }
 
-function metricStatus(cell: DashboardAnalyticsMetricCell) {
-  if (!cell.available) return "unavailable"
-  return cell.lowSample ? "low-sample" : "available"
-}
-
 function metricWarning(cell: DashboardAnalyticsMetricCell) {
   return cell.available && !cell.lowSample ? null : cell.detail
+}
+
+function combinedWarning(...warnings: Array<string | null | undefined>) {
+  const values = warnings
+    .map((warning) => String(warning || "").trim())
+    .filter(Boolean)
+    .filter((warning, index, all) => all.indexOf(warning) === index)
+  return values.length > 0 ? values.join("; ") : null
 }
 
 function unavailableWarning(warnings: string[], fallback: string) {
@@ -146,7 +149,15 @@ function section<T>(
   }
 }
 
-function backlogSection(
+function teamId(value: string) {
+  return value === "unknown" ? "" : value
+}
+
+function assigneeUserId(value: string) {
+  return value === "unknown" ? "" : value
+}
+
+function teamBacklogSection(
   key: string,
   label: string,
   fileName: string,
@@ -154,20 +165,83 @@ function backlogSection(
   unavailableSections: Map<string, { warning: string }>
 ) {
   const columns: CsvColumn<DashboardAnalyticsBacklogRow>[] = [
-    { header: "key", value: (row) => row.key },
-    { header: "label", value: (row) => row.label },
-    { header: "openCount", value: (row) => row.count },
-    { header: "detail", value: (row) => row.detail }
+    { header: "teamId", value: (row) => teamId(row.key) },
+    { header: "teamLabel", value: (row) => row.label },
+    { header: "openCount", value: (row) => row.count }
   ]
   return section(key, label, fileName, rows, columns, (row) => ({
-    key: row.key,
-    label: row.label,
-    openCount: row.count,
-    detail: row.detail
+    teamId: teamId(row.key),
+    teamLabel: row.label,
+    openCount: row.count
   }), unavailableSections)
 }
 
-function cohortSection(
+function assigneeBacklogSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsBacklogRow[],
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsBacklogRow>[] = [
+    { header: "assigneeUserId", value: (row) => assigneeUserId(row.key) },
+    { header: "assigneeLabel", value: (row) => row.label },
+    { header: "openCount", value: (row) => row.count }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    assigneeUserId: assigneeUserId(row.key),
+    assigneeLabel: row.label,
+    openCount: row.count
+  }), unavailableSections)
+}
+
+function transportBacklogSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsBacklogRow[],
+  countHeader: "openCount" | "openReopenedCount",
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsBacklogRow>[] = [
+    { header: "transportMode", value: (row) => row.key || "unknown" },
+    { header: countHeader, value: (row) => row.count }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    transportMode: row.key || "unknown",
+    [countHeader]: row.count
+  }), unavailableSections)
+}
+
+function reopenedTeamBacklogSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsBacklogRow[],
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsBacklogRow>[] = [
+    { header: "teamId", value: (row) => teamId(row.key) },
+    { header: "teamLabel", value: (row) => row.label },
+    { header: "openReopenedCount", value: (row) => row.count }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    teamId: teamId(row.key),
+    teamLabel: row.label,
+    openReopenedCount: row.count
+  }), unavailableSections)
+}
+
+function cohortWarning(row: DashboardAnalyticsTableRow) {
+  return combinedWarning(
+    metricWarning(row.firstResponse),
+    metricWarning(row.firstResponseP95),
+    metricWarning(row.resolution),
+    metricWarning(row.resolutionP95)
+  )
+}
+
+function teamCohortSection(
   key: string,
   label: string,
   fileName: string,
@@ -175,34 +249,59 @@ function cohortSection(
   unavailableSections: Map<string, { warning: string }>
 ) {
   const columns: CsvColumn<DashboardAnalyticsTableRow>[] = [
-    { header: "key", value: (row) => row.key },
-    { header: "label", value: (row) => row.label },
-    { header: "openedTickets", value: (row) => row.count },
-    { header: "medianFirstResponse", value: (row) => row.firstResponse.value },
-    { header: "firstResponseStatus", value: (row) => metricStatus(row.firstResponse) },
-    { header: "firstResponseWarning", value: (row) => metricWarning(row.firstResponse) },
-    { header: "missingFirstResponse", value: (row) => row.missingFirstResponse },
-    { header: "medianResolution", value: (row) => row.resolution.value },
-    { header: "resolutionStatus", value: (row) => metricStatus(row.resolution) },
-    { header: "resolutionWarning", value: (row) => metricWarning(row.resolution) },
-    { header: "missingResolution", value: (row) => row.missingResolution }
+    { header: "teamId", value: (row) => teamId(row.key) },
+    { header: "teamLabel", value: (row) => row.label },
+    { header: "openedCount", value: (row) => row.count },
+    { header: "medianFirstResponseMs", value: (row) => row.medianFirstResponseMs },
+    { header: "p95FirstResponseMs", value: (row) => row.p95FirstResponseMs },
+    { header: "medianResolutionMs", value: (row) => row.medianResolutionMs },
+    { header: "p95ResolutionMs", value: (row) => row.p95ResolutionMs },
+    { header: "warning", value: cohortWarning }
   ]
   return section(key, label, fileName, rows, columns, (row) => ({
-    key: row.key,
-    label: row.label,
-    openedTickets: row.count,
-    medianFirstResponse: row.firstResponse.value,
-    firstResponseStatus: metricStatus(row.firstResponse),
-    firstResponseWarning: metricWarning(row.firstResponse),
-    missingFirstResponse: row.missingFirstResponse,
-    medianResolution: row.resolution.value,
-    resolutionStatus: metricStatus(row.resolution),
-    resolutionWarning: metricWarning(row.resolution),
-    missingResolution: row.missingResolution
+    teamId: teamId(row.key),
+    teamLabel: row.label,
+    openedCount: row.count,
+    medianFirstResponseMs: row.medianFirstResponseMs,
+    p95FirstResponseMs: row.p95FirstResponseMs,
+    medianResolutionMs: row.medianResolutionMs,
+    p95ResolutionMs: row.p95ResolutionMs,
+    warning: cohortWarning(row)
   }), unavailableSections)
 }
 
-function feedbackSection(
+function transportCohortSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsTableRow[],
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsTableRow>[] = [
+    { header: "transportMode", value: (row) => row.key || "unknown" },
+    { header: "openedCount", value: (row) => row.count },
+    { header: "medianFirstResponseMs", value: (row) => row.medianFirstResponseMs },
+    { header: "p95FirstResponseMs", value: (row) => row.p95FirstResponseMs },
+    { header: "medianResolutionMs", value: (row) => row.medianResolutionMs },
+    { header: "p95ResolutionMs", value: (row) => row.p95ResolutionMs },
+    { header: "warning", value: cohortWarning }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    transportMode: row.key || "unknown",
+    openedCount: row.count,
+    medianFirstResponseMs: row.medianFirstResponseMs,
+    p95FirstResponseMs: row.p95FirstResponseMs,
+    medianResolutionMs: row.medianResolutionMs,
+    p95ResolutionMs: row.p95ResolutionMs,
+    warning: cohortWarning(row)
+  }), unavailableSections)
+}
+
+function feedbackWarning(row: DashboardAnalyticsFeedbackOutcomeRow) {
+  return combinedWarning(metricWarning(row.completionRate), metricWarning(row.ignoredRate))
+}
+
+function teamFeedbackSection(
   key: string,
   label: string,
   fileName: string,
@@ -210,33 +309,60 @@ function feedbackSection(
   unavailableSections: Map<string, { warning: string }>
 ) {
   const columns: CsvColumn<DashboardAnalyticsFeedbackOutcomeRow>[] = [
-    { header: "key", value: (row) => row.key },
-    { header: "label", value: (row) => row.label },
-    { header: "triggered", value: (row) => row.total },
-    { header: "completed", value: (row) => row.completed },
-    { header: "ignored", value: (row) => row.ignored },
-    { header: "deliveryFailed", value: (row) => row.deliveryFailed },
+    { header: "teamId", value: (row) => teamId(row.key) },
+    { header: "teamLabel", value: (row) => row.label },
+    { header: "triggeredCount", value: (row) => row.total },
+    { header: "completedCount", value: (row) => row.completed },
+    { header: "ignoredCount", value: (row) => row.ignored },
+    { header: "deliveryFailedCount", value: (row) => row.deliveryFailed },
     { header: "completionRate", value: (row) => row.completionRate.value },
-    { header: "completionRateStatus", value: (row) => metricStatus(row.completionRate) },
-    { header: "completionRateWarning", value: (row) => metricWarning(row.completionRate) },
     { header: "ignoredRate", value: (row) => row.ignoredRate.value },
-    { header: "ignoredRateStatus", value: (row) => metricStatus(row.ignoredRate) },
-    { header: "ignoredRateWarning", value: (row) => metricWarning(row.ignoredRate) }
+    { header: "warning", value: feedbackWarning }
   ]
   return section(key, label, fileName, rows, columns, (row) => ({
-    key: row.key,
-    label: row.label,
-    triggered: row.total,
-    completed: row.completed,
-    ignored: row.ignored,
-    deliveryFailed: row.deliveryFailed,
+    teamId: teamId(row.key),
+    teamLabel: row.label,
+    triggeredCount: row.total,
+    completedCount: row.completed,
+    ignoredCount: row.ignored,
+    deliveryFailedCount: row.deliveryFailed,
     completionRate: row.completionRate.value,
-    completionRateStatus: metricStatus(row.completionRate),
-    completionRateWarning: metricWarning(row.completionRate),
     ignoredRate: row.ignoredRate.value,
-    ignoredRateStatus: metricStatus(row.ignoredRate),
-    ignoredRateWarning: metricWarning(row.ignoredRate)
+    warning: feedbackWarning(row)
   }), unavailableSections)
+}
+
+function transportFeedbackSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsFeedbackOutcomeRow[],
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsFeedbackOutcomeRow>[] = [
+    { header: "transportMode", value: (row) => row.key || "unknown" },
+    { header: "triggeredCount", value: (row) => row.total },
+    { header: "completedCount", value: (row) => row.completed },
+    { header: "ignoredCount", value: (row) => row.ignored },
+    { header: "deliveryFailedCount", value: (row) => row.deliveryFailed },
+    { header: "completionRate", value: (row) => row.completionRate.value },
+    { header: "ignoredRate", value: (row) => row.ignoredRate.value },
+    { header: "warning", value: feedbackWarning }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    transportMode: row.key || "unknown",
+    triggeredCount: row.total,
+    completedCount: row.completed,
+    ignoredCount: row.ignored,
+    deliveryFailedCount: row.deliveryFailed,
+    completionRate: row.completionRate.value,
+    ignoredRate: row.ignoredRate.value,
+    warning: feedbackWarning(row)
+  }), unavailableSections)
+}
+
+function ratingWarning(row: DashboardAnalyticsRatingRow) {
+  return row.responses < 1 ? "No rating responses" : row.lowSample ? "Low sample" : null
 }
 
 function ratingSection(rows: DashboardAnalyticsRatingRow[], unavailableSections: Map<string, { warning: string }>) {
@@ -246,8 +372,7 @@ function ratingSection(rows: DashboardAnalyticsRatingRow[], unavailableSections:
     { header: "responses", value: (row) => row.responses },
     { header: "averageRating", value: (row) => row.averageRating },
     { header: "medianRating", value: (row) => row.medianRating },
-    { header: "status", value: (row) => row.responses < 1 ? "unavailable" : row.lowSample ? "low-sample" : "available" },
-    { header: "warning", value: (row) => row.responses < 1 ? "No rating responses" : row.lowSample ? "Low sample" : null }
+    { header: "warning", value: ratingWarning }
   ]
   return section("ratingMetrics", "Rating question summaries", "rating-metrics.csv", rows, columns, (row) => ({
     questionKey: row.questionKey,
@@ -255,12 +380,15 @@ function ratingSection(rows: DashboardAnalyticsRatingRow[], unavailableSections:
     responses: row.responses,
     averageRating: row.averageRating,
     medianRating: row.medianRating,
-    status: row.responses < 1 ? "unavailable" : row.lowSample ? "low-sample" : "available",
-    warning: row.responses < 1 ? "No rating responses" : row.lowSample ? "Low sample" : null
+    warning: ratingWarning(row)
   }), unavailableSections)
 }
 
-function reopenSection(
+function reopenWarning(row: DashboardAnalyticsReopenRateRow) {
+  return metricWarning(row.reopenRate)
+}
+
+function teamReopenSection(
   key: string,
   label: string,
   fileName: string,
@@ -268,40 +396,61 @@ function reopenSection(
   unavailableSections: Map<string, { warning: string }>
 ) {
   const columns: CsvColumn<DashboardAnalyticsReopenRateRow>[] = [
-    { header: "key", value: (row) => row.key },
-    { header: "label", value: (row) => row.label },
-    { header: "reopenedTickets", value: (row) => row.reopenedTickets },
-    { header: "closedTickets", value: (row) => row.closedTickets },
+    { header: "teamId", value: (row) => teamId(row.key) },
+    { header: "teamLabel", value: (row) => row.label },
+    { header: "reopenedTicketCount", value: (row) => row.reopenedTickets },
+    { header: "closedTicketCount", value: (row) => row.closedTickets },
     { header: "reopenRate", value: (row) => row.reopenRate.value },
-    { header: "reopenRateStatus", value: (row) => metricStatus(row.reopenRate) },
-    { header: "reopenRateWarning", value: (row) => metricWarning(row.reopenRate) }
+    { header: "warning", value: reopenWarning }
   ]
   return section(key, label, fileName, rows, columns, (row) => ({
-    key: row.key,
-    label: row.label,
-    reopenedTickets: row.reopenedTickets,
-    closedTickets: row.closedTickets,
+    teamId: teamId(row.key),
+    teamLabel: row.label,
+    reopenedTicketCount: row.reopenedTickets,
+    closedTicketCount: row.closedTickets,
     reopenRate: row.reopenRate.value,
-    reopenRateStatus: metricStatus(row.reopenRate),
-    reopenRateWarning: metricWarning(row.reopenRate)
+    warning: reopenWarning(row)
+  }), unavailableSections)
+}
+
+function transportReopenSection(
+  key: string,
+  label: string,
+  fileName: string,
+  rows: DashboardAnalyticsReopenRateRow[],
+  unavailableSections: Map<string, { warning: string }>
+) {
+  const columns: CsvColumn<DashboardAnalyticsReopenRateRow>[] = [
+    { header: "transportMode", value: (row) => row.key || "unknown" },
+    { header: "reopenedTicketCount", value: (row) => row.reopenedTickets },
+    { header: "closedTicketCount", value: (row) => row.closedTickets },
+    { header: "reopenRate", value: (row) => row.reopenRate.value },
+    { header: "warning", value: reopenWarning }
+  ]
+  return section(key, label, fileName, rows, columns, (row) => ({
+    transportMode: row.key || "unknown",
+    reopenedTicketCount: row.reopenedTickets,
+    closedTicketCount: row.closedTickets,
+    reopenRate: row.reopenRate.value,
+    warning: reopenWarning(row)
   }), unavailableSections)
 }
 
 function analyticsSections(model: DashboardAnalyticsModel) {
   const unavailableSections = unavailableSectionMap(model)
   return [
-    backlogSection("backlogByTeam", "Current backlog by team", "backlog-by-team.csv", model.backlogByTeam, unavailableSections),
-    backlogSection("backlogByAssignee", "Current backlog by assignee", "backlog-by-assignee.csv", model.backlogByAssignee, unavailableSections),
-    backlogSection("backlogByTransport", "Current backlog by transport", "backlog-by-transport.csv", model.backlogByTransport, unavailableSections),
-    cohortSection("cohortPerformanceByTeam", "Opened-ticket cohort by team", "cohort-performance-by-team.csv", model.cohortByTeam, unavailableSections),
-    cohortSection("cohortPerformanceByTransport", "Opened-ticket cohort by transport", "cohort-performance-by-transport.csv", model.cohortByTransport, unavailableSections),
-    feedbackSection("feedbackOutcomesByTeam", "Feedback outcomes by team", "feedback-outcomes-by-team.csv", model.feedbackByTeam, unavailableSections),
-    feedbackSection("feedbackOutcomesByTransport", "Feedback outcomes by transport", "feedback-outcomes-by-transport.csv", model.feedbackByTransport, unavailableSections),
+    teamBacklogSection("backlogByTeam", "Current backlog by team", "backlog-by-team.csv", model.backlogByTeam, unavailableSections),
+    assigneeBacklogSection("backlogByAssignee", "Current backlog by assignee", "backlog-by-assignee.csv", model.backlogByAssignee, unavailableSections),
+    transportBacklogSection("backlogByTransport", "Current backlog by transport", "backlog-by-transport.csv", model.backlogByTransport, "openCount", unavailableSections),
+    teamCohortSection("cohortPerformanceByTeam", "Opened-ticket cohort by team", "cohort-performance-by-team.csv", model.cohortByTeam, unavailableSections),
+    transportCohortSection("cohortPerformanceByTransport", "Opened-ticket cohort by transport", "cohort-performance-by-transport.csv", model.cohortByTransport, unavailableSections),
+    teamFeedbackSection("feedbackOutcomesByTeam", "Feedback outcomes by team", "feedback-outcomes-by-team.csv", model.feedbackByTeam, unavailableSections),
+    transportFeedbackSection("feedbackOutcomesByTransport", "Feedback outcomes by transport", "feedback-outcomes-by-transport.csv", model.feedbackByTransport, unavailableSections),
     ratingSection(model.ratingQuestions, unavailableSections),
-    reopenSection("reopenRateByTeam", "Reopen rate by team", "reopen-rate-by-team.csv", model.reopenRateByTeam, unavailableSections),
-    reopenSection("reopenRateByTransport", "Reopen rate by transport", "reopen-rate-by-transport.csv", model.reopenRateByTransport, unavailableSections),
-    backlogSection("reopenedBacklogByTeam", "Reopened backlog by team", "reopened-backlog-by-team.csv", model.reopenedBacklogByTeam, unavailableSections),
-    backlogSection("reopenedBacklogByTransport", "Reopened backlog by transport", "reopened-backlog-by-transport.csv", model.reopenedBacklogByTransport, unavailableSections)
+    teamReopenSection("reopenRateByTeam", "Reopen rate by team", "reopen-rate-by-team.csv", model.reopenRateByTeam, unavailableSections),
+    transportReopenSection("reopenRateByTransport", "Reopen rate by transport", "reopen-rate-by-transport.csv", model.reopenRateByTransport, unavailableSections),
+    reopenedTeamBacklogSection("reopenedBacklogByTeam", "Reopened backlog by team", "reopened-backlog-by-team.csv", model.reopenedBacklogByTeam, unavailableSections),
+    transportBacklogSection("reopenedBacklogByTransport", "Reopened backlog by transport", "reopened-backlog-by-transport.csv", model.reopenedBacklogByTransport, "openReopenedCount", unavailableSections)
   ]
 }
 
@@ -326,8 +475,6 @@ export function getTicketWorkbenchExportAuditDetails(model: TicketWorkbenchListM
 function buildAnalyticsJson(model: DashboardAnalyticsModel, generatedAt: string) {
   const sections = analyticsSections(model)
   return {
-    report: "ticket-analytics",
-    formatVersion: 1,
     generatedAt,
     filters: analyticsFilters(model),
     warnings: analyticsWarnings(model),
@@ -336,7 +483,6 @@ function buildAnalyticsJson(model: DashboardAnalyticsModel, generatedAt: string)
     tables: Object.fromEntries(sections.map((item) => [
       item.key,
       {
-        label: item.label,
         status: item.available ? "available" : "unavailable",
         warning: item.warning,
         rows: item.rows
@@ -347,13 +493,13 @@ function buildAnalyticsJson(model: DashboardAnalyticsModel, generatedAt: string)
 
 function buildSummaryCardsCsv(model: DashboardAnalyticsModel) {
   return buildDashboardCsv(
-    ["key", "label", "value", "status", "warning"],
+    ["key", "label", "status", "value", "warning"],
     model.exportSummaryCards,
     [
       { header: "key", value: (row) => row.key },
       { header: "label", value: (row) => row.label },
-      { header: "value", value: (row) => row.value },
       { header: "status", value: (row) => row.status },
+      { header: "value", value: (row) => row.value },
       { header: "warning", value: (row) => row.warning }
     ]
   )
@@ -398,13 +544,12 @@ export async function buildAnalyticsExportPayload(
   const sections = analyticsSections(model)
   const availableSections = sections.filter((item) => item.available)
   const manifest = {
-    report: "ticket-analytics",
     formatVersion: 1,
     generatedAt,
     filters: analyticsFilters(model),
     warnings: analyticsWarnings(model),
     unavailableSections: analyticsUnavailableSections(model),
-    files: [
+    includedFiles: [
       { name: "summary-cards.csv", section: "summaryCards", rowCount: model.exportSummaryCards.length },
       ...availableSections.map((item) => ({ name: item.fileName, section: item.key, rowCount: item.rows.length }))
     ]
@@ -467,16 +612,11 @@ function ticketRowsCsv(model: TicketWorkbenchListModel) {
 
 function buildTicketJson(model: TicketWorkbenchListModel, generatedAt: string) {
   return {
-    report: "ticket-workbench-page",
-    formatVersion: 1,
     generatedAt,
-    currentPageOnly: true,
     filters: ticketFilters(model),
-    sort: model.request.sort,
     page: model.request.page,
     limit: model.request.limit,
-    total: model.total,
-    unfilteredTotal: model.unfilteredTotal,
+    sort: model.request.sort,
     warnings: ticketWarnings(model),
     items: model.exportRows
   }

@@ -67,8 +67,14 @@ export interface DashboardAnalyticsTableRow {
   key: string
   label: string
   count: number
+  medianFirstResponseMs: number | null
+  p95FirstResponseMs: number | null
+  medianResolutionMs: number | null
+  p95ResolutionMs: number | null
   firstResponse: DashboardAnalyticsMetricCell
+  firstResponseP95: DashboardAnalyticsMetricCell
   resolution: DashboardAnalyticsMetricCell
+  resolutionP95: DashboardAnalyticsMetricCell
   missingFirstResponse: number
   missingResolution: number
 }
@@ -494,12 +500,22 @@ function groupRows(
     .map(([key, group]) => {
       const firstResponse = collectDurations(group, "firstStaffResponseAt")
       const resolution = collectDurations(group, "resolvedAt")
+      const medianFirstResponseMs = medianDurationMs(firstResponse.samples)
+      const p95FirstResponseMs = p95DurationMs(firstResponse.samples)
+      const medianResolutionMs = medianDurationMs(resolution.samples)
+      const p95ResolutionMs = p95DurationMs(resolution.samples)
       return {
         key,
         label: getLabel(key),
         count: group.length,
-        firstResponse: metricCell(firstResponse.samples, medianDurationMs(firstResponse.samples), firstResponse.missing, t),
-        resolution: metricCell(resolution.samples, medianDurationMs(resolution.samples), resolution.missing, t),
+        medianFirstResponseMs,
+        p95FirstResponseMs,
+        medianResolutionMs,
+        p95ResolutionMs,
+        firstResponse: metricCell(firstResponse.samples, medianFirstResponseMs, firstResponse.missing, t),
+        firstResponseP95: metricCell(firstResponse.samples, p95FirstResponseMs, firstResponse.missing, t),
+        resolution: metricCell(resolution.samples, medianResolutionMs, resolution.missing, t),
+        resolutionP95: metricCell(resolution.samples, p95ResolutionMs, resolution.missing, t),
         missingFirstResponse: firstResponse.missing,
         missingResolution: resolution.missing
       }

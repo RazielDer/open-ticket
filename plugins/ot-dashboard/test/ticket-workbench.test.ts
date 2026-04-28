@@ -8,6 +8,7 @@ import type { Socket } from "net"
 
 import { createDashboardApp } from "../server/create-app"
 import { buildDashboardAnalyticsModel, medianDurationMs, p95DurationMs, parseDashboardAnalyticsRequest } from "../server/analytics"
+import { buildAnalyticsExportPayload } from "../server/export-serializers"
 import type { DashboardConfig } from "../server/dashboard-config"
 import {
   defaultDashboardRuntimeBridge,
@@ -711,6 +712,24 @@ function redirectAlertStatus(location: string | null) {
   return new URL(String(location), "http://dashboard.local").searchParams.get("alertStatus")
 }
 
+function unzipStoredEntries(buffer: Buffer) {
+  const entries = new Map<string, string>()
+  let offset = 0
+  while (offset + 4 <= buffer.length && buffer.readUInt32LE(offset) === 0x04034B50) {
+    const method = buffer.readUInt16LE(offset + 8)
+    assert.equal(method, 0)
+    const compressedSize = buffer.readUInt32LE(offset + 18)
+    const fileNameLength = buffer.readUInt16LE(offset + 26)
+    const extraLength = buffer.readUInt16LE(offset + 28)
+    const nameStart = offset + 30
+    const dataStart = nameStart + fileNameLength + extraLength
+    const name = buffer.subarray(nameStart, nameStart + fileNameLength).toString("utf8")
+    entries.set(name, buffer.subarray(dataStart, dataStart + compressedSize).toString("utf8"))
+    offset = dataStart + compressedSize
+  }
+  return entries
+}
+
 test("ticket workbench restores editor/admin access without reopening admin home to editors", async (t) => {
   const runtime = await startServer()
   t.after(() => stopServer(runtime))
@@ -1189,11 +1208,14 @@ test("ticket workbench export is editor csrf-protected current-page JSON and CSV
   assert.match(String(jsonExport.headers.get("content-type")), /application\/json/)
   assert.match(String(jsonExport.headers.get("content-disposition")), /ticket-workbench-page\.json/)
   const jsonBody = await jsonExport.json() as any
-  assert.equal(jsonBody.report, "ticket-workbench-page")
-  assert.equal(jsonBody.currentPageOnly, true)
+  assert.deepEqual(Object.keys(jsonBody), ["generatedAt", "filters", "page", "limit", "sort", "warnings", "items"])
   assert.equal(jsonBody.page, 2)
   assert.equal(jsonBody.limit, 10)
-  assert.equal(jsonBody.total, 11)
+  assert.equal(jsonBody.sort, "opened-desc")
+  assert.equal(jsonBody.filters.feedback, "all")
+  assert.equal(jsonBody.filters.reopened, "all")
+  assert.equal(Object.prototype.hasOwnProperty.call(jsonBody, "total"), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(jsonBody, "currentPageOnly"), false)
   assert.deepEqual(jsonBody.items.map((item: any) => item.ticketId), ["ticket-b"])
   assert.equal(jsonBody.items[0].resourceName, "=cmd, \"quoted\"\nline")
   assert.equal(jsonBody.items[0].telemetryAvailable, true)
@@ -1884,12 +1906,26 @@ test("analytics export routes require admin csrf and stream JSON or ZIP download
   assert.match(String(jsonExport.headers.get("content-type")), /application\/json/)
   assert.match(String(jsonExport.headers.get("content-disposition")), /ticket-analytics-report\.json/)
   const jsonBody = await jsonExport.json() as any
-  assert.equal(jsonBody.report, "ticket-analytics")
-  assert.equal(jsonBody.formatVersion, 1)
+  assert.deepEqual(Object.keys(jsonBody), ["generatedAt", "filters", "warnings", "unavailableSections", "summaryCards", "tables"])
   assert.equal(jsonBody.filters.window, "7d")
   assert.equal(jsonBody.summaryCards.length, 12)
+  assert.deepEqual(jsonBody.summaryCards.map((card: any) => card.key), [
+    "openedTickets",
+    "openBacklog",
+    "medianFirstResponse",
+    "p95FirstResponse",
+    "medianResolution",
+    "p95Resolution",
+    "feedbackTriggered",
+    "feedbackCompletionRate",
+    "feedbackIgnoredRate",
+    "feedbackDeliveryFailed",
+    "reopenedTickets",
+    "reopenRate"
+  ])
   assert.ok(jsonBody.summaryCards.every((card: any) => typeof card.key === "string" && typeof card.status === "string"))
   assert.equal(jsonBody.tables.cohortPerformanceByTeam.status, "unavailable")
+  assert.deepEqual(Object.keys(jsonBody.tables.cohortPerformanceByTeam), ["status", "warning", "rows"])
   assert.ok(Array.isArray(jsonBody.unavailableSections))
   assert.equal(jsonBody.tables.backlogByTeam.status, "available")
 
@@ -1902,19 +1938,30 @@ test("analytics export routes require admin csrf and stream JSON or ZIP download
     body: new URLSearchParams({
       csrfToken,
       returnTo: "/dash/admin/analytics",
-      window: "7d"
+      window: "custom",
+      from: "2026-04-20",
+      to: "2026-04-20"
     })
   })
   assert.equal(zipExport.status, 200)
   assert.match(String(zipExport.headers.get("content-type")), /application\/zip/)
   assert.match(String(zipExport.headers.get("content-disposition")), /ticket-analytics-report\.zip/)
-  const zipText = Buffer.from(await zipExport.arrayBuffer()).toString("utf8")
-  assert.match(zipText, /manifest\.json/)
-  assert.match(zipText, /summary-cards\.csv/)
-  assert.match(zipText, /backlog-by-team\.csv/)
-  assert.match(zipText, /feedback-outcomes-by-team\.csv/)
-  assert.match(zipText, /cohortPerformanceByTeam/)
-  assert.doesNotMatch(zipText, /raw feedback|attachment|discord\.com\/channels/)
+  const zipEntries = unzipStoredEntries(Buffer.from(await zipExport.arrayBuffer()))
+  assert.ok(zipEntries.has("manifest.json"))
+  assert.ok(zipEntries.has("summary-cards.csv"))
+  assert.ok(zipEntries.has("backlog-by-team.csv"))
+  assert.ok(zipEntries.has("feedback-outcomes-by-team.csv"))
+  assert.equal(zipEntries.has("cohort-performance-by-team.csv"), false)
+  const manifest = JSON.parse(String(zipEntries.get("manifest.json")))
+  assert.deepEqual(Object.keys(manifest), ["formatVersion", "generatedAt", "filters", "warnings", "unavailableSections", "includedFiles"])
+  assert.equal(manifest.formatVersion, 1)
+  assert.ok(manifest.unavailableSections.some((section: any) => section.key === "cohortPerformanceByTeam"))
+  assert.ok(manifest.includedFiles.some((file: any) => file.name === "feedback-outcomes-by-team.csv" && file.rowCount === 0))
+  assert.equal(zipEntries.get("summary-cards.csv")?.split(/\r?\n/, 1)[0], "key,label,status,value,warning")
+  assert.equal(zipEntries.get("backlog-by-team.csv")?.split(/\r?\n/, 1)[0], "teamId,teamLabel,openCount")
+  assert.match(String(zipEntries.get("backlog-by-team.csv")), /\r\n,Unknown team,1\r\n/)
+  assert.equal(zipEntries.get("feedback-outcomes-by-team.csv"), "teamId,teamLabel,triggeredCount,completedCount,ignoredCount,deliveryFailedCount,completionRate,ignoredRate,warning\r\n")
+  assert.doesNotMatch(JSON.stringify(Object.fromEntries(zipEntries)), /raw feedback|attachment|discord\.com\/channels/)
 
   const invalidFormat = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/pdf`, {
     method: "POST",
@@ -2211,7 +2258,37 @@ test("analytics model normalizes UTC windows, computes SLA metrics, groups backl
   assert.equal(model.summaryCards[4].value, "1h 30m")
   assert.equal(model.summaryCards[5].value, "2h")
   assert.equal(model.backlogByTeam.find((row) => row.key === "triage")?.count, 1)
-  assert.equal(model.cohortByTeam.find((row) => row.key === "triage")?.count, 2)
+  const cohortRow = model.cohortByTeam.find((row) => row.key === "triage")
+  assert.equal(cohortRow?.count, 2)
+  assert.equal(cohortRow?.medianFirstResponseMs, 1_200_000)
+  assert.equal(cohortRow?.p95FirstResponseMs, 1_800_000)
+  assert.equal(cohortRow?.medianResolutionMs, 5_400_000)
+  assert.equal(cohortRow?.p95ResolutionMs, 7_200_000)
+
+  const exportPayload = await buildAnalyticsExportPayload(model, "json", "2026-04-21T00:00:00.000Z")
+  const exportBody = JSON.parse(String(exportPayload.body))
+  assert.deepEqual(Object.keys(exportBody), ["generatedAt", "filters", "warnings", "unavailableSections", "summaryCards", "tables"])
+  assert.deepEqual(Object.keys(exportBody.tables.cohortPerformanceByTeam), ["status", "warning", "rows"])
+  assert.deepEqual(Object.keys(exportBody.tables.cohortPerformanceByTeam.rows[0]), [
+    "teamId",
+    "teamLabel",
+    "openedCount",
+    "medianFirstResponseMs",
+    "p95FirstResponseMs",
+    "medianResolutionMs",
+    "p95ResolutionMs",
+    "warning"
+  ])
+  assert.deepEqual(exportBody.tables.cohortPerformanceByTeam.rows[0], {
+    teamId: "triage",
+    teamLabel: "Triage",
+    openedCount: 2,
+    medianFirstResponseMs: 1_200_000,
+    p95FirstResponseMs: 1_800_000,
+    medianResolutionMs: 5_400_000,
+    p95ResolutionMs: 7_200_000,
+    warning: "Low sample: 2"
+  })
 })
 
 test("analytics model keeps live ticket identity authoritative before applying archive filters", async (t) => {
