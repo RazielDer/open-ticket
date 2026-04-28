@@ -645,6 +645,15 @@ function latestCompletedAnsweredSessionId(records: DashboardTicketFeedbackTeleme
   return completedAnsweredFeedback(records)[0]?.sessionId || null
 }
 
+function latestCompletedAnsweredSessionIdsByTicket(records: DashboardTicketFeedbackTelemetryRecord[], ticketIds: Set<string>) {
+  const latest = new Map<string, string>()
+  for (const record of completedAnsweredFeedback(records)) {
+    if (!ticketIds.has(record.ticketId) || latest.has(record.ticketId)) continue
+    latest.set(record.ticketId, record.sessionId)
+  }
+  return latest
+}
+
 function inRange(value: number | null | undefined, request: DashboardQualityReviewQuery) {
   return typeof value === "number" && Number.isFinite(value) && value >= request.fromMs && value <= request.toMs
 }
@@ -712,7 +721,10 @@ function syntheticReviewCase(input: {
   }
 }
 
-function buildCaseSignals(records: QualityReviewRecordWithMatches[]): DashboardQualityReviewCaseSignal[] {
+function buildCaseSignals(
+  records: QualityReviewRecordWithMatches[],
+  latestCompletedAnsweredSessionIds?: Map<string, string>
+): DashboardQualityReviewCaseSignal[] {
   return records.map((item) => {
     const feedbackRecords = item.allWindowFeedback
     const lifecycleRecords = item.allWindowReopens
@@ -720,7 +732,9 @@ function buildCaseSignals(records: QualityReviewRecordWithMatches[]): DashboardQ
       ticketId: item.record.ticketId,
       firstKnownAt: item.record.openedAt,
       lastSignalAt: item.record.latestMatchedSignalAt,
-      latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionId(feedbackRecords)
+      latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionIds
+        ? latestCompletedAnsweredSessionIds.get(item.record.ticketId) || null
+        : latestCompletedAnsweredSessionId(feedbackRecords)
     }
   })
 }
@@ -1100,7 +1114,23 @@ export async function buildDashboardQualityReviewListModel(input: {
   let records = telemetryRecords
   if (input.runtimeBridge.listQualityReviewCases && telemetryRecords.length > 0) {
     try {
-      const caseResult = await input.runtimeBridge.listQualityReviewCases({ tickets: buildCaseSignals(telemetryRecords) }, normalizeString(input.actorUserId))
+      let latestCompletedAnsweredSessionIds: Map<string, string> | undefined
+      const completedFeedback = await collectFeedbackTelemetry(input.runtimeBridge, {
+        statuses: ["completed"],
+        order: "desc"
+      })
+      if (completedFeedback.available) {
+        const candidateIds = new Set(telemetryRecords.map((item) => item.record.ticketId))
+        latestCompletedAnsweredSessionIds = latestCompletedAnsweredSessionIdsByTicket(completedFeedback.items, candidateIds)
+        qualityReviewWarnings.push(...completedFeedback.warnings)
+        if (completedFeedback.truncated) {
+          qualityReviewWarnings.push("Completed feedback telemetry exceeded the quality-review raw-feedback scan ceiling; raw-feedback filters may be incomplete.")
+        }
+      } else {
+        qualityReviewWarnings.push("Completed feedback telemetry could not be read for quality-review raw-feedback filters.")
+      }
+
+      const caseResult = await input.runtimeBridge.listQualityReviewCases({ tickets: buildCaseSignals(telemetryRecords, latestCompletedAnsweredSessionIds) }, normalizeString(input.actorUserId))
       qualityReviewWarnings.push(...caseResult.warnings)
       const caseByTicket = new Map(caseResult.cases.map((reviewCase) => [reviewCase.ticketId, reviewCase]))
       records = telemetryRecords.map((item) => ({

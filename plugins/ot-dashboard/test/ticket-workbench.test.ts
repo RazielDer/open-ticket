@@ -1315,6 +1315,61 @@ test("quality review list merges adjudication state and raw-feedback filters", a
   assert.equal(model.items[0].record.reviewCase.noteCount, 1)
 })
 
+test("quality review raw-feedback filter uses latest completed answered session outside the active window", async (t) => {
+  const now = Date.parse("2026-04-20T12:00:00.000Z")
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-1",
+        sessionId: "feedback-old",
+        triggeredAt: now - 40 * 24 * 60 * 60 * 1000,
+        completedAt: now - 40 * 24 * 60 * 60 * 1000 + 30_000,
+        status: "completed"
+      })
+    ],
+    lifecycleTelemetry: [
+      lifecycleTelemetry({
+        ticketId: "ticket-1",
+        recordId: "reopened-current",
+        eventType: "reopened",
+        occurredAt: now - 60_000
+      })
+    ],
+    telemetrySignals: {}
+  })
+  t.after(() => stopServer(runtime))
+
+  const runtimeBridge: DashboardRuntimeBridge = {
+    ...runtime.context.runtimeBridge,
+    async listQualityReviewCases(query) {
+      return {
+        cases: query.tickets.map((signal) => qualityReviewCase({
+          ticketId: signal.ticketId,
+          rawFeedbackStatus: signal.latestCompletedAnsweredSessionId === "feedback-old" ? "available" : "none",
+          latestRawFeedbackSessionId: signal.latestCompletedAnsweredSessionId
+        })),
+        warnings: []
+      }
+    }
+  }
+
+  const model = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?rawFeedback=available",
+    query: { rawFeedback: "available" },
+    configService: runtime.context.configService,
+    runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+
+  assert.equal(model.items.length, 1)
+  assert.equal(model.items[0].record.ticketId, "ticket-1")
+  assert.equal(model.items[0].record.reviewCase.latestRawFeedbackSessionId, "feedback-old")
+  assert.equal(model.items[0].rawFeedbackBadge.label, "Raw feedback available")
+})
+
 test("quality review detail renders admin adjudication controls and keeps reviewer asset links hidden", async (t) => {
   const now = Date.parse("2026-04-20T12:00:00.000Z")
   const detailCase: DashboardQualityReviewCaseDetailRecord = {
