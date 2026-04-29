@@ -41,6 +41,7 @@ import {
   buildHomeWorkspaceModel,
   buildTranscriptIntegrationWarning
 } from "../home-setup-models"
+import { buildQualityReviewQueueSummary } from "../quality-review-queue"
 import {
   buildTranscriptAvailabilityAlert,
   buildTranscriptDetailIntegritySummaryCard,
@@ -91,7 +92,11 @@ import {
   sanitizeTicketWorkbenchReturnTo,
   translateTicketWorkbenchMessage
 } from "../ticket-workbench"
-import type { DashboardQualityReviewActionId, DashboardTicketTelemetrySignals } from "../ticket-workbench-types"
+import type {
+  DashboardQualityReviewActionId,
+  DashboardQualityReviewQueueSummary,
+  DashboardTicketTelemetrySignals
+} from "../ticket-workbench-types"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
   const access = res.locals.dashboardAccess as { capabilities?: string[] } | undefined
@@ -554,11 +559,21 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
-    const queueSummary = access?.identity && hasDashboardCapability(access, "quality.review") && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
-      ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => null)
-      : null
+    const canReadQualityReview = hasDashboardCapability(access, "quality.review")
+    const unavailableQueueSummary = () => buildQualityReviewQueueSummary([], {
+      unavailableReason: "Quality review queue summary could not be read."
+    })
+    let queueSummary: DashboardQualityReviewQueueSummary | null = null
+    if (canReadQualityReview) {
+      queueSummary = access?.identity && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
+        ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableQueueSummary())
+        : unavailableQueueSummary()
+      if (!queueSummary) {
+        queueSummary = unavailableQueueSummary()
+      }
+    }
     const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration, {
-      qualityReview: hasDashboardCapability(access, "quality.review")
+      qualityReview: canReadQualityReview
         ? buildHomeQualityReviewBlock(context, queueSummary)
         : null
     })

@@ -500,6 +500,7 @@ async function startServer(options: {
   qualityReviewCases?: DashboardQualityReviewCaseSummary[]
   qualityReviewDetail?: DashboardQualityReviewCaseDetailRecord | null
   qualityReviewAsset?: DashboardQualityReviewAssetResult
+  qualityReviewQueueSummaryError?: string
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
@@ -700,6 +701,9 @@ async function startServer(options: {
         : null
     },
     async getQualityReviewQueueSummary(input) {
+      if (options.qualityReviewQueueSummaryError) {
+        throw new Error(options.qualityReviewQueueSummaryError)
+      }
       const cases = await Promise.all((options.qualityReviewCases || []).map(async (record) => ({
         ...record,
         ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId)
@@ -1107,6 +1111,24 @@ test("quality review home cues admit reviewers without exposing setup controls",
   await editorHome.arrayBuffer()
   assert.equal(editorHome.status, 302)
   assert.equal(editorHome.headers.get("location"), "/dash/visual/options")
+})
+
+test("quality review home renders unavailable queue summary without exposing setup controls", async (t) => {
+  const runtime = await startServer({
+    qualityReviewQueueSummaryError: "fixture queue summary failure"
+  })
+  t.after(() => stopServer(runtime))
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review")
+  const homeResponse = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: reviewer.cookie } })
+  const homeHtml = await homeResponse.text()
+  assert.equal(homeResponse.status, 200)
+  assert.match(homeHtml, /Quality review/)
+  assert.match(homeHtml, /Quality review queue unavailable/)
+  assert.match(homeHtml, /Quality review queue summary could not be read\./)
+  assert.match(homeHtml, /href="\/dash\/admin\/quality-review\?window=all/)
+  assert.doesNotMatch(homeHtml, /Setup areas/)
+  assert.doesNotMatch(homeHtml, /Open General workspace|Raw editor|Create backup|Advanced tools/)
 })
 
 test("quality review list is window-scoped, current-page drilldown only, and privacy-safe", async (t) => {
