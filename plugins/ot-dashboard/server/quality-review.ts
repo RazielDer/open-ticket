@@ -941,6 +941,23 @@ function buildCaseSignals(
   })
 }
 
+function buildCaseSignalsFromTelemetry(
+  feedbackRecords: DashboardTicketFeedbackTelemetryRecord[],
+  lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[]
+): DashboardQualityReviewCaseSignal[] {
+  const ticketIds = new Set<string>()
+  feedbackRecords.forEach((record) => ticketIds.add(record.ticketId))
+  lifecycleRecords.forEach((record) => ticketIds.add(record.ticketId))
+  const latestCompletedAnsweredSessionIds = latestCompletedAnsweredSessionIdsByTicket(feedbackRecords, ticketIds)
+
+  return [...ticketIds].map((ticketId) => ({
+    ticketId,
+    firstKnownAt: earliestTelemetryTime(ticketId, feedbackRecords, lifecycleRecords),
+    lastSignalAt: latestTelemetryTime(ticketId, feedbackRecords, lifecycleRecords, 0),
+    latestCompletedAnsweredSessionId: latestCompletedAnsweredSessionIds.get(ticketId) || null
+  }))
+}
+
 function statusBadge(status: "open" | "closed") {
   return status === "open"
     ? { label: "Open", tone: "success" as DashboardTone }
@@ -1623,10 +1640,31 @@ export async function buildDashboardQualityReviewSupervisionModel(input: {
     }
   }
 
-  const result = await input.runtimeBridge.listQualityReviewCases({ tickets: [], includeStored: true }, actorUserId).catch(() => ({
+  const telemetryWarnings: string[] = []
+  let signals: DashboardQualityReviewCaseSignal[] = []
+  if (supportsTicketTelemetryReads(input.runtimeBridge)) {
+    const [feedback, lifecycle] = await Promise.all([
+      collectFeedbackTelemetry(input.runtimeBridge, { order: "desc" }),
+      collectLifecycleTelemetry(input.runtimeBridge, { order: "desc" })
+    ])
+    telemetryWarnings.push(...uniqueWarnings(feedback.warnings, lifecycle.warnings))
+    if (feedback.available && lifecycle.available) {
+      signals = buildCaseSignalsFromTelemetry(feedback.items, lifecycle.items)
+      if (feedback.truncated || lifecycle.truncated) {
+        telemetryWarnings.push("Ticket telemetry exceeded the quality-review supervision scan ceiling; resolved case reconciliation may be incomplete.")
+      }
+    } else {
+      telemetryWarnings.push(uniqueWarnings(feedback.warnings, lifecycle.warnings)[0] || "Ticket telemetry reads are unavailable; quality-review supervision cannot reconcile stored cases against current ticket signals.")
+    }
+  } else {
+    telemetryWarnings.push("Ticket telemetry reads are unavailable; quality-review supervision cannot reconcile stored cases against current ticket signals.")
+  }
+
+  const result = await input.runtimeBridge.listQualityReviewCases({ tickets: signals, includeStored: true }, actorUserId).catch(() => ({
     cases: [] as DashboardQualityReviewCaseSummary[],
     warnings: ["Quality review supervision cases could not be read."]
   }))
+  const warnings = uniqueWarnings(telemetryWarnings, result.warnings)
   const cases = result.cases.map((reviewCase) => projectQualityReviewQueueFields(reviewCase, { actorUserId, now: input.now }))
   const initialRequest = parseDashboardQualityReviewSupervisionQuery(input.query)
   const request = parseDashboardQualityReviewSupervisionQuery(input.query, buildSupervisionOwnerOptions(cases, initialRequest.ownerId))
@@ -1641,8 +1679,8 @@ export async function buildDashboardQualityReviewSupervisionModel(input: {
     })
 
   return {
-    available: result.warnings.length < 1,
-    warningMessage: result.warnings[0] || "",
+    available: warnings.length < 1,
+    warningMessage: warnings[0] || "",
     filterAction: joinBasePath(input.basePath, "admin/quality-review/supervision"),
     clearFiltersHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
     currentHref,

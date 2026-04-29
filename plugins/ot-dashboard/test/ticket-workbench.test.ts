@@ -771,14 +771,43 @@ async function startServer(options: {
     },
     async listQualityReviewCases(query) {
       const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
+      const providedSignals = query.tickets || []
+      const signalByTicket = new Map(providedSignals.map((signal) => [signal.ticketId, signal]))
       const signals = query.includeStored
-        ? (options.qualityReviewCases || []).map((record) => ({ ticketId: record.ticketId }))
-        : query.tickets || []
+        ? [
+            ...providedSignals,
+            ...(options.qualityReviewCases || [])
+              .filter((record) => !signalByTicket.has(record.ticketId))
+              .map((record) => ({
+                ticketId: record.ticketId,
+                firstKnownAt: record.createdAt,
+                lastSignalAt: record.lastSignalAt,
+                latestCompletedAnsweredSessionId: null
+              }))
+          ]
+        : providedSignals
       const cases = await Promise.all(signals.map(async (signal) => {
         const record = caseByTicket.get(signal.ticketId)
-        return record
-          ? { ...record, ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId) }
-          : null
+        if (!record) return null
+        const lastSignalAt = typeof signal.lastSignalAt === "number" && Number.isFinite(signal.lastSignalAt)
+          ? signal.lastSignalAt
+          : record.lastSignalAt
+        const resetResolvedCase = record.state === "resolved"
+          && typeof record.resolvedAt === "number"
+          && lastSignalAt > record.resolvedAt
+        const projected = resetResolvedCase
+          ? {
+              ...record,
+              state: "unreviewed" as const,
+              ownerUserId: null,
+              updatedAt: Math.max(record.updatedAt, lastSignalAt),
+              resolvedAt: null,
+              resolutionOutcome: null,
+              resolvedByUserId: null,
+              lastSignalAt
+            }
+          : { ...record, lastSignalAt }
+        return { ...projected, ownerLabel: await resolveFixtureQualityReviewOwnerLabel(projected.ownerUserId) }
       }))
       return {
         cases: cases.filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
@@ -2470,11 +2499,100 @@ test("quality review supervision is admin-only, route-ordered, outcome-filtered,
   assert.equal(denied.headers.get("location"), "/dash/admin/quality-review")
 })
 
+test("quality review supervision reconciles stored resolved cases against current telemetry", async (t) => {
+  const resolvedAt = 1710000100000
+  const freshSignalAt = 1710000200000
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        ticketId: "ticket-stale",
+        sessionId: "feedback-stale",
+        triggeredAt: freshSignalAt - 30_000,
+        completedAt: freshSignalAt,
+        status: "completed"
+      })
+    ],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [
+      qualityReviewCase({
+        ticketId: "ticket-stale",
+        state: "resolved",
+        ownerUserId: "admin-user",
+        resolvedAt,
+        resolutionOutcome: "dismissed",
+        resolvedByUserId: "admin-user",
+        updatedAt: resolvedAt,
+        lastSignalAt: resolvedAt
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/supervision")
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision`, { headers: { cookie: admin.cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.match(html, /ticket-stale[\s\S]*?Unreviewed[\s\S]*?Unresolved/)
+
+  const dismissedOnly = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision?outcome=dismissed`, { headers: { cookie: admin.cookie } })
+  const dismissedHtml = await dismissedOnly.text()
+  assert.equal(dismissedOnly.status, 200)
+  assert.doesNotMatch(dismissedHtml, /ticket-stale/)
+
+  const unreviewedOnly = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision?state=unreviewed`, { headers: { cookie: admin.cookie } })
+  const unreviewedHtml = await unreviewedOnly.text()
+  assert.equal(unreviewedOnly.status, 200)
+  assert.match(unreviewedHtml, /ticket-stale/)
+})
+
 test("quality review note adjustment actions use the shared route and keep audit metadata body-free", async (t) => {
   const detailCase: DashboardQualityReviewCaseDetailRecord = {
     ...qualityReviewCase({ ticketId: "ticket-1", state: "in_review", noteCount: 1 }),
     notes: [
-      { noteId: "note-1", ticketId: "ticket-1", authorUserId: "admin-user", authorLabel: "admin-user", createdAt: 1710000000000, body: "Original private note" }
+      {
+        noteId: "note-1",
+        ticketId: "ticket-1",
+        authorUserId: "admin-user",
+        authorLabel: "admin-user",
+        createdAt: 1710000000000,
+        body: "Original private note",
+        latestAdjustment: {
+          adjustmentId: "adjustment-2",
+          noteId: "note-1",
+          ticketId: "ticket-1",
+          mode: "redacted",
+          actorUserId: "admin-user",
+          actorLabel: "admin-user",
+          createdAt: 1710000020000,
+          reason: "Contains private data",
+          replacementBody: null
+        },
+        adjustmentHistory: [
+          {
+            adjustmentId: "adjustment-2",
+            noteId: "note-1",
+            ticketId: "ticket-1",
+            mode: "redacted",
+            actorUserId: "admin-user",
+            actorLabel: "admin-user",
+            createdAt: 1710000020000,
+            reason: "Contains private data",
+            replacementBody: null
+          },
+          {
+            adjustmentId: "adjustment-1",
+            noteId: "note-1",
+            ticketId: "ticket-1",
+            mode: "corrected",
+            actorUserId: "admin-user",
+            actorLabel: "admin-user",
+            createdAt: 1710000010000,
+            reason: "Tone fix",
+            replacementBody: "Corrected private note body"
+          }
+        ]
+      }
     ],
     rawFeedback: []
   }
@@ -2489,7 +2607,12 @@ test("quality review note adjustment actions use the shared route and keep audit
 
   const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/ticket-1")
   const detail = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: admin.cookie } })
-  const csrfToken = csrfFrom(await detail.text())
+  const detailHtml = await detail.text()
+  const csrfToken = csrfFrom(detailHtml)
+  assert.match(detailHtml, /Adjustment history/)
+  assert.match(detailHtml, /Contains private data/)
+  assert.match(detailHtml, /Tone fix/)
+  assert.doesNotMatch(detailHtml, /Corrected private note body/)
   const replacementBody = "Corrected private note body"
   const actionResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/correct-note`, {
     method: "POST",
