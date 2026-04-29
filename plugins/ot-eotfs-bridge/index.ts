@@ -624,7 +624,6 @@ async function restoreBridgeState() {
         const state = normalizeBridgeState(entry.value as BridgeHandoffState)
         const ticket = opendiscord.tickets.get(state.ticketChannelId)
         if (!ticket) {
-            warnMissingCanonicalBridgeProfile(null, "restore-bridge-state")
             continue
         }
         if (!resolveRequiredBridgeConfigForTicket(ticket, "restore-bridge-state")) continue
