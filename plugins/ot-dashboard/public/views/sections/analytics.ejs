@@ -226,9 +226,15 @@
         <% } %>
       </div>
     </form>
+    <% if (analytics.exportActions.release) { %>
+      <div class="inline-alert success">
+        <a class="btn primary" href="<%= analytics.exportActions.release.href %>"><%= t("routeMessages.preparedExportDownload") %></a>
+      </div>
+    <% } %>
     <div class="sticky-actions transcript-filter-actions">
-      <form method="post" action="<%= analytics.exportActions.jsonAction %>">
+      <form method="post" action="<%= analytics.exportActions.action %>">
         <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="format" value="json">
         <input type="hidden" name="returnTo" value="<%= analytics.exportActions.returnTo %>">
         <input type="hidden" name="window" value="<%= analytics.request.window %>">
         <input type="hidden" name="from" value="<%= analytics.request.from %>">
@@ -238,8 +244,9 @@
         <input type="hidden" name="assigneeId" value="<%= analytics.request.assigneeId %>">
         <button class="btn secondary" type="submit"><%= t("analytics.page.exportJsonAction") %></button>
       </form>
-      <form method="post" action="<%= analytics.exportActions.csvAction %>">
+      <form method="post" action="<%= analytics.exportActions.action %>">
         <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="format" value="csv">
         <input type="hidden" name="returnTo" value="<%= analytics.exportActions.returnTo %>">
         <input type="hidden" name="window" value="<%= analytics.request.window %>">
         <input type="hidden" name="from" value="<%= analytics.request.from %>">

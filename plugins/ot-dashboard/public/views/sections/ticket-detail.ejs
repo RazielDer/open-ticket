@@ -283,6 +283,23 @@
 
       <section class="section-card">
         <div class="section-heading">
+          <h3><%= t("tickets.detail.exportTitle") %></h3>
+        </div>
+        <% if (ticketDetail.exportRelease) { %>
+          <div class="inline-alert success">
+            <a class="btn primary" href="<%= ticketDetail.exportRelease.href %>"><%= t("routeMessages.preparedExportDownload") %></a>
+          </div>
+        <% } %>
+        <form method="post" action="<%= ticketDetail.exportAction %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="format" value="json">
+          <input type="hidden" name="returnTo" value="<%= ticketDetail.backHref %>">
+          <button class="btn secondary" type="submit"><%= t("tickets.detail.exportJsonAction") %></button>
+        </form>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
           <h3><%= t("tickets.detail.actionsTitle") %></h3>
         </div>
         <div class="stack-form">

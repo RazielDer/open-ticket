@@ -517,6 +517,25 @@ async function startServer(options: {
   const qualityReviewActionRequests: DashboardQualityReviewActionRequest[] = []
   const aiAssistRequests: DashboardTicketAiAssistRequest[] = []
   const savedViews = new Map<string, DashboardTicketWorkbenchViewRecord>((options.savedViews || []).map((view) => [view.viewId, view]))
+  const globalDatabase = new Map<string, unknown>()
+  const globalDb = {
+    async get(category: string, key: string) {
+      return globalDatabase.get(`${category}:${key}`)
+    },
+    async set(category: string, key: string, value: unknown) {
+      globalDatabase.set(`${category}:${key}`, value)
+      return true
+    },
+    async delete(category: string, key: string) {
+      return globalDatabase.delete(`${category}:${key}`)
+    },
+    async getCategory(category: string) {
+      const prefix = `${category}:`
+      return [...globalDatabase.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, value]) => ({ key: key.slice(prefix.length), value }))
+    }
+  }
   const telemetryEnabled = Boolean(options.telemetrySignals || options.lifecycleTelemetry || options.feedbackTelemetry)
   const members = new Map([
     ["admin-user", member("admin-user", ["role-admin"])],
@@ -847,6 +866,15 @@ async function startServer(options: {
     },
     async resolveGuildMember(userId: string) {
       return members.get(userId) || null
+    },
+    getRuntimeSource() {
+      return {
+        databases: {
+          get(id: string) {
+            return id === "opendiscord:global" ? globalDb : null
+          }
+        }
+      } as any
     }
   }
   const { app, context } = createDashboardApp({
@@ -886,6 +914,7 @@ async function startServer(options: {
     qualityReviewActionRequests,
     aiAssistRequests,
     savedViews,
+    globalDatabase,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   }
 }
@@ -2599,7 +2628,7 @@ test("ticket bulk actions require csrf, keep return filters, and map claim-self 
   assert.equal(closeAudit?.details?.skipped, 2)
 })
 
-test("ticket workbench export is editor csrf-protected current-page JSON and CSV", async (t) => {
+test("ticket workbench compatibility export remains editor csrf-protected current-page JSON and CSV", async (t) => {
   const tickets = [
     ticket({
       id: "ticket-b",
@@ -2634,8 +2663,10 @@ test("ticket workbench export is editor csrf-protected current-page JSON and CSV
   const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&page=2&sort=opened-desc`, { headers: { cookie: editor.cookie } })
   const listHtml = await listResponse.text()
   assert.equal(listResponse.status, 200)
-  assert.match(listHtml, /Export JSON/)
-  assert.match(listHtml, /Export CSV/)
+  assert.match(listHtml, /Prepare JSON/)
+  assert.match(listHtml, /Prepare CSV/)
+  assert.match(listHtml, /action="\/dash\/admin\/tickets\/export"/)
+  assert.doesNotMatch(listHtml, /action="\/dash\/admin\/tickets\/export\/json"/)
   const csrfToken = csrfFrom(listHtml)
 
   const missingCsrf = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export/json`, {
@@ -2735,6 +2766,84 @@ test("ticket workbench export is editor csrf-protected current-page JSON and CSV
   assert.equal(successAudit?.reason, "ticket-workbench-export")
   assert.equal(successAudit?.details?.rowCount, 1)
   assert.equal(Object.prototype.hasOwnProperty.call(successAudit?.details || {}, "query"), false)
+})
+
+test("prepared ticket exports are admin-only one-time full-filter releases", async (t) => {
+  const tickets = [
+    ticket({ id: "ticket-b", channelName: "=cmd", openedOn: 1710000100000 }),
+    ...Array.from({ length: 10 }, (_item, index) => ticket({
+      id: `ticket-new-${index}`,
+      channelName: `new-${index}`,
+      openedOn: 1710000200000 + index
+    }))
+  ]
+  const runtime = await startServer({ tickets })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/tickets?limit=10&page=2&sort=opened-desc")
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&page=2&sort=opened-desc`, { headers: { cookie: admin.cookie } })
+  const csrfToken = csrfFrom(await listResponse.text())
+
+  const prepared = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      format: "json",
+      returnTo: "/dash/admin/tickets?limit=10&page=2&sort=opened-desc",
+      limit: "10",
+      page: "2",
+      sort: "opened-desc"
+    })
+  })
+  await prepared.arrayBuffer()
+  assert.equal(prepared.status, 302)
+  const location = String(prepared.headers.get("location"))
+  const exportId = new URL(`http://local${location}`).searchParams.get("exportId")
+  assert.match(location, /^\/dash\/admin\/tickets\?/)
+  assert.ok(exportId?.startsWith("dexp_"))
+
+  const release = await fetch(`${runtime.baseUrl}/dash/admin/exports/${exportId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  assert.equal(release.status, 200)
+  assert.match(String(release.headers.get("cache-control")), /no-store/)
+  assert.match(String(release.headers.get("content-disposition")), /ticket-workbench-full\.json/)
+  const body = await release.json() as any
+  assert.equal(body.page, undefined)
+  assert.equal(body.total, 11)
+  assert.equal(body.items.length, 11)
+  assert.ok(body.items.some((item: any) => item.ticketId === "ticket-b"))
+
+  const secondRelease = await fetch(`${runtime.baseUrl}/dash/admin/exports/${exportId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  await secondRelease.text()
+  assert.equal(secondRelease.status, 404)
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets")
+  const editorPage = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: editor.cookie } })
+  const editorCsrf = csrfFrom(await editorPage.text())
+  const editorDenied = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ csrfToken: editorCsrf, format: "json" })
+  })
+  await editorDenied.arrayBuffer()
+  assert.equal(editorDenied.status, 403)
+
+  const createdAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-created" })
+  assert.equal(createdAudits.some((event) => event.details?.scope === "tickets-list" && event.details?.rowCount === 11), true)
+  const releaseAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-released" })
+  assert.equal(releaseAudits.length, 1)
 })
 
 test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {
@@ -3360,7 +3469,7 @@ test("analytics workspace is admin-only and degrades when transcript history is 
   assert.equal(editorAnalytics.headers.get("location"), "/dash/visual/options")
 })
 
-test("analytics export routes require admin csrf and stream JSON or ZIP downloads", async (t) => {
+test("analytics compatibility export routes require admin csrf and stream JSON or ZIP downloads", async (t) => {
   const runtime = await startServer({
     tickets: [
       ticket({
@@ -3382,8 +3491,10 @@ test("analytics export routes require admin csrf and stream JSON or ZIP download
   const analyticsResponse = await fetch(`${runtime.baseUrl}/dash/admin/analytics?window=7d&teamId=triage`, { headers: { cookie: admin.cookie } })
   const analyticsHtml = await analyticsResponse.text()
   assert.equal(analyticsResponse.status, 200)
-  assert.match(analyticsHtml, /Export JSON/)
-  assert.match(analyticsHtml, /Export CSV/)
+  assert.match(analyticsHtml, /Prepare JSON/)
+  assert.match(analyticsHtml, /Prepare CSV/)
+  assert.match(analyticsHtml, /action="\/dash\/admin\/analytics\/export"/)
+  assert.doesNotMatch(analyticsHtml, /action="\/dash\/admin\/analytics\/export\/json"/)
   const csrfToken = csrfFrom(analyticsHtml)
 
   const missingCsrf = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export/json`, {
@@ -3510,6 +3621,87 @@ test("analytics export routes require admin csrf and stream JSON or ZIP download
   assert.equal(successAudit?.target, "analytics")
   assert.equal(successAudit?.reason, "analytics-export")
   assert.equal(Object.prototype.hasOwnProperty.call(successAudit?.details || {}, "query"), false)
+})
+
+test("prepared analytics and ticket-detail exports release once with privacy-safe payloads", async (t) => {
+  const runtime = await startServer({
+    tickets: [ticket({ id: "ticket-1", channelName: "ticket-one", openedOn: Date.parse("2026-04-20T10:00:00.000Z") })],
+    telemetrySignals: {
+      "ticket-1": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 1,
+        latestFeedbackStatus: "completed"
+      })
+    },
+    lifecycleTelemetry: [],
+    feedbackTelemetry: []
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/analytics")
+  const analyticsPage = await fetch(`${runtime.baseUrl}/dash/admin/analytics?window=7d`, { headers: { cookie: admin.cookie } })
+  const analyticsCsrf = csrfFrom(await analyticsPage.text())
+  const preparedAnalytics = await fetch(`${runtime.baseUrl}/dash/admin/analytics/export`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken: analyticsCsrf,
+      format: "csv",
+      returnTo: "/dash/admin/analytics?window=7d",
+      window: "7d"
+    })
+  })
+  await preparedAnalytics.arrayBuffer()
+  assert.equal(preparedAnalytics.status, 302)
+  const analyticsExportId = new URL(`http://local${preparedAnalytics.headers.get("location")}`).searchParams.get("exportId")
+  assert.ok(analyticsExportId?.startsWith("dexp_"))
+  const analyticsRelease = await fetch(`${runtime.baseUrl}/dash/admin/exports/${analyticsExportId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  assert.equal(analyticsRelease.status, 200)
+  assert.match(String(analyticsRelease.headers.get("content-type")), /application\/zip/)
+  assert.match(String(analyticsRelease.headers.get("content-disposition")), /ticket-analytics-report\.zip/)
+
+  const detailPage = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1`, { headers: { cookie: admin.cookie } })
+  const detailHtml = await detailPage.text()
+  assert.match(detailHtml, /Ticket export/)
+  assert.match(detailHtml, /action="\/dash\/admin\/tickets\/ticket-1\/export"/)
+  const detailCsrf = csrfFrom(detailHtml)
+  const preparedDetail = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1/export`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken: detailCsrf,
+      format: "json",
+      returnTo: "/dash/admin/tickets"
+    })
+  })
+  await preparedDetail.arrayBuffer()
+  assert.equal(preparedDetail.status, 302)
+  const detailExportId = new URL(`http://local${preparedDetail.headers.get("location")}`).searchParams.get("exportId")
+  assert.ok(detailExportId?.startsWith("dexp_"))
+  const detailRelease = await fetch(`${runtime.baseUrl}/dash/admin/exports/${detailExportId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  assert.equal(detailRelease.status, 200)
+  assert.match(String(detailRelease.headers.get("content-disposition")), /ticket-ticket-1\.json/)
+  const detailBody = await detailRelease.json() as any
+  assert.equal(detailBody.ticket.id, "ticket-1")
+  assert.equal(detailBody.telemetry.reopenCount, 1)
+  const serialized = JSON.stringify(detailBody)
+  assert.doesNotMatch(serialized, /rawFeedback|notes|transcript HTML|viewer|discord\.com\/channels/)
+
+  const createdAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-created" })
+  assert.equal(createdAudits.some((event) => event.details?.scope === "analytics-report"), true)
+  assert.equal(createdAudits.some((event) => event.details?.scope === "ticket-detail" && event.details?.rowCount === 1), true)
 })
 
 test("analytics model reports feedback outcomes, rating summaries, and reopen telemetry", async (t) => {
@@ -4003,6 +4195,12 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
   assert.match(routesSource, /admin\/analytics\/export\/:format"\), adminGuard\.form\("analytics\.view"\)/)
   assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /admin\/analytics\/export"\), adminGuard\.form\("analytics\.view"\)/)
+  assert.match(routesSource, /admin\/tickets\/export"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /admin\/tickets\/:ticketId\/export"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /admin\/exports\/:exportId"\), adminGuard\.page\("admin\.shell"\)/)
+  assert.match(routesSource, /eventType: "prepared-export-created"/)
+  assert.match(routesSource, /eventType: "prepared-export-released"/)
   assert.match(routesSource, /admin"\), adminGuard\.page\("viewer\.portal"\)/)
   assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
@@ -4012,7 +4210,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)
   assert.match(routesSource, /eventType: "ticket-bulk-action"/)
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
-  assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
+  assert.doesNotMatch(routesSource, /admin\/quality-review\/[^"']*export|prepareQualityReviewExport|raw-feedback export/i)
   assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review|admin\/quality-review\/[^"']*(digest|reminder)/i)
   assert.doesNotMatch(routesSource, /admin\/tickets\/[^"']*(digest|reminder|schedule)|api\/tickets\/[^"']*(digest|reminder|schedule)/i)
   assert.doesNotMatch(qualityReviewSource, /setInterval|setTimeout|cron\.schedule|node-cron/i)

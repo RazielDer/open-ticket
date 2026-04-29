@@ -4,6 +4,7 @@ import type { DashboardSummaryCardInput, DashboardTone } from "./control-center"
 import { supportsTicketTelemetryReads, type DashboardRuntimeBridge } from "./runtime-bridge"
 import type { DashboardTicketRecord } from "./dashboard-runtime-registry"
 import type {
+  DashboardPreparedExportReleaseModel,
   DashboardTicketFeedbackTelemetryRecord,
   DashboardTicketLifecycleTelemetryRecord,
   DashboardTicketTelemetrySignals
@@ -127,7 +128,9 @@ export interface DashboardAnalyticsModel {
   exportActions: {
     jsonAction: string
     csvAction: string
+    action: string
     returnTo: string
+    release: DashboardPreparedExportReleaseModel | null
   }
   qualityReviewHref: string | null
   backlogByTeam: DashboardAnalyticsBacklogRow[]
@@ -871,6 +874,7 @@ export async function buildDashboardAnalyticsModel(input: {
   t?: (key: string, variables?: Record<string, string | number>) => string
   now?: number
   qualityReviewHref?: string | null
+  exportId?: string | null
 }): Promise<DashboardAnalyticsModel> {
   const t = input.t || ((key: string) => key)
   const teamLabels = readSupportTeamLabels(input.configService)
@@ -989,7 +993,15 @@ export async function buildDashboardAnalyticsModel(input: {
     exportActions: {
       jsonAction: joinBasePath(input.basePath, "admin/analytics/export/json"),
       csvAction: joinBasePath(input.basePath, "admin/analytics/export/csv"),
-      returnTo: currentHref
+      action: joinBasePath(input.basePath, "admin/analytics/export"),
+      returnTo: currentHref,
+      release: input.exportId
+        ? {
+            exportId: input.exportId,
+            href: joinBasePath(input.basePath, `admin/exports/${encodeURIComponent(input.exportId)}`),
+            label: "Download prepared export"
+          }
+        : null
     },
     qualityReviewHref: input.qualityReviewHref || null,
     backlogByTeam: backlogRows(backlogRecords, (record) => record.assignedTeamId || "unknown", teamLabel),

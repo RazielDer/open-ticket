@@ -20,6 +20,7 @@ import type {
   DashboardTicketTelemetrySignals,
   DashboardTicketTransportMode,
   DashboardTicketWorkbenchSavedViewSummary,
+  DashboardPreparedExportReleaseModel,
   DashboardTicketWorkbenchViewRecord
 } from "./ticket-workbench-types"
 import { DASHBOARD_TICKET_ACTION_IDS } from "./ticket-workbench-types"
@@ -155,7 +156,9 @@ export interface TicketWorkbenchListModel {
   exportActions: {
     jsonAction: string
     csvAction: string
+    action: string
     returnTo: string
+    release: DashboardPreparedExportReleaseModel | null
   }
   qualityReviewHref: string | null
   savedViews: {
@@ -173,6 +176,7 @@ export interface TicketWorkbenchListModel {
   panels: Array<{ id: string; label: string }>
   supportTeams: Array<{ id: string; label: string }>
   exportRows: TicketWorkbenchExportRow[]
+  allExportRows: TicketWorkbenchExportRow[]
   items: Array<{
     id: string
     optionLabel: string
@@ -219,6 +223,8 @@ export interface TicketWorkbenchDetailModel {
   listHref: string
   writesSupported: boolean
   detail: DashboardTicketDetailRecord | null
+  exportAction: string
+  exportRelease: DashboardPreparedExportReleaseModel | null
   facts: Array<{ label: string; value: string }>
   summaryCards: Array<{ label: string; value: string; detail: string; tone?: DashboardTone }>
   actionForms: TicketWorkbenchActionForm[]
@@ -1014,6 +1020,7 @@ export function buildTicketWorkbenchListModel(input: {
   canManageSharedViews?: boolean
   savedViewsAvailable?: boolean
   savedViewsUnavailableMessage?: string
+  exportId?: string | null
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
   const telemetrySupported = input.readsSupported && input.telemetrySupported === true
@@ -1043,7 +1050,7 @@ export function buildTicketWorkbenchListModel(input: {
   const startIndex = (page - 1) * effectiveRequest.limit
   const pageItems = filtered.slice(startIndex, startIndex + effectiveRequest.limit)
   const currentHref = input.currentHref || buildPageHref(input.basePath, effectiveRequest, page)
-  const pageRows = pageItems.map((ticket) => {
+  const buildRow = (ticket: DashboardTicketRecord) => {
     const panel = resolvePanelMapping(lookups.panelForOption, ticket.optionId)
     const optionLabel = resolveOptionLabel(lookups.optionById, ticket.optionId)
     const teamLabel = resolveTeamLabel(lookups.teamById, ticket.assignedTeamId)
@@ -1109,7 +1116,9 @@ export function buildTicketWorkbenchListModel(input: {
         lastReopenedAt: telemetrySupported ? telemetry.lastReopenedAt : null
       }
     }
-  })
+  }
+  const pageRows = pageItems.map(buildRow)
+  const allRows = filtered.map(buildRow)
   const savedViewSummaries = buildSavedViewSummaries({
     basePath: input.basePath,
     views: input.savedViews || [],
@@ -1165,7 +1174,15 @@ export function buildTicketWorkbenchListModel(input: {
     exportActions: {
       jsonAction: joinBasePath(input.basePath, "admin/tickets/export/json"),
       csvAction: joinBasePath(input.basePath, "admin/tickets/export/csv"),
-      returnTo: currentHref
+      action: joinBasePath(input.basePath, "admin/tickets/export"),
+      returnTo: currentHref,
+      release: input.exportId
+        ? {
+            exportId: input.exportId,
+            href: joinBasePath(input.basePath, `admin/exports/${encodeURIComponent(input.exportId)}`),
+            label: "Download prepared export"
+          }
+        : null
     },
     qualityReviewHref: input.qualityReviewHref || null,
     savedViews: {
@@ -1190,6 +1207,7 @@ export function buildTicketWorkbenchListModel(input: {
       .map((team) => ({ id: normalizeString(team.id), label: labelFromRecord(team, normalizeString(team.id)) }))
       .filter((team) => team.id),
     exportRows: pageRows.map((row) => row.exportRow),
+    allExportRows: allRows.map((row) => row.exportRow),
     items: pageRows.map((row) => row.item)
   }
 }
@@ -1461,6 +1479,7 @@ export function buildTicketWorkbenchDetailModel(input: {
   readsSupported: boolean
   warningMessage?: string
   t?: TicketWorkbenchTranslator
+  exportId?: string | null
 }): TicketWorkbenchDetailModel {
   const t = input.t || ((key: string) => key)
   const backHref = sanitizeTicketWorkbenchReturnTo(input.basePath, input.returnTo)
@@ -1551,6 +1570,14 @@ export function buildTicketWorkbenchDetailModel(input: {
     listHref: joinBasePath(input.basePath, "admin/tickets"),
     writesSupported: input.writesSupported,
     detail,
+    exportAction: `${detailHref}/export`,
+    exportRelease: input.exportId
+      ? {
+          exportId: input.exportId,
+          href: joinBasePath(input.basePath, `admin/exports/${encodeURIComponent(input.exportId)}`),
+          label: "Download prepared export"
+        }
+      : null,
     facts,
     summaryCards,
     actionForms: actionForms.filter((form) => !ADVANCED_TICKET_ACTIONS.has(form.action)),

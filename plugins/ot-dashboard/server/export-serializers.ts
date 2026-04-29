@@ -9,7 +9,8 @@ import type {
   DashboardAnalyticsReopenRateRow,
   DashboardAnalyticsTableRow
 } from "./analytics"
-import type { TicketWorkbenchListModel } from "./ticket-workbench"
+import type { TicketWorkbenchDetailModel, TicketWorkbenchListModel } from "./ticket-workbench"
+import type { DashboardTicketDetailExportPayload } from "./ticket-workbench-types"
 
 export type DashboardExportFormat = "json" | "csv"
 
@@ -39,6 +40,9 @@ const ANALYTICS_JSON_FILE = "ticket-analytics-report.json"
 const ANALYTICS_ZIP_FILE = "ticket-analytics-report.zip"
 const TICKETS_JSON_FILE = "ticket-workbench-page.json"
 const TICKETS_CSV_FILE = "ticket-workbench-page.csv"
+const TICKETS_FULL_JSON_FILE = "ticket-workbench-full.json"
+const TICKETS_FULL_CSV_FILE = "ticket-workbench-full.csv"
+const TICKET_DETAIL_JSON_FILE = "ticket-detail.json"
 
 export function parseDashboardExportFormat(value: unknown): DashboardExportFormat | null {
   return value === "json" || value === "csv" ? value : null
@@ -610,6 +614,11 @@ function ticketRowsCsv(model: TicketWorkbenchListModel) {
   return buildDashboardCsv(columns.map((column) => column.header), model.exportRows, columns)
 }
 
+function ticketRowsCsvFromRows(rows: TicketWorkbenchListModel["exportRows"]) {
+  const model = { exportRows: rows } as TicketWorkbenchListModel
+  return ticketRowsCsv(model)
+}
+
 function buildTicketJson(model: TicketWorkbenchListModel, generatedAt: string) {
   return {
     generatedAt,
@@ -619,6 +628,17 @@ function buildTicketJson(model: TicketWorkbenchListModel, generatedAt: string) {
     sort: model.request.sort,
     warnings: ticketWarnings(model),
     items: model.exportRows
+  }
+}
+
+function buildFullTicketJson(model: TicketWorkbenchListModel, generatedAt: string) {
+  return {
+    generatedAt,
+    filters: ticketFilters(model),
+    sort: model.request.sort,
+    warnings: ticketWarnings(model),
+    total: model.allExportRows.length,
+    items: model.allExportRows
   }
 }
 
@@ -639,5 +659,104 @@ export async function buildTicketWorkbenchExportPayload(
     fileName: TICKETS_CSV_FILE,
     contentType: "text/csv; charset=utf-8",
     body: ticketRowsCsv(model)
+  }
+}
+
+export async function buildFullTicketWorkbenchExportPayload(
+  model: TicketWorkbenchListModel,
+  format: DashboardExportFormat,
+  generatedAtInput?: Date | number | string
+): Promise<DashboardExportPayload> {
+  const generatedAt = generatedIso(generatedAtInput)
+  if (format === "json") {
+    return {
+      fileName: TICKETS_FULL_JSON_FILE,
+      contentType: "application/json; charset=utf-8",
+      body: `${JSON.stringify(buildFullTicketJson(model, generatedAt), null, 2)}\n`
+    }
+  }
+  return {
+    fileName: TICKETS_FULL_CSV_FILE,
+    contentType: "text/csv; charset=utf-8",
+    body: ticketRowsCsvFromRows(model.allExportRows)
+  }
+}
+
+export function getFullTicketWorkbenchExportAuditDetails(model: TicketWorkbenchListModel, format: DashboardExportFormat) {
+  return {
+    format,
+    rowCount: model.allExportRows.length,
+    warningCount: [model.warningMessage, model.telemetryWarningMessage, model.queueWarningMessage].filter((warning) => warning.trim().length > 0).length,
+    queryKeys: Object.keys(ticketFilters(model)).sort()
+  }
+}
+
+function buildTicketDetailJson(model: TicketWorkbenchDetailModel, generatedAt: string): DashboardTicketDetailExportPayload {
+  const detail = model.detail
+  if (!detail) {
+    throw new Error("Ticket detail export requires an available ticket detail model.")
+  }
+  return {
+    generatedAt,
+    ticket: {
+      id: detail.ticket.id,
+      open: detail.ticket.open,
+      closed: detail.ticket.closed,
+      claimed: detail.ticket.claimed,
+      pinned: detail.ticket.pinned,
+      openedOn: detail.ticket.openedOn,
+      closedOn: detail.ticket.closedOn,
+      resolvedAt: detail.ticket.resolvedAt,
+      claimedOn: detail.ticket.claimedOn,
+      reopenedOn: detail.ticket.reopenedOn
+    },
+    route: {
+      panelId: detail.panelId,
+      panelLabel: detail.panelLabel,
+      optionId: detail.ticket.optionId,
+      optionLabel: detail.optionLabel,
+      teamId: detail.ticket.assignedTeamId,
+      teamLabel: detail.teamLabel,
+      assigneeUserId: detail.ticket.assignedStaffUserId,
+      assigneeLabel: detail.assigneeLabel
+    },
+    requester: {
+      creatorUserId: detail.ticket.creatorId,
+      creatorLabel: detail.creatorLabel,
+      originalApplicantUserId: detail.originalApplicantUserId,
+      originalApplicantLabel: detail.originalApplicantLabel
+    },
+    workflow: {
+      closeRequestState: detail.ticket.closeRequestState,
+      awaitingUserState: detail.ticket.awaitingUserState
+    },
+    transport: {
+      mode: detail.ticket.transportMode,
+      parentChannelId: detail.ticket.transportParentChannelId,
+      parentMessageId: detail.ticket.transportParentMessageId
+    },
+    operations: {
+      priorityId: detail.priorityId,
+      priorityLabel: detail.priorityLabel,
+      topic: detail.topic,
+      participantCount: detail.ticket.participantCount
+    },
+    telemetry: detail.telemetry,
+    transcriptReference: {
+      resourceName: detail.ticket.channelName,
+      channelSuffix: detail.ticket.channelSuffix
+    }
+  }
+}
+
+export async function buildTicketDetailExportPayload(
+  model: TicketWorkbenchDetailModel,
+  generatedAtInput?: Date | number | string
+): Promise<DashboardExportPayload> {
+  const generatedAt = generatedIso(generatedAtInput)
+  return {
+    fileName: TICKET_DETAIL_JSON_FILE,
+    contentType: "application/json; charset=utf-8",
+    body: `${JSON.stringify(buildTicketDetailJson(model, generatedAt), null, 2)}\n`
   }
 }

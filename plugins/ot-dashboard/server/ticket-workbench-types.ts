@@ -7,6 +7,27 @@ export type DashboardQualityReviewState = "unreviewed" | "in_review" | "resolved
 export type DashboardQualityReviewRawFeedbackStatus = "available" | "partial" | "expired" | "none"
 export type DashboardQualityReviewOwnerBucket = "mine" | "unassigned" | "other" | "resolved"
 export type DashboardQualityReviewOverdueKind = "unreviewed" | "in_review" | null
+export type DashboardPreparedExportScope = "tickets-list" | "ticket-detail" | "analytics-report"
+export type DashboardPreparedExportFormat = "csv" | "json"
+
+export interface DashboardPreparedDataExportRecord {
+  exportId: string
+  scope: DashboardPreparedExportScope
+  format: DashboardPreparedExportFormat
+  createdByUserId: string
+  createdAt: number
+  expiresAt: number
+  fileName: string
+  relativePath: string
+  contentType: string
+  byteSize: number
+}
+
+export interface DashboardPreparedExportReleaseModel {
+  exportId: string
+  href: string
+  label: string
+}
 
 export interface DashboardTicketQueueFacts {
   ticketId: string
@@ -212,6 +233,58 @@ export interface DashboardTicketFeedbackTelemetryResult {
   nextCursor: string | null
   truncated: boolean
   warnings: string[]
+}
+
+export interface DashboardTicketDetailExportPayload {
+  generatedAt: string
+  ticket: {
+    id: string
+    open: boolean
+    closed: boolean
+    claimed: boolean
+    pinned: boolean
+    openedOn: number | null
+    closedOn: number | null
+    resolvedAt: number | null
+    claimedOn: number | null
+    reopenedOn: number | null
+  }
+  route: {
+    panelId: string | null
+    panelLabel: string | null
+    optionId: string | null
+    optionLabel: string | null
+    teamId: string | null
+    teamLabel: string | null
+    assigneeUserId: string | null
+    assigneeLabel: string | null
+  }
+  requester: {
+    creatorUserId: string | null
+    creatorLabel: string | null
+    originalApplicantUserId: string | null
+    originalApplicantLabel: string | null
+  }
+  workflow: {
+    closeRequestState: string | null
+    awaitingUserState: string | null
+  }
+  transport: {
+    mode: DashboardTicketTransportMode | null
+    parentChannelId: string | null
+    parentMessageId: string | null
+  }
+  operations: {
+    priorityId: string | null
+    priorityLabel: string | null
+    topic: string | null
+    participantCount: number
+  }
+  telemetry: DashboardTicketTelemetrySignals | null
+  transcriptReference: {
+    resourceName: string | null
+    channelSuffix: string | null
+  }
 }
 
 export interface DashboardQualityReviewCaseSignal {

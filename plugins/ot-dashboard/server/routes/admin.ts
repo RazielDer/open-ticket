@@ -6,11 +6,18 @@ import { buildDashboardAnalyticsModel } from "../analytics"
 import type { DashboardAppContext } from "../create-app"
 import {
   buildAnalyticsExportPayload,
+  buildFullTicketWorkbenchExportPayload,
+  buildTicketDetailExportPayload,
   buildTicketWorkbenchExportPayload,
   getAnalyticsExportAuditDetails,
+  getFullTicketWorkbenchExportAuditDetails,
   getTicketWorkbenchExportAuditDetails,
   parseDashboardExportFormat
 } from "../export-serializers"
+import {
+  prepareDashboardExport,
+  releaseDashboardPreparedExport
+} from "../prepared-exports"
 import {
   getDashboardSecurityWarnings,
   getDashboardViewerReadiness,
@@ -270,6 +277,11 @@ function sendDashboardExport(res: express.Response, payload: { fileName: string;
   res.send(payload.body)
 }
 
+function redirectWithPreparedExport(href: string, status: string, message: string, exportId?: string | null) {
+  const withAlert = appendAlertQuery(href, status, message)
+  return exportId ? `${withAlert}&exportId=${encodeURIComponent(exportId)}` : withAlert
+}
+
 function registerPreparedExportCleanup(
   res: express.Response,
   release: () => Promise<boolean>
@@ -526,7 +538,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       runtimeBridge,
       transcriptService,
       t: i18n.t,
-      qualityReviewHref
+      qualityReviewHref,
+      exportId: normalizeStringInput(query.exportId)
     })
   }
 
@@ -540,6 +553,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       canManageSharedViews?: boolean
       savedViewsAvailable?: boolean
       savedViewsUnavailableMessage?: string
+      exportId?: string | null
     } = {}
   ) => {
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
@@ -641,7 +655,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       actorUserId: savedViewOptions.actorUserId,
       canManageSharedViews: savedViewOptions.canManageSharedViews,
       savedViewsAvailable: savedViewOptions.savedViewsAvailable,
-      savedViewsUnavailableMessage: savedViewOptions.savedViewsUnavailableMessage
+      savedViewsUnavailableMessage: savedViewOptions.savedViewsUnavailableMessage,
+      exportId: savedViewOptions.exportId ?? normalizeStringInput(query.exportId)
     })
   }
 
@@ -1426,6 +1441,92 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
+  app.post(joinBasePath(basePath, "admin/analytics/export"), adminGuard.form("analytics.view"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = sanitizeAnalyticsWorkspaceReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.body?.format)
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (!format) {
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+    try {
+      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>, qualityReviewHrefForAccess(res))
+      const payload = await buildAnalyticsExportPayload(model, format)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "analytics-report",
+          format,
+          createdByUserId: actorUserId,
+          fileName: payload.fileName,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "analytics-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          ...getAnalyticsExportAuditDetails(model, format)
+        }
+      })
+      return res.redirect(redirectWithPreparedExport(returnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: { format }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/exports/:exportId"), adminGuard.page("admin.shell"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    const result = await releaseDashboardPreparedExport({
+      projectRoot: context.projectRoot,
+      runtimeBridge,
+      exportId: req.params.exportId,
+      actorUserId
+    })
+    res.setHeader("Cache-Control", "no-store, private")
+    if (result.status !== "available") {
+      if (result.status === "expired") return res.status(410).send(i18n.t("routeMessages.preparedExportExpired"))
+      return res.status(404).send(i18n.t("routeMessages.preparedExportMissing"))
+    }
+
+    await recordAdminAuditEvent(context, req, actor, {
+      eventType: "prepared-export-released",
+      target: result.record.exportId,
+      outcome: "success",
+      reason: result.record.scope,
+      details: {
+        exportId: result.record.exportId,
+        scope: result.record.scope,
+        format: result.record.format,
+        createdByUserId: result.record.createdByUserId,
+        byteSize: result.record.byteSize
+      }
+    })
+    res.setHeader("Content-Type", result.record.contentType)
+    res.setHeader("Content-Disposition", `attachment; filename="${result.record.fileName.replace(/"/g, "")}"`)
+    return res.send(result.body)
+  })
+
   app.get(joinBasePath(basePath, "admin/quality-review"), adminGuard.page("quality.review"), async (req, res, next) => {
     try {
       const access = adminGuard.getAccess(res)
@@ -1888,6 +1989,57 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
+  app.post(joinBasePath(basePath, "admin/tickets/export"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.body?.format)
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (!format) {
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+    try {
+      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo, qualityReviewHrefForAccess(res))
+      const payload = await buildFullTicketWorkbenchExportPayload(model, format)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "tickets-list",
+          format,
+          createdByUserId: actorUserId,
+          fileName: payload.fileName,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "ticket-workbench-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          ...getFullTicketWorkbenchExportAuditDetails(model, format)
+        }
+      })
+      return res.redirect(redirectWithPreparedExport(returnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: { format }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
   app.post(joinBasePath(basePath, "admin/tickets/bulk/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
     const action = parseDashboardTicketBulkActionId(req.params.actionId)
     const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
@@ -2048,7 +2200,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         warningMessage: runtimeAvailable
           ? writesSupported ? "" : "Ticket action writes are unavailable in the current dashboard runtime."
           : "The Open Ticket runtime is not exposing ticket detail to the dashboard right now.",
-        t: i18n.t
+        t: i18n.t,
+        exportId: normalizeStringInput(req.query.exportId)
       })
 
       renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
@@ -2068,6 +2221,87 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       }))
     } catch (error) {
       next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/:ticketId/export"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(req.params.ticketId)}`)
+    const redirectToDetail = (status: string, message: string, exportId?: string | null) => {
+      const params = new URLSearchParams({ returnTo })
+      const target = `${detailHref}?${params.toString()}`
+      return redirectWithPreparedExport(target, status, message, exportId)
+    }
+    const format = parseDashboardExportFormat(req.body?.format || "json")
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (format !== "json") return res.redirect(redirectToDetail("warning", i18n.t("routeMessages.invalidExportFormat")))
+    try {
+      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && snapshot.ticketSummary.available === true
+      let detail = readsSupported && typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(req.params.ticketId, actorUserId)
+        : null
+      if (!detail && readsSupported) {
+        const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === req.params.ticketId) || null
+        detail = ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+      }
+      if (!detail) {
+        return res.redirect(redirectToDetail("warning", i18n.t("routeMessages.ticketNotFound")))
+      }
+      if (!detail.telemetry && supportsTicketTelemetryReads(runtimeBridge) && runtimeBridge.getTicketTelemetrySignals) {
+        const telemetrySignals = await runtimeBridge.getTicketTelemetrySignals([detail.ticket.id]).catch(() => ({}))
+        detail = { ...detail, telemetry: telemetrySignals[detail.ticket.id] || null }
+      }
+      const model = buildTicketWorkbenchDetailModel({
+        basePath,
+        returnTo,
+        ticketId: req.params.ticketId,
+        detail,
+        writesSupported: supportsTicketWorkbenchWrites(runtimeBridge),
+        readsSupported,
+        t: i18n.t
+      })
+      const payload = await buildTicketDetailExportPayload(model)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "ticket-detail",
+          format: "json",
+          createdByUserId: actorUserId,
+          fileName: `ticket-${detail.ticket.id}.json`,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "ticket-detail-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          format: "json",
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          rowCount: 1,
+          queryKeys: ["ticketId"]
+        }
+      })
+      return res.redirect(redirectToDetail("success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "ticket-detail-export",
+        details: { format: "json" }
+      })
+      return res.redirect(redirectToDetail("danger", i18n.t("routeMessages.exportFailed")))
     }
   })
 

@@ -35,6 +35,7 @@ import { registerApiRoutes } from "./routes/api"
 import { registerPageRoutes } from "./routes/pages"
 import { registerViewerRoutes } from "./routes/viewer"
 import { defaultDashboardRuntimeBridge, type DashboardRuntimeBridge } from "./runtime-bridge"
+import { registerPreparedExportHousekeeping } from "./prepared-exports"
 
 export interface DashboardPluginRegistryBridge {
   listSections: (pluginId: string, context: DashboardPluginSectionResolverContext) => Promise<DashboardPluginSection[]>
@@ -190,6 +191,7 @@ export function createDashboardApp(options: CreateDashboardAppOptions = {}) {
   registerApiRoutes(app, context)
   registerViewerRoutes(app, context)
   registerPageRoutes(app, context)
+  registerPreparedExportHousekeeping({ projectRoot, runtimeBridge })
 
   return { app, context }
 }
