@@ -173,6 +173,11 @@ function redactTicketWorkbenchFreeTextReturnTo(href: string) {
   }
 }
 
+function preparedExportAuditId(value: unknown) {
+  const exportId = String(value || "").trim()
+  return /^dexp_[a-f0-9]{32}$/i.test(exportId) ? exportId : "dexp_invalid"
+}
+
 async function sanitizeAuthorizedTicketWorkbenchReturnTo(
   basePath: string,
   runtimeBridge: DashboardRuntimeBridge,
@@ -1511,14 +1516,26 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const actor = access?.identity
     const actorUserId = actor?.userId || ""
     if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    const exportId = String(req.params.exportId || "").trim()
     const result = await releaseDashboardPreparedExport({
       projectRoot: context.projectRoot,
       runtimeBridge,
-      exportId: req.params.exportId,
+      exportId,
       actorUserId
     })
     res.setHeader("Cache-Control", "no-store, private")
     if (result.status !== "available") {
+      const auditExportId = preparedExportAuditId(exportId)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-released",
+        target: auditExportId,
+        outcome: "failure",
+        reason: result.status,
+        details: {
+          exportId: auditExportId,
+          status: result.status
+        }
+      })
       if (result.status === "expired") return res.status(410).send(i18n.t("routeMessages.preparedExportExpired"))
       return res.status(404).send(i18n.t("routeMessages.preparedExportMissing"))
     }
@@ -1956,6 +1973,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const actor = adminGuard.getAccess(res)?.identity
     const actorUserId = actor?.userId || ""
     const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
     const format = parseDashboardExportFormat(req.params.format)
     if (!format) {
       await recordAdminAuditEvent(context, req, actor, {
@@ -1971,7 +1989,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           warningCount: 0
         }
       })
-      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+      return res.redirect(appendAlertQuery(releaseReturnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
     }
 
     try {
@@ -1999,7 +2017,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           warningCount: 0
         }
       })
-      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+      return res.redirect(appendAlertQuery(releaseReturnTo, "danger", i18n.t("routeMessages.exportFailed")))
     }
   })
 

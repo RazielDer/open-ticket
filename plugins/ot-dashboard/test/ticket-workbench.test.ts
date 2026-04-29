@@ -2750,13 +2750,19 @@ test("ticket workbench compatibility export remains editor csrf-protected curren
     },
     body: new URLSearchParams({
       csrfToken,
-      returnTo: "/dash/admin/transcripts"
+      returnTo: "/dash/admin/tickets?status=open&q=secret-export-query"
     })
   })
   await invalidFormat.arrayBuffer()
   assert.equal(invalidFormat.status, 302)
-  assert.match(String(invalidFormat.headers.get("location")), /^\/dash\/admin\/tickets\?alertStatus=warning&msg=/)
-  assert.match(String(redirectMessage(invalidFormat.headers.get("location"))), /Export format must be JSON or CSV/)
+  const invalidLocation = String(invalidFormat.headers.get("location"))
+  const invalidUrl = new URL(invalidLocation, "http://dashboard.local")
+  assert.equal(invalidUrl.pathname, "/dash/admin/tickets")
+  assert.equal(invalidUrl.searchParams.get("status"), "open")
+  assert.equal(invalidUrl.searchParams.get("q"), null)
+  assert.equal(invalidUrl.searchParams.get("alertStatus"), "warning")
+  assert.doesNotMatch(invalidLocation, /secret-export-query/)
+  assert.match(String(redirectMessage(invalidLocation)), /Export format must be JSON or CSV/)
 
   assert.ok(telemetrySignalCalls.some((ids) => ids.length === 1 && ids[0] === "ticket-b"))
   const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ticket-export" })
@@ -2881,7 +2887,19 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
   assert.equal(createdAudits.some((event) => event.details?.scope === "tickets-list" && event.details?.rowCount === 11), true)
   assert.doesNotMatch(JSON.stringify(createdAudits), new RegExp(search))
   const releaseAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-released" })
-  assert.equal(releaseAudits.length, 1)
+  assert.equal(releaseAudits.some((event) => (
+    event.target === exportId
+    && event.outcome === "success"
+    && event.reason === "tickets-list"
+    && event.details?.scope === "tickets-list"
+  )), true)
+  assert.equal(releaseAudits.some((event) => (
+    event.target === exportId
+    && event.outcome === "failure"
+    && event.reason === "missing"
+    && event.details?.status === "missing"
+  )), true)
+  assert.doesNotMatch(JSON.stringify(releaseAudits), new RegExp(search))
 })
 
 test("prepared export release rejects traversal registry paths", async (t) => {
@@ -2914,6 +2932,87 @@ test("prepared export release rejects traversal registry paths", async (t) => {
   await response.text()
   assert.equal(response.status, 404)
   assert.equal(runtime.globalDatabase.has(databaseKey), false)
+})
+
+test("prepared export release audits denied expired and missing failures without private paths", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/tickets")
+  const now = Date.now()
+  const expiredId = "dexp_11111111111111111111111111111111"
+  const deniedId = "dexp_22222222222222222222222222222222"
+  const missingId = "dexp_33333333333333333333333333333333"
+  const expiredKey = `opendiscord:dashboard:prepared-exports:${expiredId}`
+  const deniedKey = `opendiscord:dashboard:prepared-exports:${deniedId}`
+  runtime.globalDatabase.set(expiredKey, {
+    exportId: expiredId,
+    scope: "tickets-list",
+    format: "json",
+    createdByUserId: "admin-user",
+    createdAt: now - 3_600_000,
+    expiresAt: now - 1_000,
+    fileName: "expired.json",
+    relativePath: `prepared-exports/${expiredId}/expired.json`,
+    contentType: "application/json; charset=utf-8",
+    byteSize: 2
+  })
+  runtime.globalDatabase.set(deniedKey, {
+    exportId: deniedId,
+    scope: "tickets-list",
+    format: "json",
+    createdByUserId: "other-admin",
+    createdAt: now,
+    expiresAt: now + 60_000,
+    fileName: "denied.json",
+    relativePath: `prepared-exports/${deniedId}/denied.json`,
+    contentType: "application/json; charset=utf-8",
+    byteSize: 2
+  })
+
+  const expiredResponse = await fetch(`${runtime.baseUrl}/dash/admin/exports/${expiredId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  await expiredResponse.text()
+  assert.equal(expiredResponse.status, 410)
+  assert.match(String(expiredResponse.headers.get("cache-control")), /no-store/)
+  assert.equal(runtime.globalDatabase.has(expiredKey), false)
+
+  const deniedResponse = await fetch(`${runtime.baseUrl}/dash/admin/exports/${deniedId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  await deniedResponse.text()
+  assert.equal(deniedResponse.status, 404)
+  assert.match(String(deniedResponse.headers.get("cache-control")), /no-store/)
+  assert.equal(runtime.globalDatabase.has(deniedKey), true)
+
+  const missingResponse = await fetch(`${runtime.baseUrl}/dash/admin/exports/${missingId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  await missingResponse.text()
+  assert.equal(missingResponse.status, 404)
+  assert.match(String(missingResponse.headers.get("cache-control")), /no-store/)
+
+  const releaseAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-released" })
+  assert.equal(releaseAudits.some((event) => (
+    event.target === expiredId
+    && event.outcome === "failure"
+    && event.reason === "expired"
+    && event.details?.status === "expired"
+  )), true)
+  assert.equal(releaseAudits.some((event) => (
+    event.target === deniedId
+    && event.outcome === "failure"
+    && event.reason === "denied"
+    && event.details?.status === "denied"
+  )), true)
+  assert.equal(releaseAudits.some((event) => (
+    event.target === missingId
+    && event.outcome === "failure"
+    && event.reason === "missing"
+    && event.details?.status === "missing"
+  )), true)
+  assert.doesNotMatch(JSON.stringify(releaseAudits), /prepared-exports|expired\.json|denied\.json|other-admin/)
 })
 
 test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {
