@@ -1,5 +1,7 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as discord from "discord.js"
+import { clearAwaitingUserForRequesterActivity, runAwaitingUserWorkflowScan } from "../../actions/ticketWorkflow.js"
+import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "../../actions/ticketTelemetry.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const globalDatabase = opendiscord.databases.get("opendiscord:global")
@@ -224,7 +226,7 @@ export const loadDatabaseCleanersCode = async () => {
         for (const ticket of (await ticketDatabase.getAll())){
             if (!validTickets.includes(ticket.key)){
                 try{
-                    const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,ticket.key)
+                    const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,ticket.key)
                     if (channel) validTickets.push(channel.id)
                 }catch{}
             }
@@ -235,7 +237,7 @@ export const loadDatabaseCleanersCode = async () => {
             if (stat.category.startsWith("opendiscord:ticket_")){
                 if (!validTickets.includes(stat.key)){
                     try{
-                        const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,stat.key)
+                        const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,stat.key)
                         if (channel) validTickets.push(channel.id)
                     }catch{}
                 }
@@ -277,6 +279,23 @@ export const loadDatabaseCleanersCode = async () => {
                     if (stat.key == channel.id){
                         await statsDatabase.delete(stat.category,stat.key)
                     }
+                }
+            }
+        })
+
+        opendiscord.client.client.on("threadDelete",async (thread) => {
+            if (thread.guild.id != mainServer.id) return
+
+            for (const ticket of (await ticketDatabase.getAll())){
+                if (ticket.key == thread.id){
+                    await ticketDatabase.delete(ticket.category,ticket.key)
+                    opendiscord.tickets.remove(ticket.key)
+                }
+            }
+
+            for (const stat of (await statsDatabase.getAll())){
+                if (stat.category.startsWith("opendiscord:ticket_") && stat.key == thread.id){
+                    await statsDatabase.delete(stat.category,stat.key)
                 }
             }
         })
@@ -386,6 +405,7 @@ const loadAutoCode = () => {
     opendiscord.code.add(new api.ODCode("opendiscord:autoclose-timeout",3,() => {
         setInterval(async () => {
             let count = 0
+            const workflowScan = await runAwaitingUserWorkflowScan()
             for (const ticket of opendiscord.tickets.getAll()){
                 const channel = await opendiscord.tickets.getTicketChannel(ticket)
                 if (!channel) return
@@ -408,9 +428,40 @@ const loadAutoCode = () => {
             }
             opendiscord.debug.debug("Finished autoclose timeout cycle!",[
                 {key:"interval",value:opendiscord.defaults.getDefault("autocloseCheckInterval").toString()},
-                {key:"closed",value:count.toString()}
+                {key:"closed",value:count.toString()},
+                {key:"awaiting-reminders",value:workflowScan.reminders.toString()},
+                {key:"awaiting-closed",value:workflowScan.closed.toString()}
             ])
         },opendiscord.defaults.getDefault("autocloseCheckInterval"))
+    }))
+
+    //AWAITING USER ACTIVITY CLEAR
+    opendiscord.code.add(new api.ODCode("opendiscord:awaiting-user-activity-clear",2.5,() => {
+        opendiscord.client.client.on("messageCreate",async (message) => {
+            if (message.author.bot || !message.inGuild()) return
+            if (!message.channel || message.channel.isDMBased()) return
+            const ticket = opendiscord.tickets.get(message.channel.id)
+            if (!ticket) return
+            if (!ticket.get("opendiscord:first-staff-response-on").value && message.author.id != ticket.get("opendiscord:opened-by").value){
+                const member = await message.guild.members.fetch(message.author.id).catch(() => null)
+                const permission = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",message.author,member,message.channel as discord.GuildTextBasedChannel,message.guild)
+                if (permission?.hasPerms){
+                    const occurredAt = typeof message.createdTimestamp == "number" ? message.createdTimestamp : Date.now()
+                    const previousSnapshot = snapshotTicketForTelemetry(ticket)
+                    ticket.get("opendiscord:first-staff-response-on").value = occurredAt
+                    await appendTicketTelemetryLifecycleEvent({eventType:"first_staff_response",ticket,actorUserId:message.author.id,occurredAt,previousSnapshot})
+                }
+            }
+            await clearAwaitingUserForRequesterActivity({
+                guild:message.guild,
+                channel:message.channel as discord.GuildTextBasedChannel,
+                user:message.author,
+                ticket,
+                reason:"Requester message"
+            }).catch((err) => {
+                opendiscord.debugfile.writeErrorMessage(new api.ODError(err,"uncaughtException"))
+            })
+        })
     }))
 
     //AUTOCLOSE LEAVE

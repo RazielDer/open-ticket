@@ -1,4 +1,6 @@
 import {opendiscord, api, utilities} from "../../index"
+import fs from "fs"
+import path from "path"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -27,6 +29,10 @@ export const loadAllConfigCheckers = async () => {
     opendiscord.checkers.add(new api.ODChecker("opendiscord:questions",opendiscord.checkers.storage,2,opendiscord.configs.get("opendiscord:questions"),defaultQuestionsStructure,{cliDisplayName:"Questions Config",cliDisplayDescription:"Create, modify & delete questions which are used in options."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:options",opendiscord.checkers.storage,1,opendiscord.configs.get("opendiscord:options"),defaultOptionsStructure,{cliDisplayName:"Options Config",cliDisplayDescription:"Create, modify & delete options which are used in panels."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:panels",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:panels"),defaultPanelsStructure,{cliDisplayName:"Panels Config",cliDisplayDescription:"Create, modify & delete panels which can be spawned in discord."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:support-teams",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:support-teams"),defaultSupportTeamsStructure,{cliDisplayName:"Support Teams Config",cliDisplayDescription:"Create support teams for ticket routing, assignment, and escalation."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:integration-profiles",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:integration-profiles"),defaultIntegrationProfilesStructure,{cliDisplayName:"Integration Profiles Config",cliDisplayDescription:"Create integration profiles that ticket options can bind to."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:ai-assist-profiles",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:ai-assist-profiles"),defaultAiAssistProfilesStructure,{cliDisplayName:"AI Assist Profiles Config",cliDisplayDescription:"Create AI assist profiles that ticket options can bind to."}))
+    opendiscord.checkers.add(new api.ODChecker("opendiscord:knowledge-sources",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:knowledge-sources"),defaultKnowledgeSourcesStructure,{cliDisplayName:"Knowledge Sources Config",cliDisplayDescription:"Create local knowledge files available to AI assist profiles."}))
     opendiscord.checkers.add(new api.ODChecker("opendiscord:transcripts",opendiscord.checkers.storage,0,opendiscord.configs.get("opendiscord:transcripts"),defaultTranscriptsStructure,{cliDisplayName:"Transcript Config",cliDisplayDescription:"Configure everything related to transcripts."}))
 }
 
@@ -34,6 +40,9 @@ export const loadAllConfigCheckerFunctions = async () => {
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:unused-options",defaultUnusedOptionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:unused-questions",defaultUnusedQuestionsFunction))
     opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:dropdown-options",defaultDropdownOptionsFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:support-team-routing",defaultSupportTeamRoutingFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:integration-profiles",defaultIntegrationProfilesFunction))
+    opendiscord.checkers.functions.add(new api.ODCheckerFunction("opendiscord:ai-assist-profiles",defaultAiAssistProfilesFunction))
 }
 
 export const loadAllConfigCheckerTranslations = async () => {
@@ -329,6 +338,7 @@ export const defaultGeneralStructure = new api.ODCheckerObjectStructure("opendis
             {key:"pin",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-pin","role",false,["admin","everyone","none"],{cliDisplayName:"Pin",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"unpin",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-unpin","role",false,["admin","everyone","none"],{cliDisplayName:"Unpin",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"move",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-move","role",false,["admin","everyone","none"],{cliDisplayName:"Move",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
+            {key:"escalate",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-escalate","role",false,["admin","everyone","none"],{cliDisplayName:"Escalate",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"rename",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-rename","role",false,["admin","everyone","none"],{cliDisplayName:"Rename",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"add",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-add","role",false,["admin","everyone","none"],{cliDisplayName:"Add User",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
             {key:"remove",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:permissions-remove","role",false,["admin","everyone","none"],{cliDisplayName:"Remove User",cliHideDescriptionInParent:true,cliDisplayDescription:"Set the permissions to 'everyone' for everyone, 'admin' for admin only, 'none' to disable or a custom discord role ID."})},
@@ -395,21 +405,108 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
             const idList = uncheckedRawData.filter((option) => typeof option == "object" && typeof option["id"] == "string").map((option) => option.id)
             return (idList.length > 0) ? idList : null
         }})},
+        {key:"integrationProfileId",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-integration-profile-id",{maxLength:128,cliInitDefaultValue:"",cliDisplayName:"Integration Profile",cliDisplayDescription:"The integration profile id for this ticket option. Leave empty for no integration."})},
+        {key:"aiAssistProfileId",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-ai-assist-profile-id",{maxLength:128,cliInitDefaultValue:"",cliDisplayName:"AI Assist Profile",cliDisplayDescription:"The AI assist profile id for this ticket option. Leave empty for no AI assist."})},
 
         //TICKET CHANNEL
-        {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory"],children:[
+        {key:"channel",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel",{cliInitSkipKeys:["backupCategory","claimedCategory","transportMode","threadParentChannel"],children:[
+            {key:"transportMode",optional:true,checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-transport-mode",{choices:["channel_text","private_thread"],cliDisplayName:"Transport Mode",cliDisplayDescription:"Use channel_text for classic ticket channels or private_thread for private-thread tickets."})},
+            {key:"threadParentChannel",optional:true,checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-thread-parent","channel",true,[],{cliDisplayName:"Thread Parent Channel",cliDisplayDescription:"The parent text channel used when transportMode is private_thread."})},
             {key:"prefix",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-prefix",{maxLength:25,regex:/^[^\s]*$/,cliDisplayName:"Prefix",cliDisplayDescription:"The prefix of the name of the ticket channel. (e.g. 'question-')"})},
             {key:"suffix",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-suffix",{choices:["user-name","user-nickname","user-id","random-number","random-hex","counter-dynamic","counter-fixed"],cliDisplayName:"Suffix",cliDisplayDescription:"The suffix mode to use. The number/text will be appended after the prefix."})},
             
             {key:"category",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-category","category",true,[],{cliDisplayName:"Category",cliDisplayDescription:"The category the ticket will be created in. Leave empty for no category."})},
             {key:"closedCategory",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-closed-category","category",true,[],{cliDisplayName:"Closed Category",cliDisplayDescription:"An additional category where the ticket will be moved to when closed."})},
             {key:"backupCategory",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-backup-category","category",true,[],{cliDisplayName:"Backup Category",cliDisplayDescription:"An additional category where the ticket will be created in when the primary category is full (50 channels)."})},
+            {key:"overflowCategories",optional:true,checker:new api.ODCheckerArrayStructure("opendiscord:ticket-channel-overflow-categories",{allowedTypes:["string"],cliDisplayPropertyName:"overflow category",propertyChecker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-overflow-category","category",true,[],{cliDisplayName:"Overflow Category",cliDisplayDescription:"An ordered overflow category to try when the primary category is unavailable or full."}),cliDisplayName:"Overflow Categories",cliDisplayDescription:"Ordered categories to try after the primary ticket category."})},
             {key:"claimedCategory",checker:new api.ODCheckerArrayStructure("opendiscord:ticket-channel-claimed-category",{allowDoubles:false,allowedTypes:["object"],cliDisplayPropertyName:"claim category",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:ticket-channel-claimed-category",{children:[
                 {key:"user",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-claimed-user","user",false,[],{cliDisplayName:"User",cliDisplayDescription:"A discord user ID of the ticket claimer."})},
                 {key:"category",checker:new api.ODCheckerCustomStructure_DiscordId("opendiscord:ticket-channel-claimed-category","category",false,[],{cliDisplayName:"Category",cliDisplayDescription:"A discord category ID to move the ticket to."})}
             ],cliDisplayName:"Claimed Category",cliDisplayDescription:"A collection of a user ID and a category ID. The ticket will be moved to the category when this user claims the ticket."}),cliDisplayName:"Claimed Categories",cliDisplayDescription:"Add categories to move the ticket to when a user claims a ticket."})},
             {key:"topic",checker:new api.ODCheckerStringStructure("opendiscord:ticket-channel-topic",{cliDisplayName:"Channel Topic",cliDisplayDescription:"The topic text of the ticket channel. Visible in the discord client when general.json 'channelTopic'.'showOptionTopic' is enabled."})},
-        ],cliDisplayName:"Channel",cliDisplayDescription:"Manage all settings related to the ticket channel and categories."})},
+        ],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+            const lt = checker.locationTraceDeref(locationTrace)
+            if (!value || typeof value != "object") return false
+
+            if (value["transportMode"] == "private_thread"){
+                if (typeof value["threadParentChannel"] != "string" || value["threadParentChannel"].trim().length < 1){
+                    checker.createMessage("opendiscord:ticket-channel-thread-parent-required","error","Private-thread tickets require channel.threadParentChannel to resolve to a guild text channel.",lt,null,["threadParentChannel"],locationId,locationDocs)
+                    return false
+                }
+
+                const ignoredFields = ["category","backupCategory","overflowCategories","closedCategory","claimedCategory"].filter((key) => {
+                    const field = value[key]
+                    if (Array.isArray(field)) return field.length > 0
+                    return typeof field == "string" && field.trim().length > 0
+                })
+                if (ignoredFields.length > 0){
+                    checker.createMessage("opendiscord:ticket-channel-thread-ignores-category-routing","warning","Private-thread tickets ignore category, backupCategory, overflowCategories, closedCategory, and claimedCategory routing fields.",lt,null,ignoredFields,locationId,locationDocs)
+                }
+            }else{
+                const primaryCategory = typeof value["category"] == "string" ? value["category"].trim() : ""
+                const backupCategory = typeof value["backupCategory"] == "string" ? value["backupCategory"].trim() : ""
+                const overflowCategories = Array.isArray(value["overflowCategories"])
+                    ? value["overflowCategories"].filter((entry): entry is string => typeof entry == "string").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+                    : backupCategory ? [backupCategory] : []
+                const claimedCategories = Array.isArray(value["claimedCategory"])
+                    ? value["claimedCategory"].map((entry) => {
+                        const category = entry && typeof entry == "object" ? (entry as Record<string,unknown>)["category"] : null
+                        return typeof category == "string" ? category.trim() : ""
+                    }).filter((entry) => entry.length > 0)
+                    : []
+                if (primaryCategory && overflowCategories.length == 0){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-missing","warning","Channel ticket options with a primary category should configure at least one overflow category for scale headroom.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                const duplicates = overflowCategories.filter((entry,index) => overflowCategories.indexOf(entry) != index)
+                if (duplicates.length > 0){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-duplicate","warning","Duplicate overflow category entries are ignored after their first occurrence.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                if (primaryCategory && overflowCategories.includes(primaryCategory)){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-primary-repeat","warning","Overflow categories must not repeat the primary category; repeated primary entries are ignored for routing.",lt,null,["overflowCategories"],locationId,locationDocs)
+                }
+                const closedCategory = typeof value["closedCategory"] == "string" ? value["closedCategory"].trim() : ""
+                if (closedCategory && overflowCategories.includes(closedCategory)){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-closed-collision","warning","Overflow categories that match the closed category are invalid for open routing.",lt,null,["overflowCategories","closedCategory"],locationId,locationDocs)
+                }
+                if (overflowCategories.some((entry) => claimedCategories.includes(entry))){
+                    checker.createMessage("opendiscord:ticket-channel-overflow-claimed-collision","warning","Overflow categories that match claimed-category mappings are invalid for open routing.",lt,null,["overflowCategories","claimedCategory"],locationId,locationDocs)
+                }
+            }
+
+            return true
+        },cliDisplayName:"Channel",cliDisplayDescription:"Manage all settings related to the ticket channel and categories."})},
+
+        //ROUTING
+        {key:"routing",optional:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-routing",{children:[
+            {key:"supportTeamId",checker:new api.ODCheckerStringStructure("opendiscord:ticket-routing-support-team",{cliDisplayName:"Support Team ID",cliDisplayDescription:"The support team that owns this ticket option. Leave empty for legacy role-only routing."})},
+            {key:"escalationTargetOptionIds",checker:new api.ODCheckerCustomStructure_UniqueIdArray("opendiscord:ticket-routing-escalation-targets","openticket","option-ids","option-escalation-targets",{allowDoubles:false,cliDisplayPropertyName:"target option",cliDisplayName:"Escalation Targets",cliDisplayDescription:"Ticket option IDs this option can escalate into."},{cliDisplayName:"Escalation Target",cliDisplayDescription:"An existing ticket option ID."})},
+        ],cliDisplayName:"Routing",cliDisplayDescription:"Manage support-team ownership and route-aware escalation targets."})},
+
+        //WORKFLOW
+        {key:"workflow",optional:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow",{children:[
+            {key:"closeRequest",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow-close-request",{children:[
+                {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-close-request-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Close Requests",cliDisplayDescription:"Allow current ticket creators to request closure when direct close is not available."})},
+            ],cliDisplayName:"Close Request",cliDisplayDescription:"Configure creator-initiated close requests."})},
+            {key:"awaitingUser",checker:new api.ODCheckerObjectStructure("opendiscord:ticket-workflow-awaiting-user",{children:[
+                {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Awaiting User",cliDisplayDescription:"Allow staff to mark this ticket as waiting on the current creator."})},
+                {key:"reminderEnabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-reminder-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Reminder",cliDisplayDescription:"Send one reminder during each waiting cycle."})},
+                {key:"reminderHours",checker:new api.ODCheckerNumberStructure("opendiscord:ticket-workflow-awaiting-user-reminder-hours",{zeroAllowed:false,negativeAllowed:false,floatAllowed:true,min:1,max:8544,cliInitDefaultValue:24,cliDisplayName:"Reminder Hours",cliDisplayDescription:"The amount of hours before sending the awaiting-user reminder."})},
+                {key:"autoCloseEnabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ticket-workflow-awaiting-user-autoclose-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enable Timeout Close",cliDisplayDescription:"Close the ticket if the current creator does not respond in time."})},
+                {key:"autoCloseHours",checker:new api.ODCheckerNumberStructure("opendiscord:ticket-workflow-awaiting-user-autoclose-hours",{zeroAllowed:false,negativeAllowed:false,floatAllowed:true,min:1,max:8544,cliInitDefaultValue:72,cliDisplayName:"Timeout Close Hours",cliDisplayDescription:"The amount of hours before awaiting-user timeout closes the ticket."})},
+            ],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+                const lt = checker.locationTraceDeref(locationTrace)
+                if (!value || typeof value != "object") return false
+                const reminderEnabled = value["reminderEnabled"] === true
+                const autoCloseEnabled = value["autoCloseEnabled"] === true
+                const reminderHours = Number(value["reminderHours"])
+                const autoCloseHours = Number(value["autoCloseHours"])
+                if (reminderEnabled && autoCloseEnabled && Number.isFinite(reminderHours) && Number.isFinite(autoCloseHours) && autoCloseHours <= reminderHours){
+                    checker.createMessage("opendiscord:ticket-workflow-awaiting-user-autoclose-after-reminder","error","Awaiting-user autoCloseHours must be greater than reminderHours when both reminder and timeout close are enabled.",lt,null,["autoCloseHours","reminderHours"],locationId,locationDocs)
+                    return false
+                }
+                return true
+            },cliDisplayName:"Awaiting User",cliDisplayDescription:"Configure staff-controlled waiting, reminders, and timeout closeout."})},
+        ],cliDisplayName:"Workflow",cliDisplayDescription:"Manage creator close requests and awaiting-user state for this ticket option."})},
 
         //DM MESSAGE
         {key:"dmMessage",checker:new api.ODCheckerEnabledObjectStructure("opendiscord:ticket-dm-message",{property:"enabled",enabledValue:true,checker:new api.ODCheckerObjectStructure("opendiscord:ticket-dm-message",{children:[
@@ -517,6 +614,85 @@ export const defaultOptionsStructure = new api.ODCheckerArrayStructure("opendisc
         {key:"addOnMemberJoin",checker:new api.ODCheckerBooleanStructure("opendiscord:role-add-on-join",{cliDisplayName:"Add On Member Join",cliDisplayDescription:"Automatically add these roles to a user when joining the server."})},
     ],cliDisplayName:"Reaction Role Option",cliDisplayDescription:"Manage all settings of this reaction role option."})},
 ],cliDisplayName:"Option",cliDisplayDescription:"Manage an option of one of the 3 types: ticket, website, role."}),cliDisplayName:"Options",cliDisplayDescription:"A list of all options in the bot. Here you can add, modify & remove ticket types, website buttons & reaction roles!"})
+
+export const defaultSupportTeamsStructure = new api.ODCheckerArrayStructure("opendiscord:support-teams",{allowedTypes:["object"],cliDisplayPropertyName:"support team",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:support-team",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","assignmentStrategy"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:support-team-id","openticket","support-team-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:64,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this support team."})},
+    {key:"name",checker:new api.ODCheckerStringStructure("opendiscord:support-team-name",{minLength:1,maxLength:80,cliDisplayName:"Name",cliDisplayDescription:"The human-readable name of this support team."})},
+    {key:"roleIds",checker:new api.ODCheckerCustomStructure_DiscordIdArray("opendiscord:support-team-role-ids","role",[],{allowDoubles:false,minLength:1,cliDisplayPropertyName:"team role",cliDisplayName:"Team Roles",cliDisplayDescription:"Discord role IDs that make a guild member eligible for this support team."},{cliDisplayName:"Team Role",cliDisplayDescription:"A Discord role ID that belongs to this support team."})},
+    {key:"assignmentStrategy",checker:new api.ODCheckerStringStructure("opendiscord:support-team-assignment-strategy",{choices:["manual","round_robin"],cliDisplayName:"Assignment Strategy",cliDisplayDescription:"Manual leaves tickets unassigned; round_robin assigns the next eligible non-bot member."})},
+],cliDisplayName:"Support Team",cliDisplayDescription:"Support-team ownership, role membership, and assignment strategy."})})
+
+export const defaultIntegrationProfilesStructure = new api.ODCheckerArrayStructure("opendiscord:integration-profiles",{allowedTypes:["object"],cliDisplayPropertyName:"integration profile",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:integration-profile",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","providerId"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:integration-profile-id","openticket","integration-profile-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this integration profile."})},
+    {key:"providerId",checker:new api.ODCheckerStringStructure("opendiscord:integration-profile-provider-id",{minLength:1,maxLength:128,cliDisplayName:"Provider ID",cliDisplayDescription:"The registered Open Ticket integration provider id."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:integration-profile-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this integration profile."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:integration-profile-enabled",{cliInitDefaultValue:true,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this integration profile."})},
+    {key:"settings",checker:new api.ODCheckerObjectStructure("opendiscord:integration-profile-settings",{children:[],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+        const lt = checker.locationTraceDeref(locationTrace)
+        if (!value || typeof value != "object" || Array.isArray(value)){
+            checker.createMessage("opendiscord:integration-profile-settings-object","error","Integration profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
+            return false
+        }
+        return true
+    },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned profile settings."})},
+],cliDisplayName:"Integration Profile",cliDisplayDescription:"A generic integration provider profile that ticket options can bind to."})})
+
+const AI_ASSIST_SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
+
+function findSecretShapedSettingKey(value: unknown, path: string[] = []): string | null {
+    if (value == null || typeof value != "object") return null
+    if (Array.isArray(value)){
+        for (let index = 0; index < value.length; index++){
+            const found = findSecretShapedSettingKey(value[index],[...path,String(index)])
+            if (found) return found
+        }
+        return null
+    }
+
+    for (const [key,nestedValue] of Object.entries(value as Record<string,unknown>)){
+        const nextPath = [...path,key]
+        if (AI_ASSIST_SECRET_SHAPED_KEY_REGEX.test(key)) return nextPath.join(".")
+        const found = findSecretShapedSettingKey(nestedValue,nextPath)
+        if (found) return found
+    }
+    return null
+}
+
+export const defaultAiAssistProfilesStructure = new api.ODCheckerArrayStructure("opendiscord:ai-assist-profiles",{allowedTypes:["object"],cliDisplayPropertyName:"AI assist profile",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","providerId"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:ai-assist-profile-id","openticket","ai-assist-profile-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this AI assist profile."})},
+    {key:"providerId",checker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-provider-id",{minLength:1,maxLength:128,cliDisplayName:"Provider ID",cliDisplayDescription:"The registered Open Ticket AI assist provider id."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this AI assist profile."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-profile-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this AI assist profile."})},
+    {key:"knowledgeSourceIds",checker:new api.ODCheckerArrayStructure("opendiscord:ai-assist-profile-knowledge-sources",{allowDoubles:false,allowedTypes:["string"],cliDisplayPropertyName:"knowledge source id",propertyChecker:new api.ODCheckerStringStructure("opendiscord:ai-assist-profile-knowledge-source-id",{maxLength:128,cliDisplayName:"Knowledge Source ID",cliDisplayDescription:"A knowledge source id from knowledge-sources.json."}),cliDisplayName:"Knowledge Sources",cliDisplayDescription:"Knowledge source ids available to this profile."})},
+    {key:"context",checker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile-context",{children:[
+        {key:"maxRecentMessages",checker:new api.ODCheckerNumberStructure("opendiscord:ai-assist-context-max-messages",{min:10,max:100,negativeAllowed:false,floatAllowed:false,cliInitDefaultValue:40,cliDisplayName:"Max Recent Messages",cliDisplayDescription:"Maximum live ticket messages to include."})},
+        {key:"includeTicketMetadata",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-ticket-metadata",{cliInitDefaultValue:true,cliDisplayName:"Include Ticket Metadata",cliDisplayDescription:"Include non-secret ticket metadata."})},
+        {key:"includeParticipants",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-participants",{cliInitDefaultValue:true,cliDisplayName:"Include Participants",cliDisplayDescription:"Include current live ticket participants."})},
+        {key:"includeManagedFormSnapshot",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-managed-form",{cliInitDefaultValue:true,cliDisplayName:"Include Managed Form Snapshot",cliDisplayDescription:"Include current ticket-managed form answers when available."})},
+        {key:"includeBotMessages",checker:new api.ODCheckerBooleanStructure("opendiscord:ai-assist-context-bots",{cliInitDefaultValue:false,cliDisplayName:"Include Bot Messages",cliDisplayDescription:"Include bot-authored live ticket messages."})},
+    ],cliDisplayName:"Context",cliDisplayDescription:"Live ticket context available to the AI assist provider."})},
+    {key:"settings",checker:new api.ODCheckerObjectStructure("opendiscord:ai-assist-profile-settings",{children:[],custom:(checker,value,locationTrace,locationId,locationDocs) => {
+        const lt = checker.locationTraceDeref(locationTrace)
+        if (!value || typeof value != "object" || Array.isArray(value)){
+            checker.createMessage("opendiscord:ai-assist-profile-settings-object","error","AI assist profile settings must be an object.",lt,null,["settings"],locationId,locationDocs)
+            return false
+        }
+        const secretKey = findSecretShapedSettingKey(value)
+        if (secretKey){
+            checker.createMessage("opendiscord:ai-assist-profile-settings-secret","error","AI assist profile settings must not contain secret-shaped keys. Use host environment variables for provider secrets.",lt,null,[secretKey],locationId,locationDocs)
+            return false
+        }
+        return true
+    },cliDisplayName:"Settings",cliDisplayDescription:"Provider-owned non-secret profile settings."})},
+],cliDisplayName:"AI Assist Profile",cliDisplayDescription:"An advisory AI assist provider profile that ticket options can bind to."})})
+
+export const defaultKnowledgeSourcesStructure = new api.ODCheckerArrayStructure("opendiscord:knowledge-sources",{allowedTypes:["object"],cliDisplayPropertyName:"knowledge source",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:knowledge-source",{cliDisplayKeyInParentArray:"label",cliDisplayAdditionalKeysInParentArray:["id","kind"],children:[
+    {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:knowledge-source-id","openticket","knowledge-source-ids",{regex:/^[A-Za-z0-9_-]+$/,minLength:1,maxLength:128,cliDisplayName:"Id",cliDisplayDescription:"The unique id of this knowledge source."})},
+    {key:"label",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-label",{minLength:1,maxLength:128,cliDisplayName:"Label",cliDisplayDescription:"The human-readable label for this knowledge source."})},
+    {key:"kind",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-kind",{choices:["markdown-file","faq-json"],cliDisplayName:"Kind",cliDisplayDescription:"The local knowledge file kind."})},
+    {key:"path",checker:new api.ODCheckerStringStructure("opendiscord:knowledge-source-path",{minLength:1,maxLength:512,cliDisplayName:"Path",cliDisplayDescription:"A relative local path under knowledge/ or .docs/."})},
+    {key:"enabled",checker:new api.ODCheckerBooleanStructure("opendiscord:knowledge-source-enabled",{cliInitDefaultValue:false,cliDisplayName:"Enabled",cliDisplayDescription:"Enable this knowledge source."})},
+],cliDisplayName:"Knowledge Source",cliDisplayDescription:"A local file source under knowledge/ or .docs/ available to AI assist."})})
 
 export const defaultPanelsStructure = new api.ODCheckerArrayStructure("opendiscord:panels",{allowedTypes:["object"],cliDisplayPropertyName:"panel",propertyChecker:new api.ODCheckerObjectStructure("opendiscord:panels",{cliDisplayKeyInParentArray:"name",cliDisplayAdditionalKeysInParentArray:["id","dropdown"],children:[
     {key:"id",checker:new api.ODCheckerCustomStructure_UniqueId("opendiscord:panel-id","openticket","panel-ids",{regex:/^[A-Za-z0-9-éèçàêâôûî]+$/,minLength:3,maxLength:40,cliDisplayName:"Id",cliDisplayDescription:"The id of this panel. Used in the /panel command."})},
@@ -697,4 +873,424 @@ export const defaultDropdownOptionsFunction = (manager:api.ODCheckerManager, fun
     })
 
     return {valid:(final.length < 1),messages:final}
+}
+
+function normalizeRoutingSupportTeamId(option:any): string {
+    return typeof option?.routing?.supportTeamId == "string" ? option.routing.supportTeamId.trim() : ""
+}
+
+function normalizeRoutingEscalationTargets(option:any): string[] {
+    if (!Array.isArray(option?.routing?.escalationTargetOptionIds)) return []
+    return Array.from(new Set(
+        option.routing.escalationTargetOptionIds
+            .map((value:any) => String(value || "").trim())
+            .filter((value:string) => value.length > 0)
+    ))
+}
+
+function normalizeRoutingTransportMode(option:any): "channel_text"|"private_thread" {
+    return option?.channel?.transportMode == "private_thread" ? "private_thread" : "channel_text"
+}
+
+function normalizeRoutingThreadParent(option:any): string {
+    return typeof option?.channel?.threadParentChannel == "string" ? option.channel.threadParentChannel.trim() : ""
+}
+
+export const defaultSupportTeamRoutingFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    const supportTeamsConfig = opendiscord.configs.get("opendiscord:support-teams")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!supportTeamsConfig || !optionConfig || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const supportTeamIds = new Set(
+        (Array.isArray(supportTeamsConfig.data) ? supportTeamsConfig.data : [])
+            .map((team:any) => typeof team?.id == "string" ? team.id.trim() : "")
+            .filter(Boolean)
+    )
+    const ticketOptions = optionConfig.data.filter((option:any) => option?.type == "ticket")
+    const ticketOptionById = new Map(ticketOptions.map((option:any) => [String(option.id || ""),option]))
+    const final: api.ODCheckerMessage[] = []
+
+    ticketOptions.forEach((option:any,index:number) => {
+        const supportTeamId = normalizeRoutingSupportTeamId(option)
+        if (supportTeamId && !supportTeamIds.has(supportTeamId)){
+            final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-invalid-support-team",optionConfig.file,"error",`Ticket option "${option.id}" references unknown support team "${supportTeamId}".`,[index,"routing","supportTeamId"],null,[`"${supportTeamId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+        }
+
+        normalizeRoutingEscalationTargets(option).forEach((targetId) => {
+            const target = ticketOptionById.get(targetId)
+            if (!target){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-invalid-escalation-target",optionConfig.file,"error",`Ticket option "${option.id}" escalation target "${targetId}" must be an existing ticket option.`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+                return
+            }
+
+            const targetSupportTeamId = normalizeRoutingSupportTeamId(target)
+            if (!targetSupportTeamId){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-missing-team",optionConfig.file,"error",`Escalation target "${targetId}" must have a non-empty routing.supportTeamId.`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+
+            const sourceMode = normalizeRoutingTransportMode(option)
+            const targetMode = normalizeRoutingTransportMode(target)
+            if (sourceMode != targetMode){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-transport-mismatch",optionConfig.file,"error",`Escalation target "${targetId}" must use the same transportMode as "${option.id}".`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+
+            if (sourceMode == "private_thread" && normalizeRoutingThreadParent(option) != normalizeRoutingThreadParent(target)){
+                final.push(functions.createMessage("opendiscord:options","opendiscord:ticket-routing-target-thread-parent-mismatch",optionConfig.file,"error",`Private-thread escalation target "${targetId}" must use the same threadParentChannel as "${option.id}".`,[index,"routing","escalationTargetOptionIds"],null,[`"${targetId}"`],new api.ODId("opendiscord:support-team-routing"),null))
+            }
+        })
+    })
+
+    return {valid:(final.length < 1),messages:final}
+}
+
+function normalizeIntegrationProfileId(option:any): string {
+    return typeof option?.integrationProfileId == "string" ? option.integrationProfileId.trim() : ""
+}
+
+function normalizeAiAssistProfileId(option:any): string {
+    return typeof option?.aiAssistProfileId == "string" ? option.aiAssistProfileId.trim() : ""
+}
+
+function collectIntegrationProfileReferences(options:any[]): Map<string,string[]> {
+    const references = new Map<string,string[]>()
+    options
+        .filter((option:any) => option?.type == "ticket")
+        .forEach((option:any) => {
+            const profileId = normalizeIntegrationProfileId(option)
+            if (!profileId) return
+            const optionId = typeof option?.id == "string" ? option.id : ""
+            if (!references.has(profileId)) references.set(profileId,[])
+            references.get(profileId)?.push(optionId)
+        })
+    return references
+}
+
+function collectAiAssistProfileReferences(options:any[]): Map<string,string[]> {
+    const references = new Map<string,string[]>()
+    options
+        .filter((option:any) => option?.type == "ticket")
+        .forEach((option:any) => {
+            const profileId = normalizeAiAssistProfileId(option)
+            if (!profileId) return
+            const optionId = typeof option?.id == "string" ? option.id : ""
+            if (!references.has(profileId)) references.set(profileId,[])
+            references.get(profileId)?.push(optionId)
+        })
+    return references
+}
+
+function normalizeAiAssistProfile(profile:any): api.TicketAiAssistProfile | null {
+    const profileId = typeof profile?.id == "string" ? profile.id.trim() : ""
+    const providerId = typeof profile?.providerId == "string" ? profile.providerId.trim() : ""
+    if (!profileId || !providerId) return null
+    const context = profile?.context && typeof profile.context == "object" && !Array.isArray(profile.context) ? profile.context : {}
+    return {
+        id:profileId,
+        providerId,
+        label:typeof profile.label == "string" && profile.label.trim().length > 0 ? profile.label.trim() : profileId,
+        enabled:profile.enabled === true,
+        knowledgeSourceIds:Array.isArray(profile.knowledgeSourceIds) ? profile.knowledgeSourceIds.map((value:any) => String(value || "").trim()).filter(Boolean) : [],
+        context:{
+            maxRecentMessages:Number.isFinite(Number(context.maxRecentMessages)) ? Math.min(100,Math.max(10,Number(context.maxRecentMessages))) : 40,
+            includeTicketMetadata:context.includeTicketMetadata !== false,
+            includeParticipants:context.includeParticipants !== false,
+            includeManagedFormSnapshot:context.includeManagedFormSnapshot !== false,
+            includeBotMessages:context.includeBotMessages === true
+        },
+        settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {}
+    }
+}
+
+function normalizeKnowledgeSource(source:any): api.TicketAiAssistKnowledgeSource | null {
+    const sourceId = typeof source?.id == "string" ? source.id.trim() : ""
+    const kind = source?.kind == "markdown-file" || source?.kind == "faq-json" ? source.kind : null
+    if (!sourceId || !kind) return null
+    return {
+        id:sourceId,
+        label:typeof source.label == "string" && source.label.trim().length > 0 ? source.label.trim() : sourceId,
+        kind,
+        path:typeof source.path == "string" ? source.path.trim() : "",
+        enabled:source.enabled === true
+    }
+}
+
+function validateKnowledgeSourceLocalPath(sourcePath:string): string | null {
+    const normalized = sourcePath.replace(/\\/g,"/").trim()
+    if (!normalized) return "Knowledge source paths may not be blank."
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return "Knowledge sources must be local files, not URLs."
+    if (path.isAbsolute(normalized)) return "Knowledge source paths must be relative."
+    if (normalized.split("/").includes("..")) return "Knowledge source paths may not contain '..'."
+    if (!(normalized.startsWith("knowledge/") || normalized.startsWith(".docs/"))) return "Knowledge source paths must stay under knowledge/ or .docs/."
+
+    const projectRoot = process.cwd()
+    const absolutePath = path.resolve(projectRoot, normalized)
+    const allowedRoots = [path.resolve(projectRoot,"knowledge"), path.resolve(projectRoot,".docs")]
+    if (!allowedRoots.some((root) => absolutePath == root || absolutePath.startsWith(root + path.sep))) return "Knowledge source paths must stay under knowledge/ or .docs/."
+    if (!fs.existsSync(absolutePath)) return null
+
+    const stats = fs.lstatSync(absolutePath)
+    if (stats.isSymbolicLink()) return "Knowledge source files may not be symbolic links."
+    const realPath = fs.realpathSync(absolutePath)
+    const realAllowedRoots = allowedRoots.map((root) => fs.existsSync(root) ? fs.realpathSync(root) : root)
+    if (!realAllowedRoots.some((root) => realPath == root || realPath.startsWith(root + path.sep))) return "Knowledge source files may not escape knowledge/ or .docs/."
+    return null
+}
+
+function validateFaqKnowledgeRecord(record:any, index:number): string | null {
+    if (!record || typeof record != "object" || Array.isArray(record)) return `FAQ knowledge entry ${index + 1} must be an object.`
+    if (typeof record.id != "string" || record.id.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include an id.`
+    if (typeof record.question != "string" || record.question.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include a question.`
+    if (typeof record.answer != "string" || record.answer.trim().length < 1) return `FAQ knowledge entry ${index + 1} must include an answer.`
+    if (typeof record.aliases != "undefined" && (!Array.isArray(record.aliases) || record.aliases.some((alias:any) => typeof alias != "string"))) {
+        return `FAQ knowledge entry ${index + 1} aliases must be strings.`
+    }
+    return null
+}
+
+function validateKnowledgeSourceFileContent(source:api.TicketAiAssistKnowledgeSource): string | null {
+    if (!source.enabled || source.kind != "faq-json") return null
+    const normalized = source.path.replace(/\\/g,"/").trim()
+    const absolutePath = path.resolve(process.cwd(),normalized)
+    if (!fs.existsSync(absolutePath)) return null
+
+    let parsed:any
+    try {
+        parsed = JSON.parse(fs.readFileSync(absolutePath,"utf8"))
+    } catch {
+        return `FAQ knowledge source "${source.id}" must contain valid JSON.`
+    }
+
+    if (!Array.isArray(parsed)) return `FAQ knowledge source "${source.id}" must contain an array of records.`
+    for (let index = 0; index < parsed.length; index += 1) {
+        const error = validateFaqKnowledgeRecord(parsed[index],index)
+        if (error) return error
+    }
+    return null
+}
+
+export const defaultIntegrationProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    void manager
+    const profileConfig = opendiscord.configs.get("opendiscord:integration-profiles")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!profileConfig || !optionConfig || !Array.isArray(profileConfig.data) || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const final: api.ODCheckerMessage[] = []
+    const profiles = profileConfig.data
+    const profileById = new Map(
+        profiles
+            .filter((profile:any) => typeof profile?.id == "string" && profile.id.trim().length > 0)
+            .map((profile:any) => [profile.id.trim(),profile])
+    )
+    const references = collectIntegrationProfileReferences(optionConfig.data)
+
+    optionConfig.data.forEach((option:any,index:number) => {
+        if (option?.type != "ticket") return
+        const profileId = normalizeIntegrationProfileId(option)
+        if (!profileId || profileById.has(profileId)) return
+        final.push(functions.createMessage(
+            "opendiscord:options",
+            "opendiscord:ticket-integration-profile-missing",
+            optionConfig.file,
+            "error",
+            `Ticket option "${option.id}" references unknown integration profile "${profileId}".`,
+            [index,"integrationProfileId"],
+            null,
+            [`"${profileId}"`],
+            new api.ODId("opendiscord:integration-profiles"),
+            null
+        ))
+    })
+
+    const runtimeApi = api.getTicketPlatformRuntimeApi()
+    profiles.forEach((profile:any,index:number) => {
+        const profileId = typeof profile?.id == "string" ? profile.id.trim() : ""
+        const providerId = typeof profile?.providerId == "string" ? profile.providerId.trim() : ""
+        if (!profileId || !providerId) return
+        const referencedByOptionIds = references.get(profileId) ?? []
+        const provider = runtimeApi?.getIntegrationProvider(providerId) ?? null
+        if (!provider){
+            final.push(functions.createMessage(
+                "opendiscord:integration-profiles",
+                "opendiscord:integration-profile-provider-missing",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                `Integration profile "${profileId}" references unavailable provider "${providerId}".`,
+                [index,"providerId"],
+                null,
+                [`"${providerId}"`],
+                new api.ODId("opendiscord:integration-profiles"),
+                null
+            ))
+            return
+        }
+
+        if (typeof provider.validateProfileSettings != "function") return
+        try {
+            provider.validateProfileSettings({
+                profile:{
+                    id:profileId,
+                    providerId,
+                    label:typeof profile.label == "string" && profile.label.trim().length > 0 ? profile.label.trim() : profileId,
+                    enabled:profile.enabled === true,
+                    settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {}
+                },
+                settings:profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings : {},
+                referencedByOptionIds
+            })
+        } catch (error) {
+            final.push(functions.createMessage(
+                "opendiscord:integration-profiles",
+                "opendiscord:integration-profile-settings-invalid",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                error instanceof Error ? error.message : `Integration profile "${profileId}" settings are invalid.`,
+                [index,"settings"],
+                null,
+                [`"${profileId}"`],
+                new api.ODId("opendiscord:integration-profiles"),
+                null
+            ))
+        }
+    })
+
+    return {valid:(final.every((message) => message.type != "error")),messages:final}
+}
+
+export const defaultAiAssistProfilesFunction = (manager:api.ODCheckerManager, functions:api.ODCheckerFunctionManager): api.ODCheckerResult => {
+    void manager
+    const profileConfig = opendiscord.configs.get("opendiscord:ai-assist-profiles")
+    const knowledgeConfig = opendiscord.configs.get("opendiscord:knowledge-sources")
+    const optionConfig = opendiscord.configs.get("opendiscord:options")
+    if (!profileConfig || !knowledgeConfig || !optionConfig || !Array.isArray(profileConfig.data) || !Array.isArray(knowledgeConfig.data) || !Array.isArray(optionConfig.data)) return {valid:true,messages:[]}
+
+    const final: api.ODCheckerMessage[] = []
+    const profiles = profileConfig.data
+    const profileById = new Map(
+        profiles
+            .filter((profile:any) => typeof profile?.id == "string" && profile.id.trim().length > 0)
+            .map((profile:any) => [profile.id.trim(),profile])
+    )
+    const knowledgeSources = knowledgeConfig.data.map(normalizeKnowledgeSource).filter(Boolean) as api.TicketAiAssistKnowledgeSource[]
+    const knowledgeById = new Map(knowledgeSources.map((source) => [source.id,source]))
+    const references = collectAiAssistProfileReferences(optionConfig.data)
+
+    optionConfig.data.forEach((option:any,index:number) => {
+        if (option?.type != "ticket") return
+        const profileId = normalizeAiAssistProfileId(option)
+        if (!profileId || profileById.has(profileId)) return
+        final.push(functions.createMessage(
+            "opendiscord:options",
+            "opendiscord:ticket-ai-assist-profile-missing",
+            optionConfig.file,
+            "error",
+            `Ticket option "${option.id}" references unknown AI assist profile "${profileId}".`,
+            [index,"aiAssistProfileId"],
+            null,
+            [`"${profileId}"`],
+            new api.ODId("opendiscord:ai-assist-profiles"),
+            null
+        ))
+    })
+
+    knowledgeConfig.data.forEach((source:any,index:number) => {
+        const normalized = normalizeKnowledgeSource(source)
+        if (!normalized) return
+        const error = validateKnowledgeSourceLocalPath(normalized.path)
+        if (error) {
+            final.push(functions.createMessage(
+                "opendiscord:knowledge-sources",
+                "opendiscord:knowledge-source-path-invalid",
+                knowledgeConfig.file,
+                "error",
+                error,
+                [index,"path"],
+                null,
+                [`"${normalized.path}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+            return
+        }
+
+        const contentError = validateKnowledgeSourceFileContent(normalized)
+        if (!contentError) return
+        final.push(functions.createMessage(
+            "opendiscord:knowledge-sources",
+            "opendiscord:knowledge-source-content-invalid",
+            knowledgeConfig.file,
+            "error",
+            contentError,
+            [index,"path"],
+            null,
+            [`"${normalized.path}"`],
+            new api.ODId("opendiscord:ai-assist-profiles"),
+            null
+        ))
+    })
+
+    const runtimeApi = api.getTicketPlatformRuntimeApi()
+    profiles.forEach((profile:any,index:number) => {
+        const normalizedProfile = normalizeAiAssistProfile(profile)
+        if (!normalizedProfile) return
+        const referencedByOptionIds = references.get(normalizedProfile.id) ?? []
+        const referencedKnowledgeSources = normalizedProfile.knowledgeSourceIds.map((sourceId) => knowledgeById.get(sourceId)).filter(Boolean) as api.TicketAiAssistKnowledgeSource[]
+
+        normalizedProfile.knowledgeSourceIds.forEach((sourceId) => {
+            if (knowledgeById.has(sourceId)) return
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-knowledge-source-missing",
+                profileConfig.file,
+                "error",
+                `AI assist profile "${normalizedProfile.id}" references unknown knowledge source "${sourceId}".`,
+                [index,"knowledgeSourceIds"],
+                null,
+                [`"${sourceId}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+        })
+
+        const provider = runtimeApi?.getAiAssistProvider(normalizedProfile.providerId) ?? null
+        if (!provider){
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-profile-provider-missing",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                `AI assist profile "${normalizedProfile.id}" references unavailable provider "${normalizedProfile.providerId}".`,
+                [index,"providerId"],
+                null,
+                [`"${normalizedProfile.providerId}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+            return
+        }
+
+        if (typeof provider.validateProfileSettings != "function") return
+        try {
+            provider.validateProfileSettings({
+                profile:normalizedProfile,
+                settings:normalizedProfile.settings,
+                referencedByOptionIds,
+                knowledgeSources:referencedKnowledgeSources
+            })
+        } catch (error) {
+            final.push(functions.createMessage(
+                "opendiscord:ai-assist-profiles",
+                "opendiscord:ai-assist-profile-settings-invalid",
+                profileConfig.file,
+                referencedByOptionIds.length > 0 ? "error" : "warning",
+                error instanceof Error ? error.message : `AI assist profile "${normalizedProfile.id}" settings are invalid.`,
+                [index,"settings"],
+                null,
+                [`"${normalizedProfile.id}"`],
+                new api.ODId("opendiscord:ai-assist-profiles"),
+                null
+            ))
+        }
+    })
+
+    return {valid:(final.every((message) => message.type != "error")),messages:final}
 }

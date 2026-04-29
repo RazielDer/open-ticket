@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <%- include('partials/head', { pageTitle }) %>
+</head>
+<body class="dashboard-body" data-base-path="<%= basePath %>" data-csrf-token="<%= csrfToken %>" style="--brand-primary:<%= brand.primaryColor %>;--brand-accent:<%= brand.accentColor %>;--brand-background:<%= brand.backgroundColor %>;--brand-surface:<%= brand.surfaceColor %>;--brand-text:<%= brand.textColor %>;">
+  <div class="app-shell">
+    <%- include('partials/header', {
+      headerClass: 'editor-workspace-header-no-logo',
+      headerShowLogo: false,
+      headerActions: [{ href: assetPath('admin'), label: t('common.admin'), variant: 'secondary' }],
+      logoutAction: assetPath('logout')
+    }) %>
+
+    <main class="page-wrap editor-workspace-page editor-workspace-support-teams-page">
+      <% if (saved) { %>
+        <div class="inline-alert success"><%= t("common.statusSaved") %></div>
+      <% } %>
+
+      <%- include('partials/editor-workspace-header', {
+        eyebrow: '',
+        title: t('supportTeams.title'),
+        subtitle: t('supportTeams.subtitle'),
+        actions: [],
+        stats: [
+          { label: t('common.file'), value: advancedTools.fileName },
+          { label: t('supportTeams.workspace.savedTeamsLabel'), value: String(supportTeams.length) }
+        ]
+      }) %>
+
+      <div class="editor-workspace-grid">
+        <aside class="editor-workspace-sidebar">
+          <section class="section-card support-teams-inventory-shell">
+            <div class="section-heading editor-toolbar">
+              <div>
+                <h3><%= t("supportTeams.workspace.inventoryTitle") %></h3>
+              </div>
+              <div class="card-actions">
+                <button class="btn primary" type="button" id="createSupportTeamButton"><%= t("supportTeams.workspace.newButton") %></button>
+              </div>
+            </div>
+            <div class="editor-outline-list" id="supportTeamInventory">
+              <% if (supportTeams.length) { %>
+                <% supportTeams.forEach((team, index) => { %>
+                  <button class="editor-outline-link" type="button" data-support-team-select data-index="<%= index %>">
+                    <span>
+                      <strong><%= team.name %></strong>
+                      <span class="config-file"><%= team.assignmentStrategy %></span>
+                    </span>
+                    <span class="config-file"><%= team.id %></span>
+                  </button>
+                <% }) %>
+              <% } else { %>
+                <div class="empty-panel editor-sidebar-empty">
+                  <h3><%= t("supportTeams.emptyTitle") %></h3>
+                  <p><%= t("supportTeams.emptyBody") %></p>
+                </div>
+              <% } %>
+            </div>
+          </section>
+
+          <%- include('partials/editor-advanced-tools', { advancedTools }) %>
+        </aside>
+
+        <div class="editor-workspace-main">
+          <form id="supportTeamForm" class="editor-workspace-stage">
+            <input type="hidden" id="supportTeamEditIndex" value="-1">
+            <input type="hidden" id="supportTeamOriginalId" value="">
+
+            <section class="section-card">
+              <div class="section-heading editor-toolbar">
+                <div>
+                  <h3 id="supportTeamWorkspaceTitle"><%= t("supportTeams.workspace.newDraftTitle") %></h3>
+                </div>
+                <div class="card-actions editor-toolbar-actions">
+                  <button class="btn subtle" type="button" id="moveSupportTeamUpButton"><%= t("options.workspace.moveUp") %></button>
+                  <button class="btn subtle" type="button" id="moveSupportTeamDownButton"><%= t("options.workspace.moveDown") %></button>
+                  <button class="btn danger" type="button" id="deleteSupportTeamButton"><%= t("common.delete") %></button>
+                </div>
+              </div>
+
+              <div class="form-grid two-up">
+                <label>
+                  <span class="field-label"><%= t("supportTeams.fields.id") %></span>
+                  <input class="text-input" id="supportTeamId" type="text">
+                </label>
+                <label>
+                  <span class="field-label"><%= t("supportTeams.fields.name") %></span>
+                  <input class="text-input" id="supportTeamName" type="text">
+                </label>
+                <label>
+                  <span class="field-label"><%= t("supportTeams.fields.assignmentStrategy") %></span>
+                  <select class="select-input" id="supportTeamAssignmentStrategy">
+                    <% assignmentStrategies.forEach((value) => { %>
+                      <option value="<%= value %>"><%= value %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span class="field-label"><%= t("supportTeams.fields.roleIds") %></span>
+                  <textarea class="code-area compact" id="supportTeamRoleIds" spellcheck="false"></textarea>
+                  <span class="field-help"><%= t("supportTeams.fields.roleIdsHelp") %></span>
+                </label>
+              </div>
+            </section>
+
+            <section class="section-card">
+              <div class="section-heading editor-toolbar">
+                <div>
+                  <h3><%= t("supportTeams.workspace.referencingOptionsTitle") %></h3>
+                </div>
+                <div class="editor-card-meta">
+                  <span class="pill-tag" id="referencingOptionsCountPill">0</span>
+                </div>
+              </div>
+              <p class="editor-intro" id="referencingOptionsEmpty"><%= t("supportTeams.workspace.referencingOptionsEmpty") %></p>
+              <div class="pill-list" id="referencingOptionsList"></div>
+            </section>
+
+            <div class="section-card editor-savebar">
+              <div class="editor-savebar-copy">
+                <h3><%= t("supportTeams.workspace.saveTitle") %></h3>
+              </div>
+              <div class="card-actions sticky-actions editor-savebar-actions">
+                <button class="btn primary" type="submit"><%= t("common.save") %></button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <textarea id="support-teams-data" hidden><%= JSON.stringify(supportTeams) %></textarea>
+      <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
+      <textarea id="page-messages" hidden><%= messages %></textarea>
+    </main>
+
+    <%- include('partials/footer') %>
+  </div>
+
+  <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/config-support-teams.js') %>"></script>
+</body>
+</html>

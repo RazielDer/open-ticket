@@ -81,7 +81,7 @@
 
     const data = await response.json().catch(() => ({ success: false, error: `HTTP ${response.status}` }));
     if (!response.ok || data.success === false) {
-      throw new Error(data.error || `HTTP ${response.status}`);
+      throw new Error(data.error || data.result?.degradedReason || data.result?.message || `HTTP ${response.status}`);
     }
     return data;
   }

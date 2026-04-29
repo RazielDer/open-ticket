@@ -3,6 +3,16 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import {
+    TICKET_OPTION_THREAD_PARENT_CHANNEL_ID,
+    addPrivateThreadMembers,
+    buildTicketTransportMetadata,
+    getTicketOptionThreadParentChannel,
+    getTicketOptionTransportMode
+} from "./ticketTransport.js"
+import { buildTicketRoutingMetadata, getTicketOptionSupportTeamRoleIds, resolveTicketOpenCategoryRoute } from "./ticketRouting.js"
+import { getTicketOptionIntegrationProfileId } from "./ticketIntegration.js"
+import { getTicketOptionAiAssistProfileId } from "./ticketAiAssist.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
@@ -17,46 +27,21 @@ export const registerActions = async () => {
             await opendiscord.events.get("onTicketChannelCreation").emit([option,user])
 
             //get channel properties
+            const transportMode = getTicketOptionTransportMode(option)
+            const threadParentChannelId = getTicketOptionThreadParentChannel(option)
             const channelPrefix = option.get("opendiscord:channel-prefix").value
-            const channelCategory = option.get("opendiscord:channel-category").value
-            const channelBackupCategory = option.get("opendiscord:channel-category-backup").value
             const channelTopicText = option.get("opendiscord:channel-topic").value
             const channelSuffix = await opendiscord.options.suffix.getSuffixFromOption(option,user,guild)
             const channelName = channelPrefix+channelSuffix
 
             //handle category
             let category: string|null = null
-            let categoryMode: "backup"|"normal"|null = null
-            if (channelCategory != ""){
-                //category enabled
-                const normalCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelCategory)
-                if (!normalCategory){
-                    //default category was not found
-                    opendiscord.log("Ticket Creation Error: Unable to find category! #1","error",[
-                        {key:"categoryid",value:channelCategory},
-                        {key:"backup",value:"false"}
-                    ])
-                }else{
-                    //default category was found
-                    if (normalCategory.children.cache.size >= 50 && channelBackupCategory != ""){
-                        //use backup category
-                        const backupCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelBackupCategory)
-                        if (!backupCategory){
-                            //default category was not found
-                            opendiscord.log("Ticket Creation Error: Unable to find category! #2","error",[
-                                {key:"categoryid",value:channelBackupCategory},
-                                {key:"backup",value:"true"}
-                            ])
-                        }else{
-                            category = backupCategory.id
-                            categoryMode = "backup"
-                        }
-                    }else{
-                        //use default category
-                        category = normalCategory.id
-                        categoryMode = "normal"
-                    }
-                }
+            let categoryMode: "normal"|"overflow"|null = null
+            if (transportMode == "channel_text"){
+                const route = await resolveTicketOpenCategoryRoute({guild,option,logPrefix:"Ticket Creation"})
+                if (!route.ok) throw new api.ODSystemError(`Unable to create ticket! ${route.reason}`)
+                category = route.categoryId
+                categoryMode = route.categoryMode
             }
 
             //handle permissions
@@ -69,6 +54,7 @@ export const registerActions = async () => {
             const globalAdmins = opendiscord.configs.get("opendiscord:general").data.globalAdmins
             const optionAdmins = option.get("opendiscord:admins").value
             const readonlyAdmins = option.get("opendiscord:admins-readonly").value
+            const supportTeamRoleIds = getTicketOptionSupportTeamRoleIds(option)
 
             globalAdmins.forEach((admin) => {
                 permissions.push({
@@ -87,9 +73,20 @@ export const registerActions = async () => {
                     deny:[]
                 })
             })
+            supportTeamRoleIds.forEach((admin) => {
+                if (globalAdmins.includes(admin)) return
+                if (optionAdmins.includes(admin)) return
+                permissions.push({
+                    type:discord.OverwriteType.Role,
+                    id:admin,
+                    allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages","PinMessages","EmbedLinks"],
+                    deny:[]
+                })
+            })
             readonlyAdmins.forEach((admin) => {
                 if (globalAdmins.includes(admin)) return
                 if (optionAdmins.includes(admin)) return
+                if (supportTeamRoleIds.includes(admin)) return
                 permissions.push({
                     type:discord.OverwriteType.Role,
                     id:admin,
@@ -128,21 +125,53 @@ export const registerActions = async () => {
             if (generalConfig.data.system.channelTopic.showCreator) channelTopics.push("**"+lang.getTranslation("params.uppercase.creator")+":** "+discord.userMention(user.id))
             if (generalConfig.data.system.channelTopic.showParticipants) channelTopics.push("**"+lang.getTranslation("params.uppercase.participants")+":** "+participants.map((p) => (p.type == "user") ? discord.userMention(p.id) : discord.roleMention(p.id)).join(", "))
 
-            //create channel
-            const channel = await guild.channels.create({
-                type:discord.ChannelType.GuildText,
-                name:channelName,
-                nsfw:false,
-                topic:(channelTopics.length > 0) ? channelTopics.join(" • ") : undefined,
-                parent:category,
-                reason:"Ticket Created By "+user.displayName,
-                permissionOverwrites:permissions,
-                rateLimitPerUser:slowMode
-            })
+            //create channel/thread
+            let channel: discord.GuildTextBasedChannel
+            let transportParentChannelId: string|null = null
+            if (transportMode == "private_thread"){
+                if (!threadParentChannelId){
+                    throw new api.ODSystemError(`Unable to create private-thread ticket! Missing ${TICKET_OPTION_THREAD_PARENT_CHANNEL_ID}.`)
+                }
+
+                const parentChannel = await opendiscord.client.fetchGuildTextChannel(guild,threadParentChannelId)
+                if (!parentChannel){
+                    throw new api.ODSystemError("Unable to create private-thread ticket! The configured threadParentChannel does not resolve to a guild text channel.")
+                }
+
+                transportParentChannelId = parentChannel.id
+                const thread = await parentChannel.threads.create({
+                    type:discord.ChannelType.PrivateThread,
+                    name:channelName,
+                    invitable:false,
+                    reason:"Ticket Created By "+user.displayName,
+                    rateLimitPerUser:slowMode
+                }) as discord.PrivateThreadChannel
+
+                try{
+                    await thread.join().catch(() => null)
+                    await addPrivateThreadMembers(thread,[user.id,...participants.filter((participant) => participant.type == "user").map((participant) => participant.id)])
+                }catch(err){
+                    await thread.delete("Ticket private thread member seeding failed").catch(() => null)
+                    throw err
+                }
+                channel = thread
+            }else{
+                channel = await guild.channels.create({
+                    type:discord.ChannelType.GuildText,
+                    name:channelName,
+                    nsfw:false,
+                    topic:(channelTopics.length > 0) ? channelTopics.join(" • ") : undefined,
+                    parent:category,
+                    reason:"Ticket Created By "+user.displayName,
+                    permissionOverwrites:permissions,
+                    rateLimitPerUser:slowMode
+                })
+            }
 
             await opendiscord.events.get("afterTicketChannelCreated").emit([option,channel,user])
 
             //create ticket
+            const routingMetadata = await buildTicketRoutingMetadata(option,guild)
             const ticket = new api.ODTicket(channel.id,option,[
                 new api.ODTicketData("opendiscord:busy",false),
                 new api.ODTicketData("opendiscord:ticket-message",null),
@@ -167,8 +196,8 @@ export const registerActions = async () => {
                 new api.ODTicketData("opendiscord:pinned-on",null),
                 new api.ODTicketData("opendiscord:for-deletion",false),
 
-                new api.ODTicketData("opendiscord:category",category),
-                new api.ODTicketData("opendiscord:category-mode",categoryMode),
+                new api.ODTicketData("opendiscord:category",transportMode == "private_thread" ? null : category),
+                new api.ODTicketData("opendiscord:category-mode",transportMode == "private_thread" ? null : categoryMode),
 
                 new api.ODTicketData("opendiscord:autoclose-enabled",option.get("opendiscord:autoclose-enable-hours").value),
                 new api.ODTicketData("opendiscord:autoclose-hours",(option.get("opendiscord:autoclose-enable-hours").value ? option.get("opendiscord:autoclose-hours").value : 0)),
@@ -181,7 +210,12 @@ export const registerActions = async () => {
                 new api.ODTicketData("opendiscord:topic",option.get("opendiscord:channel-topic").value),
                 new api.ODTicketData("opendiscord:message-sent",false),
                 new api.ODTicketData("opendiscord:admin-message-sent",false),
-                ...api.createTicketPlatformMetadataEntries()
+                ...api.createTicketPlatformMetadataEntries({
+                    ...buildTicketTransportMetadata(option,transportParentChannelId),
+                    ...routingMetadata,
+                    integrationProfileId:getTicketOptionIntegrationProfileId(option),
+                    aiAssistProfileId:getTicketOptionAiAssistProfileId(option)
+                })
             ])
 
             //manage stats

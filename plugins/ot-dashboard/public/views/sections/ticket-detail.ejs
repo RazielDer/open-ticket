@@ -1,0 +1,344 @@
+<% if (!ticketDetail.available || !ticketDetail.detail) { %>
+  <section class="section-card">
+    <div class="empty-panel">
+      <h3><%= t("tickets.detail.unavailableTitle") %></h3>
+      <p><%= ticketDetail.warningMessage || t("tickets.detail.unavailableBody") %></p>
+      <div class="sticky-actions">
+        <a class="btn primary" href="<%= ticketDetail.listHref %>"><%= t("tickets.detail.backAction") %></a>
+      </div>
+    </div>
+  </section>
+<% } else { %>
+  <div class="transcript-workspace ticket-detail-workspace">
+    <div class="transcript-main">
+      <% if (!ticketDetail.writesSupported) { %>
+        <section class="section-card">
+          <div class="inline-alert warning"><%= ticketDetail.warningMessage %></div>
+        </section>
+      <% } %>
+
+      <% if (ticketDetail.detail.providerLock) { %>
+        <section class="section-card">
+          <div class="inline-alert warning">
+            <strong><%= ticketDetail.detail.providerLock.title %>:</strong> <%= ticketDetail.detail.providerLock.message %>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (ticketDetail.detail.integration) { %>
+        <section class="section-card">
+          <div class="section-heading">
+            <h3><%= t("tickets.detail.integrationTitle") %></h3>
+            <span class="status-pill tone-<%= ticketDetail.detail.integration.state === 'ready' ? 'success' : ticketDetail.detail.integration.state === 'unavailable' ? 'danger' : 'warning' %>">
+              <%= ticketDetail.detail.integration.state %>
+            </span>
+          </div>
+          <div class="plugin-fact-list">
+            <div><strong><%= t("tickets.detail.integrationProfile") %>:</strong> <%= ticketDetail.detail.integration.label %></div>
+            <div><strong><%= t("tickets.detail.integrationProvider") %>:</strong> <%= ticketDetail.detail.integration.providerId %></div>
+            <div><strong><%= t("tickets.detail.integrationSummary") %>:</strong> <%= ticketDetail.detail.integration.degradedReason || ticketDetail.detail.integration.summary || t("common.unavailable") %></div>
+            <div><strong><%= t("tickets.detail.integrationLockedActions") %>:</strong> <%= ticketDetail.detail.integration.lockedTicketActions.length ? ticketDetail.detail.integration.lockedTicketActions.join(", ") : t("common.unavailable") %></div>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (ticketDetail.detail.aiAssist) { %>
+        <section class="section-card" data-ai-assist-panel data-ticket-id="<%= ticketDetail.detail.ticket.id %>">
+          <div class="section-heading">
+            <h3><%= t("tickets.detail.aiAssistTitle") %></h3>
+            <span class="status-pill tone-<%= ticketDetail.detail.aiAssist.available ? 'success' : 'warning' %>">
+              <%= ticketDetail.detail.aiAssist.available ? t("common.yes") : t("common.unavailable") %>
+            </span>
+          </div>
+          <div class="plugin-fact-list">
+            <div><strong><%= t("tickets.detail.aiAssistProfile") %>:</strong> <%= ticketDetail.detail.aiAssist.label %></div>
+            <div><strong><%= t("tickets.detail.aiAssistProvider") %>:</strong> <%= ticketDetail.detail.aiAssist.providerId %></div>
+            <div><strong><%= t("tickets.detail.aiAssistReason") %>:</strong> <%= ticketDetail.detail.aiAssist.reason || t("common.notApplicable") %></div>
+          </div>
+          <div class="stack-form">
+            <form class="stack-form" data-ai-assist-form data-ai-route="summarize">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <button class="btn primary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("summarize") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistSummarize") %></button>
+            </form>
+            <form class="stack-form" data-ai-assist-form data-ai-route="answer-faq">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <label>
+                <span class="field-label"><%= t("tickets.detail.aiAssistPromptLabel") %></span>
+                <input class="text-input" type="text" name="prompt" placeholder="<%= t('tickets.detail.aiAssistPromptPlaceholder') %>" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("answerFaq") ? '' : 'disabled' %>>
+              </label>
+              <button class="btn secondary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("answerFaq") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistAnswerFaq") %></button>
+            </form>
+            <form class="stack-form" data-ai-assist-form data-ai-route="suggest-reply">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <label>
+                <span class="field-label"><%= t("tickets.detail.aiAssistPromptLabel") %></span>
+                <input class="text-input" type="text" name="instructions" placeholder="<%= t('tickets.detail.aiAssistPromptPlaceholder') %>" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("suggestReply") ? '' : 'disabled' %>>
+              </label>
+              <button class="btn secondary" type="submit" <%= ticketDetail.detail.aiAssist.available && ticketDetail.detail.aiAssist.actions.includes("suggestReply") ? '' : 'disabled' %>><%= t("tickets.detail.aiAssistSuggestReply") %></button>
+            </form>
+          </div>
+          <div class="inline-alert" data-ai-assist-result hidden>
+            <div data-ai-assist-result-text></div>
+            <div data-ai-assist-warnings hidden>
+              <strong><%= t("tickets.detail.aiAssistWarnings") %></strong>
+              <ul class="entry-stack" data-ai-assist-warning-list></ul>
+            </div>
+            <div data-ai-assist-citations hidden>
+              <strong><%= t("tickets.detail.aiAssistCitations") %></strong>
+              <ul class="entry-stack" data-ai-assist-citation-list></ul>
+            </div>
+            <button
+              class="btn subtle"
+              type="button"
+              data-ai-assist-copy
+              data-copy-label="<%= t('tickets.detail.aiAssistCopy') %>"
+              data-copied-label="<%= t('tickets.detail.aiAssistCopied') %>"
+              hidden
+            ><%= t("tickets.detail.aiAssistCopy") %></button>
+          </div>
+        </section>
+      <% } %>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.lifecycleTitle") %></h3>
+          <span class="status-pill tone-<%= ticketDetail.detail.ticket.closed ? 'muted' : ticketDetail.detail.ticket.claimed ? 'success' : 'warning' %>">
+            <%= ticketDetail.detail.ticket.closed ? t("tickets.detail.states.closed") : ticketDetail.detail.ticket.claimed ? t("tickets.detail.states.claimed") : t("tickets.detail.states.open") %>
+          </span>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong><%= t("tickets.detail.facts.opened") %>:</strong> <%= ticketDetail.detail.ticket.openedOn ? new Date(ticketDetail.detail.ticket.openedOn).toLocaleString("en-US") : t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.closed") %>:</strong> <%= ticketDetail.detail.ticket.closedOn ? new Date(ticketDetail.detail.ticket.closedOn).toLocaleString("en-US") : t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.claimed") %>:</strong> <%= ticketDetail.detail.ticket.claimedOn ? new Date(ticketDetail.detail.ticket.claimedOn).toLocaleString("en-US") : t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.resolved") %>:</strong> <%= ticketDetail.detail.ticket.resolvedAt ? new Date(ticketDetail.detail.ticket.resolvedAt).toLocaleString("en-US") : t("common.unavailable") %></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.telemetry.title") %></h3>
+          <% if (ticketDetail.detail.telemetry) { %>
+            <span class="status-pill tone-<%= ticketDetail.detail.telemetry.reopenCount > 0 ? 'warning' : 'muted' %>">
+              <%= t("tickets.detail.telemetry.availableBadge") %>
+            </span>
+          <% } else { %>
+            <span class="status-pill tone-warning"><%= t("common.unavailable") %></span>
+          <% } %>
+        </div>
+        <% if (ticketDetail.detail.telemetry) { %>
+          <div class="plugin-fact-list">
+            <div><strong><%= t("tickets.detail.telemetry.feedbackStatus") %>:</strong> <%= ticketDetail.detail.telemetry.latestFeedbackStatus === 'completed' ? 'Feedback complete' : ticketDetail.detail.telemetry.latestFeedbackStatus === 'ignored' ? 'Feedback ignored' : ticketDetail.detail.telemetry.latestFeedbackStatus === 'delivery_failed' ? 'Feedback failed' : 'No feedback' %></div>
+            <div><strong><%= t("tickets.detail.telemetry.feedbackTriggered") %>:</strong> <%= ticketDetail.detail.telemetry.latestFeedbackTriggeredAt ? new Date(ticketDetail.detail.telemetry.latestFeedbackTriggeredAt).toLocaleString("en-US") : t("common.unavailable") %></div>
+            <div><strong><%= t("tickets.detail.telemetry.feedbackCompleted") %>:</strong> <%= ticketDetail.detail.telemetry.latestFeedbackCompletedAt ? new Date(ticketDetail.detail.telemetry.latestFeedbackCompletedAt).toLocaleString("en-US") : t("common.unavailable") %></div>
+            <div><strong><%= t("tickets.detail.telemetry.reopenCount") %>:</strong> <%= ticketDetail.detail.telemetry.reopenCount %></div>
+            <div><strong><%= t("tickets.detail.telemetry.lastReopened") %>:</strong> <%= ticketDetail.detail.telemetry.lastReopenedAt ? new Date(ticketDetail.detail.telemetry.lastReopenedAt).toLocaleString("en-US") : t("common.unavailable") %></div>
+          </div>
+          <% if (ticketDetail.detail.telemetry.latestRatings.length) { %>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><%= t("tickets.detail.telemetry.ratingQuestion") %></th>
+                    <th><%= t("tickets.detail.telemetry.ratingValue") %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% ticketDetail.detail.telemetry.latestRatings.forEach((rating) => { %>
+                    <tr>
+                      <td><strong><%= rating.label %></strong><div class="field-help"><%= rating.questionKey %></div></td>
+                      <td><%= rating.value == null ? t("common.unavailable") : rating.value %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } else { %>
+            <div class="empty-panel">
+              <h3><%= t("tickets.detail.telemetry.noRatingsTitle") %></h3>
+              <p><%= t("tickets.detail.telemetry.noRatingsBody") %></p>
+            </div>
+          <% } %>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("tickets.detail.telemetry.unavailableTitle") %></h3>
+            <p><%= t("tickets.detail.telemetry.unavailableBody") %></p>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.routeTitle") %></h3>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong><%= t("tickets.detail.facts.option") %>:</strong> <%= ticketDetail.detail.optionLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.panel") %>:</strong> <%= ticketDetail.detail.panelLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.team") %>:</strong> <%= ticketDetail.detail.teamLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.assignee") %>:</strong> <%= ticketDetail.detail.assigneeLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.priority") %>:</strong> <%= ticketDetail.detail.priorityLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.topic") %>:</strong> <%= ticketDetail.detail.topic || t("common.unavailable") %></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.transportTitle") %></h3>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong><%= t("tickets.detail.facts.transport") %>:</strong> <%= ticketDetail.detail.ticket.transportMode || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.parentChannel") %>:</strong> <%= ticketDetail.detail.ticket.transportParentChannelId || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.parentMessage") %>:</strong> <%= ticketDetail.detail.ticket.transportParentMessageId || t("common.unavailable") %></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.participantsTitle") %></h3>
+          <span class="pill-tag"><%= t("tickets.detail.participantsCount", { count: ticketDetail.detail.participantLabels.length }) %></span>
+        </div>
+        <% if (ticketDetail.detail.participantLabels.length) { %>
+          <ul class="entry-stack">
+            <% ticketDetail.detail.participantLabels.forEach((label) => { %>
+              <li><%= label %></li>
+            <% }) %>
+          </ul>
+        <% } else { %>
+          <div class="empty-panel">
+            <h3><%= t("tickets.detail.participantsEmptyTitle") %></h3>
+            <p><%= t("tickets.detail.participantsEmptyBody") %></p>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.operatorWorkflowsTitle") %></h3>
+        </div>
+        <div class="plugin-fact-list">
+          <div><strong><%= t("tickets.detail.facts.currentCreator") %>:</strong> <%= ticketDetail.detail.creatorLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.originalApplicant") %>:</strong> <%= ticketDetail.detail.originalApplicantLabel || t("common.unavailable") %></div>
+          <div><strong><%= t("tickets.detail.facts.closeRequest") %>:</strong> <%= ticketDetail.detail.ticket.closeRequestState || t("tickets.detail.noWorkflowState") %></div>
+          <div><strong><%= t("tickets.detail.facts.awaitingUser") %>:</strong> <%= ticketDetail.detail.ticket.awaitingUserState || t("tickets.detail.noWorkflowState") %></div>
+        </div>
+        <% if (ticketDetail.detail.creatorTransferWarning) { %>
+          <div class="inline-alert warning"><%= ticketDetail.detail.creatorTransferWarning %></div>
+        <% } %>
+        <div class="stack-form">
+          <% ticketDetail.advancedActionForms.forEach((form) => { %>
+            <form method="post" action="<%= form.actionHref %>" class="stack-form">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <input type="hidden" name="returnTo" value="<%= ticketDetail.backHref %>">
+              <h4><%= form.title %></h4>
+              <p class="field-help"><%= form.body %></p>
+              <% if (form.choiceName) { %>
+                <label>
+                  <span class="field-label"><%= form.choiceLabel || t("tickets.detail.actions.targetLabel") %></span>
+                  <select class="select-input" name="<%= form.choiceName %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                    <% form.choices.forEach((choice) => { %>
+                      <option value="<%= choice.value %>"><%= choice.label %></option>
+                    <% }) %>
+                  </select>
+                </label>
+              <% } %>
+              <% if (form.textName) { %>
+                <label>
+                  <span class="field-label"><%= form.textLabel %></span>
+                  <input class="text-input" type="text" name="<%= form.textName %>" value="<%= form.textValue %>" placeholder="<%= form.textPlaceholder || '' %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <% if (form.needsReason) { %>
+                <label>
+                  <span class="field-label"><%= t("tickets.detail.actions.reasonLabel") %></span>
+                  <input class="text-input" type="text" name="reason" placeholder="<%= t('tickets.detail.actions.reasonPlaceholder') %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <button class="btn <%= form.buttonVariant %>" type="submit" <%= form.availability.enabled ? '' : 'disabled' %>><%= form.title %></button>
+              <% if (!form.availability.enabled && form.availability.reason) { %>
+                <p class="field-help"><%= form.availability.reason %></p>
+              <% } %>
+            </form>
+          <% }) %>
+        </div>
+        <% if (ticketDetail.deferredActions.length) { %>
+          <ul class="entry-stack">
+            <% ticketDetail.deferredActions.forEach((label) => { %>
+              <li><%= label %></li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+    </div>
+
+    <aside class="transcript-rail">
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.factsTitle") %></h3>
+        </div>
+        <div class="transcript-fact-list">
+          <% ticketDetail.facts.forEach((fact) => { %>
+            <div><strong><%= fact.label %>:</strong> <%= fact.value %></div>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.exportTitle") %></h3>
+        </div>
+        <% if (ticketDetail.exportRelease) { %>
+          <div class="inline-alert success">
+            <a class="btn primary" href="<%= ticketDetail.exportRelease.href %>"><%= t("routeMessages.preparedExportDownload") %></a>
+          </div>
+        <% } %>
+        <form method="post" action="<%= ticketDetail.exportAction %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="format" value="json">
+          <input type="hidden" name="returnTo" value="<%= ticketDetail.backHref %>">
+          <button class="btn secondary" type="submit"><%= t("tickets.detail.exportJsonAction") %></button>
+        </form>
+      </section>
+
+      <section class="section-card">
+        <div class="section-heading">
+          <h3><%= t("tickets.detail.actionsTitle") %></h3>
+        </div>
+        <div class="stack-form">
+          <% ticketDetail.actionForms.forEach((form) => { %>
+            <form method="post" action="<%= form.actionHref %>" class="stack-form">
+              <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+              <input type="hidden" name="returnTo" value="<%= ticketDetail.backHref %>">
+              <h4><%= form.title %></h4>
+              <p class="field-help"><%= form.body %></p>
+              <% if (form.choiceName) { %>
+                <label>
+                  <span class="field-label"><%= form.choiceLabel || (form.action === 'assign' ? t("tickets.detail.actions.assigneeLabel") : t("tickets.detail.actions.targetLabel")) %></span>
+                  <select class="select-input" name="<%= form.choiceName %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                    <% form.choices.forEach((choice) => { %>
+                      <option value="<%= choice.value %>"><%= choice.label %></option>
+                    <% }) %>
+                  </select>
+                </label>
+              <% } %>
+              <% if (form.textName) { %>
+                <label>
+                  <span class="field-label"><%= form.textLabel %></span>
+                  <input class="text-input" type="text" name="<%= form.textName %>" value="<%= form.textValue %>" placeholder="<%= form.textPlaceholder || '' %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <% if (form.needsReason) { %>
+                <label>
+                  <span class="field-label"><%= t("tickets.detail.actions.reasonLabel") %></span>
+                  <input class="text-input" type="text" name="reason" placeholder="<%= t('tickets.detail.actions.reasonPlaceholder') %>" <%= form.availability.enabled ? '' : 'disabled' %>>
+                </label>
+              <% } %>
+              <button class="btn <%= form.buttonVariant %>" type="submit" <%= form.availability.enabled ? '' : 'disabled' %>><%= form.title %></button>
+              <% if (!form.availability.enabled && form.availability.reason) { %>
+                <p class="field-help"><%= form.availability.reason %></p>
+              <% } %>
+            </form>
+          <% }) %>
+        </div>
+      </section>
+    </aside>
+  </div>
+<% } %>

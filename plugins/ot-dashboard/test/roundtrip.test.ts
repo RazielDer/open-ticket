@@ -5,6 +5,11 @@ import os from "os"
 import path from "path"
 
 import { createConfigService } from "../server/config-service"
+import { createBackupService } from "../server/backup-service"
+import {
+  clearTicketPlatformRuntimeApiForTests,
+  installTicketPlatformRuntimeApi
+} from "../../../src/core/api/openticket/ticket-platform.js"
 
 const generalGlobalAdminIds = ["123456789012345678", "234567890123456789"]
 
@@ -125,6 +130,7 @@ function createFixtureRoot() {
         suffix: "counter-fixed",
         category: "1",
         backupCategory: "2",
+        overflowCategories: ["2", "5"],
         closedCategory: "3",
         claimedCategory: [{ user: "4", category: "44" }],
         topic: "Open this ticket."
@@ -169,7 +175,9 @@ function createFixtureRoot() {
         inactiveDays: 7,
         enableUserLeave: false,
         disableOnClaim: true
-      }
+      },
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     },
     {
       id: "role-1",
@@ -212,6 +220,46 @@ function createFixtureRoot() {
   ], null, 2))
 
   fs.writeFileSync(path.join(configDir, "questions.json"), "[]\n")
+  fs.writeFileSync(path.join(configDir, "ai-assist-profiles.json"), JSON.stringify([
+    {
+      id: "assist-1",
+      providerId: "reference",
+      label: "Reference assist",
+      enabled: true,
+      knowledgeSourceIds: ["faq-1"],
+      context: {
+        maxRecentMessages: 40,
+        includeTicketMetadata: true,
+        includeParticipants: true,
+        includeManagedFormSnapshot: true,
+        includeBotMessages: false
+      },
+      settings: {
+        tone: "concise"
+      }
+    }
+  ], null, 2))
+  fs.writeFileSync(path.join(configDir, "knowledge-sources.json"), JSON.stringify([
+    {
+      id: "faq-1",
+      label: "Staff FAQ",
+      kind: "faq-json",
+      path: "knowledge/staff-faq.json",
+      enabled: false
+    }
+  ], null, 2))
+  fs.writeFileSync(path.join(configDir, "integration-profiles.json"), JSON.stringify([
+    {
+      id: "profile-1",
+      providerId: "test-provider",
+      label: "Test profile",
+      enabled: true,
+      settings: {
+        token: "test-secret-token",
+        endpoint: "https://example.invalid/api"
+      }
+    }
+  ], null, 2))
   fs.writeFileSync(path.join(configDir, "transcripts.json"), JSON.stringify({
     general: { enabled: true, enableChannel: true, enableCreatorDM: true, enableParticipantDM: false, enableActiveAdminDM: false, enableEveryAdminDM: false, channel: "1", mode: "html" },
     embedSettings: { customColor: "", listAllParticipants: false, includeTicketStats: false },
@@ -251,7 +299,9 @@ test("visual save helpers preserve runtime-aligned values and nested option data
       name: "Updated option",
       description: "Edited description",
       type: "ticket",
-      button: { label: "Updated option", emoji: "", color: "green" }
+      button: { label: "Updated option", emoji: "", color: "green" },
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
     }, 0)
 
     service.savePanel({
@@ -306,16 +356,253 @@ test("visual save helpers preserve runtime-aligned values and nested option data
     assert.equal(general.status.type, "custom")
     assert.equal(general.system.emojiStyle, "disabled")
     assert.equal(options[0].channel.suffix, "counter-fixed")
+    assert.deepEqual(options[0].channel.overflowCategories, ["2", "5"])
+    assert.equal(options[0].channel.backupCategory, "2")
     assert.deepEqual(options[0].channel.claimedCategory, [{ user: "4", category: "44" }])
     assert.deepEqual(options[0].dmMessage.embed.fields, [{ name: "DM retained", value: "DM field", inline: false }])
     assert.deepEqual(options[0].ticketMessage.embed.fields, [{ name: "Retained", value: "Field", inline: false }])
     assert.deepEqual(options[0].ticketMessage.ping.custom, ["8"])
     assert.equal(options[0].autoclose.enableUserLeave, true)
     assert.equal(options[0].autodelete.disableOnClaim, true)
+    assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
     assert.equal(panels[0].settings.describeOptionsLayout, "normal")
     assert.equal(panels[0].embed.footer, "Retained footer")
     assert.equal(transcripts.general.mode, "text")
     assert.equal(transcripts.textTranscriptStyle.fileMode, "channel-id")
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("ticket option integration and AI assist profile bindings roundtrip, strip from non-ticket options, and validate references", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    service.saveOption({
+      id: "option-1",
+      name: "Whitelist Application Ticket",
+      description: "Open this ticket.",
+      type: "ticket",
+      button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
+    }, 0)
+
+    let options = service.readManagedJson<any[]>("options")
+    assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        name: "Whitelist Application Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        integrationProfileId: "missing-profile",
+        aiAssistProfileId: "assist-1"
+      }, 0)
+    }, /Unknown integration profile/i)
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        name: "Whitelist Application Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "missing-assist"
+      }, 0)
+    }, /Unknown AI assist profile/i)
+
+    service.saveOption({
+      id: "role-1",
+      type: "role",
+      button: { emoji: "", label: "Role option", color: "blue" },
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
+    }, 1)
+
+    service.saveOption({
+      id: "website-1",
+      name: "Website option",
+      description: "Open docs.",
+      type: "website",
+      button: { emoji: "🌐", label: "Website option" },
+      url: "https://example.com/docs",
+      integrationProfileId: "profile-1",
+      aiAssistProfileId: "assist-1"
+    }, -1)
+
+    options = service.readManagedJson<any[]>("options")
+    assert.equal("integrationProfileId" in options[1], false)
+    assert.equal("integrationProfileId" in options[2], false)
+    assert.equal("aiAssistProfileId" in options[1], false)
+    assert.equal("aiAssistProfileId" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("raw options saves strip integration and AI assist profile bindings from non-ticket options", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    const saved = service.saveRawJson("options", JSON.stringify([
+      {
+        id: "ticket-raw",
+        name: "Raw Ticket",
+        description: "Open this ticket.",
+        type: "ticket",
+        button: { emoji: "", label: "Raw Ticket", color: "green" },
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1",
+        channel: {
+          category: "primary-category",
+          backupCategory: "legacy-backup-category",
+          overflowCategories: [" ", " overflow-a ", "overflow-a", "overflow-b", "", "overflow-b"]
+        }
+      },
+      {
+        id: "role-raw",
+        name: "Raw Role",
+        description: "Assign a role.",
+        type: "role",
+        button: { emoji: "", label: "Raw Role", color: "blue" },
+        roles: ["9"],
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1"
+      },
+      {
+        id: "website-raw",
+        name: "Raw Website",
+        description: "Open docs.",
+        type: "website",
+        button: { emoji: "", label: "Raw Website" },
+        url: "https://example.com/docs",
+        integrationProfileId: "profile-1",
+        aiAssistProfileId: "assist-1"
+      }
+    ])) as any[]
+
+    assert.equal(saved[0].integrationProfileId, "profile-1")
+    assert.equal(saved[0].aiAssistProfileId, "assist-1")
+    assert.deepEqual(saved[0].channel.overflowCategories, ["overflow-a", "overflow-b"])
+    assert.equal(saved[0].channel.backupCategory, "overflow-a")
+    assert.equal("integrationProfileId" in saved[1], false)
+    assert.equal("aiAssistProfileId" in saved[1], false)
+    assert.equal("integrationProfileId" in saved[2], false)
+    assert.equal("aiAssistProfileId" in saved[2], false)
+
+    const options = service.readManagedJson<any[]>("options")
+    assert.equal(options[0].integrationProfileId, "profile-1")
+    assert.equal(options[0].aiAssistProfileId, "assist-1")
+    assert.deepEqual(options[0].channel.overflowCategories, ["overflow-a", "overflow-b"])
+    assert.equal(options[0].channel.backupCategory, "overflow-a")
+    assert.equal("integrationProfileId" in options[1], false)
+    assert.equal("aiAssistProfileId" in options[1], false)
+    assert.equal("integrationProfileId" in options[2], false)
+    assert.equal("aiAssistProfileId" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("integration profile backups redact provider secrets and restore preserves existing redacted secrets", () => {
+  clearTicketPlatformRuntimeApiForTests()
+  const runtime = installTicketPlatformRuntimeApi()
+  runtime.registerIntegrationProvider({
+    id: "test-provider",
+    capabilities: [],
+    secretSettingKeys: ["token"]
+  })
+
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+  const backupService = createBackupService(root, service)
+
+  try {
+    const backup = backupService.createBackup("redaction test", "test")
+    const backupText = backupService.getBackupText(backup.id, "integration-profiles")
+
+    assert.match(backupText, /__OPEN_TICKET_REDACTED_SECRET__/)
+    assert.doesNotMatch(backupText, /test-secret-token/)
+    assert.match(backupText, /https:\/\/example\.invalid\/api/)
+
+    const redactedProfiles = JSON.parse(backupText)
+    redactedProfiles[0].settings.endpoint = "https://example.invalid/restored"
+    service.writeManagedJson("integration-profiles", redactedProfiles)
+
+    const restored = service.readManagedJson<any[]>("integration-profiles")
+    assert.equal(restored[0].settings.token, "test-secret-token")
+    assert.equal(restored[0].settings.endpoint, "https://example.invalid/restored")
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+    clearTicketPlatformRuntimeApiForTests()
+  }
+})
+
+test("AI assist profiles and knowledge sources reject secret settings and guarded deletes", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    for (const secretSettings of [
+      { apiKey: "must-not-be-here" },
+      { bearer: "must-not-be-here" },
+      { headers: { authorization: "Bearer must-not-be-here" } },
+      { transports: [{ api_key: "must-not-be-here" }] }
+    ]) {
+      assert.throws(() => {
+        service.saveRawJson("ai-assist-profiles", JSON.stringify([
+          {
+            id: "assist-1",
+            providerId: "reference",
+            label: "Reference assist",
+            enabled: true,
+            knowledgeSourceIds: ["faq-1"],
+            context: { maxRecentMessages: 40 },
+            settings: secretSettings
+          }
+        ]))
+      }, /secret-shaped key/i)
+    }
+
+    assert.throws(() => {
+      service.saveRawJson("knowledge-sources", JSON.stringify([]))
+    }, /still reference it/i)
+
+    assert.throws(() => {
+      service.saveRawJson("ai-assist-profiles", JSON.stringify([]))
+    }, /options still reference it/i)
+
+    fs.mkdirSync(path.join(root, "knowledge"), { recursive: true })
+    fs.writeFileSync(path.join(root, "knowledge", "bad-faq.json"), "{ not valid json", "utf8")
+    assert.throws(() => {
+      service.saveRawJson("knowledge-sources", JSON.stringify([
+        {
+          id: "faq-1",
+          label: "Staff FAQ",
+          kind: "faq-json",
+          path: "knowledge/staff-faq.json",
+          enabled: false
+        },
+        {
+          id: "bad-faq",
+          label: "Bad FAQ",
+          kind: "faq-json",
+          path: "knowledge/bad-faq.json",
+          enabled: true
+        }
+      ]))
+    }, /valid JSON/i)
+
+    const backupText = service.readManagedBackupText("ai-assist-profiles")
+    assert.match(backupText, /"settings": \{\s+"tone": "concise"\s+\}/)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
@@ -453,6 +740,90 @@ test("ticket option transcript routing roundtrips through the config service and
 
     options = service.readManagedJson<any[]>("options")
     assert.equal("transcripts" in options[2], false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("ticket option workflow roundtrips, strips from non-ticket options, and validates timer ordering", () => {
+  const root = createFixtureRoot()
+  const service = createConfigService(root)
+
+  try {
+    service.saveOption({
+      id: "option-1",
+      name: "Whitelist Application Ticket",
+      description: "Open this ticket.",
+      type: "ticket",
+      button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: {
+          enabled: true,
+          reminderEnabled: true,
+          reminderHours: 12,
+          autoCloseEnabled: true,
+          autoCloseHours: 36
+        }
+      }
+    }, 0)
+
+    let options = service.readManagedJson<any[]>("options")
+    assert.deepEqual(options[0].workflow, {
+      closeRequest: { enabled: true },
+      awaitingUser: {
+        enabled: true,
+        reminderEnabled: true,
+        reminderHours: 12,
+        autoCloseEnabled: true,
+        autoCloseHours: 36
+      }
+    })
+
+    assert.throws(() => {
+      service.saveOption({
+        id: "option-1",
+        type: "ticket",
+        button: { label: "Whitelist Application Ticket", emoji: "", color: "green" },
+        workflow: {
+          closeRequest: { enabled: true },
+          awaitingUser: {
+            enabled: true,
+            reminderEnabled: true,
+            reminderHours: 24,
+            autoCloseEnabled: true,
+            autoCloseHours: 24
+          }
+        }
+      }, 0)
+    }, /autoCloseHours/)
+
+    service.saveOption({
+      id: "role-1",
+      type: "role",
+      button: { emoji: "", label: "Role option", color: "blue" },
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: { enabled: true }
+      }
+    }, 1)
+
+    service.saveOption({
+      id: "website-1",
+      name: "Website option",
+      description: "Open docs.",
+      type: "website",
+      button: { emoji: "🌐", label: "Website option" },
+      url: "https://example.com/docs",
+      workflow: {
+        closeRequest: { enabled: true },
+        awaitingUser: { enabled: true }
+      }
+    }, -1)
+
+    options = service.readManagedJson<any[]>("options")
+    assert.equal("workflow" in options[1], false)
+    assert.equal("workflow" in options[2], false)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }

@@ -242,5 +242,6 @@ test("ticket-card session replacement is wired into the form runtime without cle
     assert.equal(source.includes("targetQuestionPosition?: number | null"), true)
     assert.equal(source.includes("if (existingSession && !options.replaceExistingBinding)"), true)
     assert.equal(source.includes("if (this.activeSessionRegistry.get(user.id) == sessionId)"), true)
-    assert.equal(source.includes("this.sectionNumbersByQuestionIndex[index] = this.totalSections;"), true)
+    assert.equal(source.includes("calculateOTFormsQuestionSections(questions)"), true)
+    assert.equal(source.includes("this.sectionNumbersByQuestionIndex.push(...sections.sectionNumbersByQuestionIndex);"), true)
 })

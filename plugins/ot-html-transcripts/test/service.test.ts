@@ -397,6 +397,63 @@ async function writeArchiveFixture(
     }
 }
 
+async function writeAnalyticsTranscriptFixture(
+    service: TranscriptServiceCore,
+    root: string,
+    input: {
+        transcriptId: string
+        ticketId: string
+        openedAt: number
+        createdAt: string
+        closedAt?: number | null
+        creatorId?: string
+        assignedTeamId?: string | null
+        assignedStaffUserId?: string | null
+        transportMode?: "channel_text" | "private_thread"
+        firstStaffResponseAt?: number | null
+        resolvedAt?: number | null
+    }
+) {
+    const archivePath = path.join(root, "archives", input.transcriptId)
+    const creatorId = input.creatorId ?? "creator-1"
+    const document = createFakeDocument(input.transcriptId)
+    document.version = "2.0"
+    document.ticket.id = input.ticketId
+    document.ticket.createdOn = input.openedAt
+    document.ticket.closedOn = input.closedAt ?? false
+    document.ticket.createdBy = { id: creatorId, name: "Creator", color: "#ffffff", avatar: null, bot: false, verifiedBot: false, system: false }
+    document.ticket.metadata = {
+        transportMode: input.transportMode ?? "channel_text",
+        transportParentChannelId: null,
+        transportParentMessageId: null,
+        assignedTeamId: input.assignedTeamId ?? "triage",
+        assignedStaffUserId: input.assignedStaffUserId ?? "staff-1",
+        assignmentStrategy: "manual",
+        firstStaffResponseAt: input.firstStaffResponseAt ?? null,
+        resolvedAt: input.resolvedAt ?? null,
+        awaitingUserState: null,
+        awaitingUserSince: null,
+        closeRequestState: null,
+        closeRequestBy: null,
+        closeRequestAt: null,
+        integrationProfileId: null,
+        aiAssistProfileId: null
+    }
+    await writeArchiveFixture(archivePath, document)
+    await service.repository!.createTranscript({
+        id: input.transcriptId,
+        status: "active",
+        ticketId: input.ticketId,
+        channelId: input.ticketId,
+        creatorId,
+        archivePath,
+        totalBytes: 256,
+        searchText: input.ticketId,
+        createdAt: input.createdAt,
+        updatedAt: input.createdAt
+    })
+}
+
 test("service initialization reports healthy summary state and recovery metadata", async () => {
     await withService("initialize-summary", async (service) => {
         assert.equal(service.isHealthy(), true)
@@ -468,6 +525,238 @@ test("service getTranscriptDetail exposes public urls, links, participants, asse
         assert.equal(detail?.assets[0]?.status, "failed")
         assert.equal(detail?.assets[0]?.reason, "HTTP 404 while downloading asset.")
         assert.equal(detail?.assets[1]?.archiveRelativePath, "assets/asset.png")
+    })
+})
+
+test("service listTicketAnalyticsHistory reads analytics-safe ticket metadata from document archives", async () => {
+    await withService("ticket-analytics-history", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-analytics")
+        await fs.promises.mkdir(archivePath, { recursive: true })
+        const document = createFakeDocument("tr-analytics")
+        document.version = "2.0"
+        document.ticket.id = "ticket-analytics"
+        document.ticket.createdOn = Date.parse("2026-04-20T10:00:00.000Z")
+        document.ticket.closedOn = Date.parse("2026-04-20T12:00:00.000Z")
+        document.ticket.createdBy = { id: "creator-1", name: "Creator", color: "#ffffff", avatar: null, bot: false, verifiedBot: false, system: false }
+        document.ticket.metadata = {
+            transportMode: "private_thread",
+            transportParentChannelId: "parent-1",
+            transportParentMessageId: null,
+            assignedTeamId: "triage",
+            assignedStaffUserId: "staff-1",
+            assignmentStrategy: "manual",
+            firstStaffResponseAt: Date.parse("2026-04-20T10:15:00.000Z"),
+            resolvedAt: Date.parse("2026-04-20T12:00:00.000Z"),
+            awaitingUserState: null,
+            awaitingUserSince: null,
+            closeRequestState: null,
+            closeRequestBy: null,
+            closeRequestAt: null,
+            integrationProfileId: null,
+            aiAssistProfileId: null
+        }
+        await fs.promises.writeFile(path.join(archivePath, "document.json"), JSON.stringify(document, null, 2), "utf8")
+        await fs.promises.writeFile(path.join(archivePath, "index.html"), "<html></html>", "utf8")
+        await service.createTranscript({
+            id: "tr-analytics",
+            status: "active",
+            ticketId: "ticket-analytics",
+            channelId: "ticket-analytics",
+            creatorId: "creator-1",
+            archivePath,
+            createdAt: "2026-04-20T12:01:00.000Z"
+        })
+
+        const result = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            teamId: "triage",
+            assigneeId: "staff-1",
+            transportMode: "private_thread",
+            limit: 200
+        })
+
+        assert.equal(result.items.length, 1)
+        assert.equal(result.items[0].ticketId, "ticket-analytics")
+        assert.equal(result.items[0].transcriptId, "tr-analytics")
+        assert.equal(result.items[0].creatorId, "creator-1")
+        assert.equal(result.items[0].assignedTeamId, "triage")
+        assert.equal(result.items[0].assignedStaffUserId, "staff-1")
+        assert.equal(result.items[0].transportMode, "private_thread")
+        assert.equal(result.items[0].firstStaffResponseAt, Date.parse("2026-04-20T10:15:00.000Z"))
+        assert.equal(result.items[0].resolvedAt, Date.parse("2026-04-20T12:00:00.000Z"))
+        assert.equal(result.nextCursor, null)
+        assert.equal(result.truncated, false)
+    })
+})
+
+test("service listTicketAnalyticsHistory pages filtered history sorted by opened time", async () => {
+    await withService("ticket-analytics-history-filtered-pages", async (service, root) => {
+        await writeAnalyticsTranscriptFixture(service, root, {
+            transcriptId: "tr-outside-newest",
+            ticketId: "ticket-outside-newest",
+            openedAt: Date.parse("2026-04-19T23:30:00.000Z"),
+            createdAt: "2026-04-23T00:00:00.000Z",
+            transportMode: "private_thread"
+        })
+        await writeAnalyticsTranscriptFixture(service, root, {
+            transcriptId: "tr-older-created-newer",
+            ticketId: "ticket-older-opened",
+            openedAt: Date.parse("2026-04-20T10:00:00.000Z"),
+            createdAt: "2026-04-22T00:00:00.000Z",
+            transportMode: "private_thread"
+        })
+        await writeAnalyticsTranscriptFixture(service, root, {
+            transcriptId: "tr-newer-created-older",
+            ticketId: "ticket-newer-opened",
+            openedAt: Date.parse("2026-04-20T14:00:00.000Z"),
+            createdAt: "2026-04-21T00:00:00.000Z",
+            transportMode: "private_thread"
+        })
+
+        const firstPage = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            teamId: "triage",
+            transportMode: "private_thread",
+            limit: 1
+        })
+
+        assert.equal(firstPage.total, 2)
+        assert.equal(firstPage.items.length, 1)
+        assert.equal(firstPage.items[0].ticketId, "ticket-newer-opened")
+        assert.equal(firstPage.nextCursor, "1")
+
+        const secondPage = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            teamId: "triage",
+            transportMode: "private_thread",
+            cursor: firstPage.nextCursor,
+            limit: 1
+        })
+
+        assert.equal(secondPage.total, 2)
+        assert.equal(secondPage.items.length, 1)
+        assert.equal(secondPage.items[0].ticketId, "ticket-older-opened")
+        assert.equal(secondPage.nextCursor, null)
+    })
+})
+
+test("service listTicketAnalyticsHistory fails closed at the archive scan ceiling", async () => {
+    await withService("ticket-analytics-history-scan-ceiling", async (service, root) => {
+        let calls = 0
+        let maxOffset = 0
+        const archiveRoot = path.join(root, "archives")
+
+        service.repository!.listTranscriptAnalyticsCandidates = async (query: any) => {
+            calls += 1
+            const offset = Math.max(0, query.offset ?? 0)
+            const limit = Math.max(1, Math.min(query.limit ?? 200, 500))
+            const total = 2001
+            const count = Math.max(0, Math.min(limit, total - offset))
+            maxOffset = Math.max(maxOffset, offset)
+
+            return {
+                total,
+                items: Array.from({ length: count }, (_, index) => {
+                    const id = `tr-ceiling-${offset + index}`
+                    return {
+                        id,
+                        status: "active",
+                        ticketId: id,
+                        channelId: id,
+                        guildId: null,
+                        creatorId: null,
+                        deleterId: null,
+                        activeSlug: null,
+                        publicUrl: null,
+                        archivePath: path.join(archiveRoot, id),
+                        statusReason: null,
+                        createdAt: "2026-04-20T00:00:00.000Z",
+                        updatedAt: "2026-04-20T00:00:00.000Z",
+                        messageCount: 0,
+                        attachmentCount: 0,
+                        warningCount: 0,
+                        totalBytes: 0
+                    }
+                })
+            }
+        }
+
+        const result = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            limit: 200
+        })
+
+        assert.equal(result.truncated, true)
+        assert.equal(result.items.length, 0)
+        assert.equal(result.nextCursor, null)
+        assert.equal(calls, 4)
+        assert.equal(maxOffset, 1500)
+        assert.match(result.warnings.at(-1) || "", /scan ceiling/i)
+    })
+})
+
+test("service listTicketAnalyticsHistory does not expire links or write events", async () => {
+    await withService("ticket-analytics-history-read-only", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-analytics-read-only")
+        const document = createFakeDocument("tr-analytics-read-only")
+        document.version = "2.0"
+        document.ticket.id = "ticket-analytics-read-only"
+        document.ticket.createdOn = Date.parse("2026-04-20T10:00:00.000Z")
+        document.ticket.createdBy = { id: "creator-1", name: "Creator", color: "#ffffff", avatar: null, bot: false, verifiedBot: false, system: false }
+        document.ticket.metadata = {
+            transportMode: "channel_text",
+            transportParentChannelId: null,
+            transportParentMessageId: null,
+            assignedTeamId: "triage",
+            assignedStaffUserId: "staff-1",
+            assignmentStrategy: "manual",
+            firstStaffResponseAt: Date.parse("2026-04-20T10:05:00.000Z"),
+            resolvedAt: null,
+            awaitingUserState: null,
+            awaitingUserSince: null,
+            closeRequestState: null,
+            closeRequestBy: null,
+            closeRequestAt: null,
+            integrationProfileId: null,
+            aiAssistProfileId: null
+        }
+        await writeArchiveFixture(archivePath, document)
+        await service.repository!.createTranscript({
+            id: "tr-analytics-read-only",
+            status: "active",
+            ticketId: "ticket-analytics-read-only",
+            channelId: "ticket-analytics-read-only",
+            creatorId: "creator-1",
+            archivePath,
+            totalBytes: 256,
+            searchText: "analytics read only",
+            createdAt: "2026-04-20T11:00:00.000Z",
+            updatedAt: "2026-04-20T11:00:00.000Z"
+        })
+        await service.repository!.createTranscriptLink({
+            id: "link-analytics-read-only",
+            transcriptId: "tr-analytics-read-only",
+            slug: "analytics-read-only-slug",
+            status: "active",
+            createdAt: "2026-03-20T00:00:00.000Z",
+            expiresAt: "2026-03-21T00:00:00.000Z"
+        })
+
+        const result = await service.listTicketAnalyticsHistory({
+            openedFrom: "2026-04-20T00:00:00.000Z",
+            openedTo: "2026-04-21T00:00:00.000Z",
+            limit: 200
+        })
+        const links = await service.repository!.listTranscriptLinks("tr-analytics-read-only")
+        const events = await service.repository!.listTranscriptEvents("tr-analytics-read-only", {})
+
+        assert.equal(result.items.length, 1)
+        assert.equal(links.find((link) => link.id == "link-analytics-read-only")?.status, "active")
+        assert.equal(events.items.some((event) => event.type == "link-expired"), false)
     })
 })
 
@@ -1545,6 +1834,48 @@ test("scanTranscriptIntegrity classifies building, broken archives, invalid docu
         assert.equal(assetReport?.issues.some((issue) => issue.code == "asset-file-missing"), true)
         assert.equal(assetReport?.issues.some((issue) => issue.code == "asset-row-missing"), true)
         assert.equal(assetReport?.issues.some((issue) => issue.code == "orphan-asset-row"), true)
+    })
+})
+
+test("service integrity and repair paths accept 2.0 transcript documents", async () => {
+    await withService("integrity-v2-document", async (service, root) => {
+        const archivePath = path.join(root, "archives", "tr-v2-document")
+        const document = createFakeDocument("tr-v2-document")
+        document.version = "2.0"
+        document.messages[0]!.formRecord = {
+            source: "ot-ticket-forms",
+            formId: "whitelist-review",
+            formName: "Whitelist Review",
+            applicantDiscordUserId: "user-1",
+            draftState: "completed",
+            updatedAt: "2026-04-21T12:00:00.000Z",
+            completedAt: "2026-04-21T12:05:00.000Z",
+            answers: [{
+                position: 1,
+                question: "Name",
+                answer: "RazielDer",
+                answerData: { kind: "text", value: "RazielDer" }
+            }]
+        }
+        await writeArchiveFixture(archivePath, document, { writeHtml: false })
+        await service.createTranscript({
+            id: "tr-v2-document",
+            status: "active",
+            archivePath
+        })
+
+        const reportBefore = await service.scanTranscriptIntegrity("tr-v2-document")
+        assert.equal(reportBefore?.issues.some((issue) => issue.code == "document-invalid"), false)
+        assert.equal(reportBefore?.issues.some((issue) => issue.code == "html-missing"), true)
+
+        const result = await service.repairTranscriptIntegrity("tr-v2-document")
+        const reportAfter = await service.scanTranscriptIntegrity("tr-v2-document")
+        const html = await fs.promises.readFile(path.join(archivePath, "index.html"), "utf8")
+
+        assert.equal(result.ok, true)
+        assert.equal(reportAfter?.health, "healthy")
+        assert.match(html, /Archived form result/)
+        assert.match(html, /Whitelist Review/)
     })
 })
 

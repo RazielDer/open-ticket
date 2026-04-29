@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import * as discord from "discord.js"
 
 import {
     deliverLiveContinuePrompt,
@@ -17,19 +18,42 @@ function buildMessage(content: string) {
     } as any
 }
 
+function buildRicherMessage() {
+    return {
+        id: { value: "richer-prompt" },
+        ephemeral: true,
+        message: {
+            components: [
+                {
+                    type: discord.ComponentType.Container,
+                    components: [
+                        {
+                            type: discord.ComponentType.TextDisplay,
+                            content: "Continue Application"
+                        }
+                    ]
+                }
+            ],
+            flags: [discord.MessageFlags.IsComponentsV2]
+        }
+    } as any
+}
+
 function createResponderStub() {
     const operations: { type: string, content: string }[] = []
+    const followUpOptions: discord.InteractionReplyOptions[] = []
     let followUpCount = 0
     let failingFollowUps = 0
     const interaction = {
         replied: false,
         deferred: false,
-        async followUp(options: { content?: string }) {
+        async followUp(options: discord.InteractionReplyOptions) {
             if (failingFollowUps > 0) {
                 failingFollowUps--;
                 throw new Error("follow-up failed")
             }
             followUpCount++;
+            followUpOptions.push(options)
             operations.push({ type: "followUp", content: options.content ?? "" })
             interaction.replied = true
             return { id: `follow-up-${followUpCount}` } as any
@@ -56,6 +80,7 @@ function createResponderStub() {
     return {
         instance,
         operations,
+        followUpOptions,
         failNextFollowUp() {
             failingFollowUps++;
         }
@@ -83,6 +108,29 @@ test("component prompts retire in place and continue via follow-up without a sto
         { type: "update", content: "Section 1/4 answered!" },
         { type: "followUp", content: "Continue Application" }
     ])
+})
+
+test("direct form follow-up creates preserve Components V2 and ephemeral flags", async () => {
+    const { instance, followUpOptions } = createResponderStub()
+
+    const result = await deliverLiveQuestionPrompt({
+        transportKind: "button",
+        instance,
+        message: buildRicherMessage(),
+        deliveryMode: "follow_up"
+    })
+
+    assert.equal(result.success, true)
+    assert.equal(followUpOptions.length, 1)
+    const payload = followUpOptions[0] as discord.MessageCreateOptions
+    assert.deepEqual(payload.flags, [discord.MessageFlags.IsComponentsV2, discord.MessageFlags.Ephemeral])
+    assert.equal(Object.hasOwn(payload, "content"), false)
+    assert.equal(Object.hasOwn(payload, "embeds"), false)
+    assert.equal(Object.hasOwn(payload, "poll"), false)
+    assert.equal(Object.hasOwn(payload, "files"), false)
+    assert.equal(Object.hasOwn(payload, "attachments"), false)
+    assert.equal(Object.hasOwn(payload, "stickers"), false)
+    assert.equal(Object.hasOwn(payload, "shared_client_theme"), false)
 })
 
 test("modal responses send the passive confirmation first and then the continue prompt", async () => {

@@ -1,0 +1,136 @@
+<%
+  const hasActiveFilters = qualityReviewSupervision.request.activeFilters.length > 0
+%>
+
+<section class="section-card transcript-workspace-shell quality-review-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("qualityReview.supervision.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("qualityReview.supervision.workspaceBody") %></p>
+    </div>
+    <div class="card-actions">
+      <a class="btn secondary" href="<%= qualityReviewSupervision.queueHref %>"><%= t("qualityReview.supervision.queueAction") %></a>
+    </div>
+  </div>
+
+  <% if (!qualityReviewSupervision.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("qualityReview.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= qualityReviewSupervision.warningMessage %></p>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell quality-review-filter-shell" data-responsive-disclosure="quality-review-supervision-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("qualityReview.supervision.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("qualityReview.supervision.filtersBody") %></p>
+    </div>
+    <% if (hasActiveFilters) { %>
+      <span class="pill-tag"><%= t("qualityReview.page.activeFilterCount", { count: qualityReviewSupervision.request.activeFilters.length }) %></span>
+    <% } %>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= qualityReviewSupervision.filterAction %>" class="stack-form">
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label">Outcome</span>
+          <select class="select-input" name="outcome">
+            <% qualityReviewSupervision.request.outcomeOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= qualityReviewSupervision.request.outcome === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label">Owner</span>
+          <select class="select-input" name="ownerId">
+            <% qualityReviewSupervision.request.ownerOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= qualityReviewSupervision.request.ownerId === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label">State</span>
+          <select class="select-input" name="state">
+            <% qualityReviewSupervision.request.stateOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= qualityReviewSupervision.request.state === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("qualityReview.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= qualityReviewSupervision.clearFiltersHref %>"><%= t("qualityReview.page.filters.clearAction") %></a>
+        </div>
+
+        <% if (hasActiveFilters) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("qualityReview.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% qualityReviewSupervision.request.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="section-card transcript-records-shell quality-review-records-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("qualityReview.supervision.inventoryTitle") %></h3>
+    </div>
+    <span class="pill-tag"><%= qualityReviewSupervision.total %></span>
+  </div>
+
+  <% if (qualityReviewSupervision.rows.length) { %>
+    <div class="table-wrap">
+      <table class="data-table transcript-records-table quality-review-table">
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>State</th>
+            <th>Outcome</th>
+            <th>Owner</th>
+            <th>Resolved by</th>
+            <th>Notes</th>
+            <th>Updated</th>
+            <th>Access</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% qualityReviewSupervision.rows.forEach((row) => { %>
+            <tr>
+              <td><strong class="transcript-record-title"><%= row.ticketId %></strong></td>
+              <td><span class="status-pill tone-<%= row.stateBadge.tone %>"><%= row.stateBadge.label %></span></td>
+              <td><span class="status-pill tone-<%= row.outcomeBadge.tone %>"><%= row.outcomeBadge.label %></span></td>
+              <td><%= row.ownerLabel %></td>
+              <td>
+                <%= row.resolvedByLabel %>
+                <div class="field-help"><%= row.resolvedLabel %></div>
+              </td>
+              <td>
+                <%= row.noteCount %>
+                <div class="field-help"><%= row.noteAdjustmentCount %> adjustments</div>
+              </td>
+              <td><%= row.updatedLabel %></td>
+              <td><a class="transcript-table-link" href="<%= row.detailHref %>">Open</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("qualityReview.supervision.emptyTitle") %></h3>
+      <p><%= t("qualityReview.supervision.emptyBody") %></p>
+    </div>
+  <% } %>
+</section>

@@ -117,6 +117,14 @@ export const loadAllHelpMenuComponents = async () => {
             textOptions:[{name:"id",optional:false},{name:"reason",optional:true}],
             slashOptions:[{name:"id",optional:false},{name:"reason",optional:true}]
         }))
+        if (allowedCommands.includes("escalate")) ticketAdvanced.add(new api.ODHelpMenuCommandComponent("opendiscord:escalate",2,{
+            textName:prefix+"escalate",
+            textDescription:lang.getTranslation("helpMenu.escalate"),
+            slashName:"/escalate",
+            slashDescription:lang.getTranslation("helpMenu.escalate"),
+            textOptions:[{name:"id",optional:false},{name:"reason",optional:true}],
+            slashOptions:[{name:"id",optional:false},{name:"reason",optional:true}]
+        }))
         if (allowedCommands.includes("rename")) ticketAdvanced.add(new api.ODHelpMenuCommandComponent("opendiscord:rename",2,{
             textName:prefix+"rename",
             textDescription:lang.getTranslation("helpMenu.rename"),
@@ -292,6 +300,22 @@ export const loadAllHelpMenuComponents = async () => {
             slashDescription:lang.getTranslation("commands.prioritySet"),
             textOptions:[{name:"priority",optional:false},{name:"reason",optional:true}],
             slashOptions:[{name:"priority",optional:false},{name:"reason",optional:true}]
+        }))
+        if (allowedCommands.includes("close")) advanced.add(new api.ODHelpMenuCommandComponent("opendiscord:awaiting-set",-1,{
+            textName:prefix+"awaiting set",
+            textDescription:"Mark the current ticket as awaiting the current creator.",
+            slashName:"/awaiting set",
+            slashDescription:"Mark the current ticket as awaiting the current creator.",
+            textOptions:[{name:"reason",optional:true}],
+            slashOptions:[{name:"reason",optional:true}]
+        }))
+        if (allowedCommands.includes("close")) advanced.add(new api.ODHelpMenuCommandComponent("opendiscord:awaiting-clear",-2,{
+            textName:prefix+"awaiting clear",
+            textDescription:"Clear awaiting-user state on the current ticket.",
+            slashName:"/awaiting clear",
+            slashDescription:"Clear awaiting-user state on the current ticket.",
+            textOptions:[{name:"reason",optional:true}],
+            slashOptions:[{name:"reason",optional:true}]
         }))
     }
 }

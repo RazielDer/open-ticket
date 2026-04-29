@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING } from "./ticketTransport.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,7 +12,15 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:remove-ticket-user").workers.add([
         new api.ODWorker("opendiscord:remove-ticket-user",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason,data} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to remove user from ticket! Open Ticket doesn't support threads!")
+            if (channel.isThread()){
+                try{
+                    await (channel as discord.PrivateThreadChannel).members.remove(data.id)
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    opendiscord.log("Unable to remove user from private-thread ticket before state mutation.","warning",[{key:"channelid",value:channel.id,hidden:true},{key:"userid",value:data.id,hidden:true}])
+                    return cancel()
+                }
+            }
 
             await opendiscord.events.get("onTicketUserRemove").emit([ticket,user,data,channel,reason])
             
@@ -23,10 +32,12 @@ export const registerActions = async () => {
             ticket.get("opendiscord:busy").value = true
 
             //update channel permissions
-            try{
-                await channel.permissionOverwrites.delete(data)
-            }catch{
-                opendiscord.log("Failed to remove channel permission overwrites on remove-ticket-user","error")
+            if (!channel.isThread()){
+                try{
+                    await channel.permissionOverwrites.delete(data)
+                }catch{
+                    opendiscord.log("Failed to remove channel permission overwrites on remove-ticket-user","error")
+                }
             }
 
             //update ticket message

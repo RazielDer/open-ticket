@@ -32,12 +32,12 @@ export class ODTranscriptManager extends ODManager<ODTranscriptCompiler<any,null
 /**## ODTranscriptCompilerInitFunction `type`
  * This function will initiate/prepare the transcript system for an incoming transcript.
  */
-export type ODTranscriptCompilerInitFunction<InitData extends object|null> = (ticket:ODTicket, channel:discord.TextChannel, user:discord.User) => (ODTranscriptCompilerInitResult<InitData>)|Promise<ODTranscriptCompilerInitResult<InitData>>
+export type ODTranscriptCompilerInitFunction<InitData extends object|null> = (ticket:ODTicket, channel:discord.GuildTextBasedChannel, user:discord.User) => (ODTranscriptCompilerInitResult<InitData>)|Promise<ODTranscriptCompilerInitResult<InitData>>
 
 /**## ODTranscriptCompilerCompileFunction `type`
  * This function will generate/compile the transcript itself.
  */
-export type ODTranscriptCompilerCompileFunction<Data extends object,InitData extends object|null> = (ticket:ODTicket, channel:discord.TextChannel, user:discord.User, initData:InitData) => ODTranscriptCompilerCompileResult<Data>|Promise<ODTranscriptCompilerCompileResult<Data>>
+export type ODTranscriptCompilerCompileFunction<Data extends object,InitData extends object|null> = (ticket:ODTicket, channel:discord.GuildTextBasedChannel, user:discord.User, initData:InitData) => ODTranscriptCompilerCompileResult<Data>|Promise<ODTranscriptCompilerCompileResult<Data>>
 
 /**## ODTicketClearFilter `type`
  * This function will finish, clear-up & shut-down the transcript system. This will also initiate the sending of the messages to all recipients.
@@ -65,7 +65,7 @@ export interface ODTranscriptCompilerCompileResult<Data extends object> {
     /**The ticket this transcript is being created for. */
     ticket:ODTicket,
     /**The channel this transcript is being created for. */
-    channel:discord.TextChannel,
+    channel:discord.GuildTextBasedChannel,
     /**The user who created the transcript. */
     user:discord.User
     /**Was the compilation successfull? */
@@ -260,41 +260,8 @@ export class ODTranscriptCollector {
             })
 
             //create message components
-            const rows: ODTranscriptComponentRowData[] = []
-            msg.components.forEach((row) => {
-                const components: ODTranscriptComponentRowData["components"] = []
-                if (row.type != discord.ComponentType.ActionRow) return
-                row.components.forEach((component) => {
-                    if (component.type == discord.ComponentType.Button){
-                        components.push({
-                            id:component.customId,
-                            disabled:component.disabled,
-                            type:"button",
-                            label:component.label,
-                            emoji:this.#handleComponentEmoji(msg,component.emoji),
-                            color:this.#handleButtonComponentStyle(component.style),
-                            mode:(component.style == discord.ButtonStyle.Link) ? "url" : "button",
-                            url:component.url
-                        })
-                    }else if (component.type == discord.ComponentType.StringSelect){
-                        components.push({
-                            id:component.customId,
-                            disabled:component.disabled,
-                            type:"dropdown",
-                            placeholder:component.placeholder,
-                            options:component.options.map((option) => {
-                                return {
-                                    id:option.value,
-                                    label:option.label,
-                                    description:option.description ?? null,
-                                    emoji:this.#handleComponentEmoji(msg,option.emoji ?? null)
-                                }
-                            })
-                        })
-                    }
-                })
-                rows.push({components})
-            })
+            const rows = this.#collectComponentRows(msg,msg.components as readonly unknown[])
+            const componentText = this.#extractTextDisplayComponents(msg.components as readonly unknown[])
 
             //create message reply
             let reply: ODTranscriptMessageReplyData|ODTranscriptInteractionReplyData|null = null
@@ -378,7 +345,7 @@ export class ODTranscriptCollector {
                 edited:(msg.editedAt) ? true : false,
                 timestamp:createdTimestamp,
                 type,
-                content:(msg.content != "") ? msg.content : null,
+                content:[msg.content,...componentText].filter((text) => text != "").join("\n\n") || null,
                 embeds,
                 files,
                 components:rows,
@@ -386,6 +353,79 @@ export class ODTranscriptCollector {
                 reactions
             })
         }
+        return final
+    }
+    /**Collect legacy action-row components, including rows nested inside Components V2 containers. */
+    #collectComponentRows(message:discord.Message<true>, components:readonly unknown[]): ODTranscriptComponentRowData[] {
+        const rows: ODTranscriptComponentRowData[] = []
+        components.forEach((component) => {
+            const typedComponent = component as {type?: number, components?: readonly unknown[]}
+            if (typedComponent.type == discord.ComponentType.ActionRow && Array.isArray(typedComponent.components)) {
+                const rowComponents: ODTranscriptComponentRowData["components"] = []
+                typedComponent.components.forEach((rowComponent) => {
+                    const typedRowComponent = rowComponent as {
+                        type?: number,
+                        customId?: string|null,
+                        custom_id?: string|null,
+                        disabled?: boolean,
+                        label?: string|null,
+                        emoji?: discord.APIMessageComponentEmoji|null,
+                        style?: discord.ButtonStyle,
+                        url?: string|null,
+                        placeholder?: string|null,
+                        options?: {
+                            value:string,
+                            label:string,
+                            description?: string|null,
+                            emoji?: discord.APIMessageComponentEmoji|null
+                        }[]
+                    }
+                    if (typedRowComponent.type == discord.ComponentType.Button && typedRowComponent.style != null) {
+                        rowComponents.push({
+                            id:typedRowComponent.customId ?? typedRowComponent.custom_id ?? null,
+                            disabled:typedRowComponent.disabled ?? false,
+                            type:"button",
+                            label:typedRowComponent.label ?? null,
+                            emoji:this.#handleComponentEmoji(message,typedRowComponent.emoji ?? null),
+                            color:this.#handleButtonComponentStyle(typedRowComponent.style),
+                            mode:(typedRowComponent.style == discord.ButtonStyle.Link) ? "url" : "button",
+                            url:typedRowComponent.url ?? null
+                        })
+                    } else if (typedRowComponent.type == discord.ComponentType.StringSelect) {
+                        rowComponents.push({
+                            id:typedRowComponent.customId ?? typedRowComponent.custom_id ?? null,
+                            disabled:typedRowComponent.disabled ?? false,
+                            type:"dropdown",
+                            placeholder:typedRowComponent.placeholder ?? null,
+                            options:(typedRowComponent.options ?? []).map((option) => {
+                                return {
+                                    id:option.value,
+                                    label:option.label,
+                                    description:option.description ?? null,
+                                    emoji:this.#handleComponentEmoji(message,option.emoji ?? null)
+                                }
+                            })
+                        })
+                    }
+                })
+                rows.push({components:rowComponents})
+            } else if (Array.isArray(typedComponent.components)) {
+                rows.push(...this.#collectComponentRows(message,typedComponent.components))
+            }
+        })
+        return rows
+    }
+    /**Collect Components V2 text displays into the existing transcript content field. */
+    #extractTextDisplayComponents(components:readonly unknown[]): string[] {
+        const final: string[] = []
+        components.forEach((component) => {
+            const typedComponent = component as {type?: number, content?: string, components?: readonly unknown[]}
+            if (typedComponent.type == discord.ComponentType.TextDisplay && typeof typedComponent.content == "string" && typedComponent.content.trim() != "") {
+                final.push(typedComponent.content)
+            } else if (Array.isArray(typedComponent.components)) {
+                final.push(...this.#extractTextDisplayComponents(typedComponent.components))
+            }
+        })
         return final
     }
     /**Calculate a human-readable file size. Used in transcripts. */
@@ -505,7 +545,44 @@ export interface ODTranscriptMessageData {
     /**When this message is a reply to something, the data will be here. */
     reply: (ODTranscriptMessageReplyData|ODTranscriptInteractionReplyData|null),
     /**All reactions of htis message. */
-    reactions: ODTranscriptReactionData[]
+    reactions: ODTranscriptReactionData[],
+    /**Optional richer result-first form record data attached by transcript-aware plugins. */
+    formRecord?: ODTranscriptFormRecordData|null
+}
+
+/**## ODTranscriptFormRecordData `interface`
+ * Additive result-first form answer data for local transcript compilers.
+ */
+export interface ODTranscriptFormRecordData {
+    source: "ot-ticket-forms",
+    formId: string,
+    formName: string|false,
+    applicantDiscordUserId: string,
+    draftState: "initial"|"partial"|"completed",
+    updatedAt: string,
+    completedAt: string|false,
+    answers: ODTranscriptFormAnswerRecordData[]
+}
+
+export interface ODTranscriptFormAnswerRecordData {
+    position: number,
+    question: string,
+    answer: string|false,
+    answerData: ODTranscriptFormAnswerData|null
+}
+
+export type ODTranscriptFormAnswerData =
+    | { kind: "text", value: string|false }
+    | { kind: "string_select", selected: { value: string, label: string }[] }
+    | { kind: "user_select"|"role_select"|"channel_select"|"mentionable_select", selected: { id: string, label: string, entityKind: "user"|"role"|"channel" }[] }
+    | { kind: "file_upload", files: ODTranscriptFormAnswerFileData[] }
+
+export interface ODTranscriptFormAnswerFileData {
+    name: string,
+    url: string,
+    contentType: string|false,
+    size: number|false,
+    displayKind: "image"|"video"|"audio"|"file"
 }
 
 /**## ODTranscriptMessageType `type`

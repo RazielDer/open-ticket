@@ -217,6 +217,11 @@
                       <span class="field-label"><%= t("options.fields.backupCategoryId") %></span>
                       <input class="text-input" id="backupCategory" type="text">
                     </label>
+                    <label class="span-2">
+                      <span class="field-label"><%= t("options.fields.overflowCategories") %></span>
+                      <textarea class="code-area compact" id="overflowCategories"></textarea>
+                      <span class="field-help"><%= t("options.fields.overflowCategoriesHelp") %></span>
+                    </label>
                   </div>
                 </section>
 
@@ -282,6 +287,64 @@
 
                 <section class="subsection-card option-ticket-subsection">
                   <div class="section-heading">
+                    <h4><%= t("options.workspace.workflowTitle") %></h4>
+                  </div>
+                  <div class="form-grid three-up option-ticket-workflow-grid">
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowCloseRequestEnabled">
+                      <span><%= t("options.fields.workflowCloseRequestEnabled") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserEnabled") %></span>
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserReminderEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserReminderEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.workflowAwaitingUserReminderHours") %></span>
+                      <input class="text-input" id="workflowAwaitingUserReminderHours" type="number">
+                    </label>
+                    <label class="checkbox-field">
+                      <input type="checkbox" id="workflowAwaitingUserAutocloseEnabled">
+                      <span><%= t("options.fields.workflowAwaitingUserAutocloseEnabled") %></span>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.workflowAwaitingUserAutocloseHours") %></span>
+                      <input class="text-input" id="workflowAwaitingUserAutocloseHours" type="number">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.integrationTitle") %></h4>
+                  </div>
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.integrationProfileId") %></span>
+                      <select class="select-input" id="integrationProfileId">
+                        <option value=""><%= t("options.fields.noIntegrationProfile") %></option>
+                        <% integrationProfiles.forEach((profile) => { %>
+                          <option value="<%= profile.id %>"><%= profile.label %> (<%= profile.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.aiAssistProfileId") %></span>
+                      <select class="select-input" id="aiAssistProfileId">
+                        <option value=""><%= t("options.fields.noAiAssistProfile") %></option>
+                        <% aiAssistProfiles.forEach((profile) => { %>
+                          <option value="<%= profile.id %>"><%= profile.label %> (<%= profile.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
                     <h4><%= t("options.workspace.questionPickerTitle") %></h4>
                   </div>
                   <% if (availableQuestions.length) { %>
@@ -304,6 +367,28 @@
                       <p><%= t("options.workspace.questionPickerEmptyBody") %></p>
                     </div>
                   <% } %>
+                </section>
+
+                <section class="subsection-card option-ticket-subsection">
+                  <div class="section-heading">
+                    <h4><%= t("options.workspace.supportRoutingTitle") %></h4>
+                  </div>
+                  <div class="form-grid two-up">
+                    <label>
+                      <span class="field-label"><%= t("options.fields.supportTeamId") %></span>
+                      <select class="select-input" id="routingSupportTeamId">
+                        <option value=""><%= t("options.fields.legacyRoleRouting") %></option>
+                        <% supportTeams.forEach((team) => { %>
+                          <option value="<%= team.id %>"><%= team.name %> (<%= team.id %>)</option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span class="field-label"><%= t("options.fields.escalationTargets") %></span>
+                      <textarea class="code-area compact" id="routingEscalationTargetIds" spellcheck="false"></textarea>
+                      <span class="field-help"><%= t("options.fields.escalationTargetsHelp") %></span>
+                    </label>
+                  </div>
                 </section>
 
                 <section class="subsection-card option-ticket-subsection">
@@ -461,6 +546,9 @@
 
       <textarea id="options-data" hidden><%= JSON.stringify(options) %></textarea>
       <textarea id="available-questions-data" hidden><%= JSON.stringify(availableQuestions) %></textarea>
+      <textarea id="support-teams-data" hidden><%= JSON.stringify(supportTeams) %></textarea>
+      <textarea id="integration-profiles-data" hidden><%= JSON.stringify(integrationProfiles) %></textarea>
+      <textarea id="ai-assist-profiles-data" hidden><%= JSON.stringify(aiAssistProfiles) %></textarea>
       <textarea id="dependency-graph-data" hidden><%= dependencyGraph %></textarea>
       <textarea id="page-messages" hidden><%= messages %></textarea>
     </main>

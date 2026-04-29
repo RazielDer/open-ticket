@@ -1,5 +1,7 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as discord from "discord.js"
+import { getTicketOptionSupportTeamRoleIds } from "../../actions/ticketRouting.js"
+import { buildTicketPermissionId, getTicketOptionPermissionRoleIds } from "./permissionCore.js"
 
 export const loadAllPermissions = async () => {
     const generalConfig = opendiscord.configs.get("opendiscord:general")
@@ -32,20 +34,20 @@ export const loadAllPermissions = async () => {
     //TICKET ADMINS
     await opendiscord.tickets.loopAll(async (ticket) => {
         try {
-            const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,ticket.id.value)
+            const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,ticket.id.value)
             if (!channel) return
 
-            const admins = ticket.option.exists("opendiscord:admins") ? ticket.option.get("opendiscord:admins").value : []
-            const readAdmins = ticket.option.exists("opendiscord:admins-readonly") ? ticket.option.get("opendiscord:admins-readonly").value : []
+            const permissionRoleIds = getTicketOptionPermissionRoleIds(ticket.option,getTicketOptionSupportTeamRoleIds(ticket.option))
 
-            for (const admin of admins.concat(readAdmins)){
-                if (opendiscord.permissions.exists("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin)) return
+            for (const admin of permissionRoleIds){
+                const permissionId = buildTicketPermissionId(ticket.id.value,admin)
+                if (opendiscord.permissions.exists(permissionId)) continue
                 const role = await mainServer.roles.fetch(admin)
                 if (!role) return opendiscord.log("Unable to register permission for ticket admin!","error",[
                     {key:"roleid",value:admin}
                 ])
                 
-                opendiscord.permissions.add(new api.ODPermission("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin,"channel-role","support",role,channel))
+                opendiscord.permissions.add(new api.ODPermission(permissionId,"channel-role","support",role,channel))
             }
         }catch(err){
             process.emit("uncaughtException",err)
@@ -57,29 +59,29 @@ export const loadAllPermissions = async () => {
 export const addTicketPermissions = async (ticket:api.ODTicket) => {
     const mainServer = opendiscord.client.mainServer
     if (!mainServer) return
-    const channel = await opendiscord.client.fetchGuildTextChannel(mainServer,ticket.id.value)
+    const channel = await opendiscord.client.fetchGuildTextBasedChannel(mainServer,ticket.id.value)
     if (!channel) return
 
-    const admins = ticket.option.exists("opendiscord:admins") ? ticket.option.get("opendiscord:admins").value : []
-    const readAdmins = ticket.option.exists("opendiscord:admins-readonly") ? ticket.option.get("opendiscord:admins-readonly").value : []
+    const permissionRoleIds = getTicketOptionPermissionRoleIds(ticket.option,getTicketOptionSupportTeamRoleIds(ticket.option))
 
-    for (const admin of admins.concat(readAdmins)){
-        if (opendiscord.permissions.exists("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin)) return
+    for (const admin of permissionRoleIds){
+        const permissionId = buildTicketPermissionId(ticket.id.value,admin)
+        if (opendiscord.permissions.exists(permissionId)) continue
         const role = await mainServer.roles.fetch(admin)
         if (!role) return opendiscord.log("Unable to register permission for ticket admin!","error",[
             {key:"roleid",value:admin}
         ])
         
-        opendiscord.permissions.add(new api.ODPermission("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin,"channel-role","support",role,channel))
+        opendiscord.permissions.add(new api.ODPermission(permissionId,"channel-role","support",role,channel))
     }
 }
 
-export const removeTicketPermissions = async (ticket:api.ODTicket) => {
-    const admins = ticket.option.exists("opendiscord:admins") ? ticket.option.get("opendiscord:admins").value : []
-    const readAdmins = ticket.option.exists("opendiscord:admins-readonly") ? ticket.option.get("opendiscord:admins-readonly").value : []
+export const removeTicketPermissions = async (ticket:api.ODTicket, option:api.ODTicketOption = ticket.option) => {
+    const permissionRoleIds = getTicketOptionPermissionRoleIds(option,getTicketOptionSupportTeamRoleIds(option))
 
-    for (const admin of admins.concat(readAdmins)){
-        if (!opendiscord.permissions.exists("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin)) return
-        opendiscord.permissions.remove("opendiscord:ticket-admin_"+ticket.id.value+"_"+admin)
+    for (const admin of permissionRoleIds){
+        const permissionId = buildTicketPermissionId(ticket.id.value,admin)
+        if (!opendiscord.permissions.exists(permissionId)) continue
+        opendiscord.permissions.remove(permissionId)
     }
 }

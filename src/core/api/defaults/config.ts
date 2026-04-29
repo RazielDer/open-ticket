@@ -36,6 +36,10 @@ export interface ODConfigManagerIds_Default {
     "opendiscord:questions":ODJsonConfig_DefaultQuestions,
     "opendiscord:options":ODJsonConfig_DefaultOptions,
     "opendiscord:panels":ODJsonConfig_DefaultPanels,
+    "opendiscord:support-teams":ODJsonConfig_DefaultSupportTeams,
+    "opendiscord:integration-profiles":ODJsonConfig_DefaultIntegrationProfiles,
+    "opendiscord:ai-assist-profiles":ODJsonConfig_DefaultAiAssistProfiles,
+    "opendiscord:knowledge-sources":ODJsonConfig_DefaultKnowledgeSources,
     "opendiscord:transcripts":ODJsonConfig_DefaultTranscripts
 }
 
@@ -172,6 +176,7 @@ export interface ODJsonConfig_DefaultSystemPermissions {
     pin:ODJsonConfig_DefaultCmdPermissionSettingsType,
     unpin:ODJsonConfig_DefaultCmdPermissionSettingsType,
     move:ODJsonConfig_DefaultCmdPermissionSettingsType,
+    escalate:ODJsonConfig_DefaultCmdPermissionSettingsType,
     rename:ODJsonConfig_DefaultCmdPermissionSettingsType,
     add:ODJsonConfig_DefaultCmdPermissionSettingsType,
     remove:ODJsonConfig_DefaultCmdPermissionSettingsType,
@@ -406,6 +411,10 @@ export interface ODJsonConfig_DefaultOptionPingSettingsType {
  * All settings related to the ticket channel itself in a ticket option.
  */
 export interface ODJsonConfig_DefaultOptionTicketChannelType {
+    /**The Discord transport used for this ticket option. */
+    transportMode?:"channel_text"|"private_thread",
+    /**The parent text channel for private-thread tickets. Required when transportMode is private_thread. */
+    threadParentChannel?:string,
     /**The prefix used in the name of this ticket channel. */
     prefix:string,
     /**The type of suffix used in the name of this ticket channel. */
@@ -416,6 +425,8 @@ export interface ODJsonConfig_DefaultOptionTicketChannelType {
     closedCategory:string,
     /**An optional discord category id to create this ticket in when the primary one is full (max. 50 tickets). */
     backupCategory:string,
+    /**Ordered overflow category ids to try when the primary category is unavailable or full. */
+    overflowCategories:string[],
     /**A list of discord category ids to move this ticket to when claimed by a specific user. */
     claimedCategory:{
         /**The user which claimed the ticket. */
@@ -425,6 +436,38 @@ export interface ODJsonConfig_DefaultOptionTicketChannelType {
     }[],
     /**The channel topic shown at the top of the channel in discord. */
     topic:string
+}
+
+/**## ODJsonConfig_DefaultOptionRoutingType `interface`
+ * Support-team routing and escalation settings for a ticket option.
+ */
+export interface ODJsonConfig_DefaultOptionRoutingType {
+    /**The support team that owns new tickets for this option. Empty keeps legacy role-only routing. */
+    supportTeamId:string,
+    /**Ticket option IDs that this option may escalate into. */
+    escalationTargetOptionIds:string[]
+}
+
+/**## ODJsonConfig_DefaultOptionWorkflowType `interface`
+ * Close-request and awaiting-user workflow settings for a ticket option.
+ */
+export interface ODJsonConfig_DefaultOptionWorkflowType {
+    closeRequest:{
+        /**Allow the current ticket creator to request closure when direct close is not already available. */
+        enabled:boolean
+    },
+    awaitingUser:{
+        /**Allow staff to mark this ticket as waiting on the current ticket creator. */
+        enabled:boolean,
+        /**Send one reminder during each waiting cycle. */
+        reminderEnabled:boolean,
+        /**Hours after awaiting-user starts before the reminder is sent. */
+        reminderHours:number,
+        /**Close the ticket after the configured waiting duration. */
+        autoCloseEnabled:boolean,
+        /**Hours after awaiting-user starts before the ticket is closed. */
+        autoCloseHours:number
+    }
 }
 
 /**## ODJsonConfig_DefaultOptionTicketType `interface`
@@ -441,8 +484,16 @@ export interface ODJsonConfig_DefaultOptionTicketType extends ODJsonConfig_Defau
     allowCreationByBlacklistedUsers:boolean,
     /**A list of valid question ids from the `questions.json` config. */
     questions:string[],
+    /**The integration profile bound to this ticket option. Empty disables generic provider integration. */
+    integrationProfileId:string,
+    /**The AI assist profile bound to this ticket option. Empty disables ticket AI assist. */
+    aiAssistProfileId:string,
     /**All settings related to the ticket channel itself. */
     channel:ODJsonConfig_DefaultOptionTicketChannelType,
+    /**All settings related to support-team ownership and escalation targets. */
+    routing:ODJsonConfig_DefaultOptionRoutingType,
+    /**All settings related to creator close-request and awaiting-user workflow. */
+    workflow:ODJsonConfig_DefaultOptionWorkflowType,
     /**All settings related to the message sent in DM to the creator when the ticket is created. */
     dmMessage:{
         /**Enable this message. */
@@ -548,6 +599,131 @@ export type ODJsonConfig_DefaultOptionsData = (ODJsonConfig_DefaultOptionTicketT
  */
 export class ODJsonConfig_DefaultOptions extends ODJsonConfig {
     declare data: ODJsonConfig_DefaultOptionsData
+}
+
+/**## ODJsonConfig_DefaultSupportTeamType `interface`
+ * A support team that can own ticket routes.
+ */
+export interface ODJsonConfig_DefaultSupportTeamType {
+    /**Unique support-team id. */
+    id:string,
+    /**Human-readable team name. */
+    name:string,
+    /**Discord role IDs that make up this support team. */
+    roleIds:string[],
+    /**How new/rerouted tickets are assigned within this support team. */
+    assignmentStrategy:"manual"|"round_robin"
+}
+
+/**## ODJsonConfig_DefaultSupportTeamsData `type`
+ * All contents of the `support-teams.json` config file.
+ */
+export type ODJsonConfig_DefaultSupportTeamsData = ODJsonConfig_DefaultSupportTeamType[]
+
+/**## ODJsonConfig_DefaultSupportTeams `default_class`
+ * This default class is made for the `support-teams.json` config!
+ */
+export class ODJsonConfig_DefaultSupportTeams extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultSupportTeamsData
+}
+
+/**## ODJsonConfig_DefaultIntegrationProfileType `interface`
+ * A named integration provider profile that ticket options can bind to.
+ */
+export interface ODJsonConfig_DefaultIntegrationProfileType {
+    /**Unique integration profile id. */
+    id:string,
+    /**The runtime integration provider id. */
+    providerId:string,
+    /**Human-readable profile label. */
+    label:string,
+    /**When disabled, bound ticket creation fails closed at runtime. */
+    enabled:boolean,
+    /**Provider-owned profile settings. */
+    settings:Record<string, unknown>
+}
+
+/**## ODJsonConfig_DefaultIntegrationProfilesData `type`
+ * All contents of the `integration-profiles.json` config file.
+ */
+export type ODJsonConfig_DefaultIntegrationProfilesData = ODJsonConfig_DefaultIntegrationProfileType[]
+
+/**## ODJsonConfig_DefaultIntegrationProfiles `default_class`
+ * This default class is made for the `integration-profiles.json` config!
+ */
+export class ODJsonConfig_DefaultIntegrationProfiles extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultIntegrationProfilesData
+}
+
+/**## ODJsonConfig_DefaultAiAssistProfileType `interface`
+ * A named AI assist provider profile that ticket options can bind to.
+ */
+export interface ODJsonConfig_DefaultAiAssistProfileType {
+    /**Unique AI assist profile id. */
+    id:string,
+    /**The runtime AI assist provider id. */
+    providerId:string,
+    /**Human-readable profile label. */
+    label:string,
+    /**When disabled, bound ticket AI assist requests are unavailable. */
+    enabled:boolean,
+    /**Knowledge source ids available to this profile. */
+    knowledgeSourceIds:string[],
+    /**Context collection limits and toggles. */
+    context:{
+        /**Maximum live ticket messages to include. */
+        maxRecentMessages:number,
+        /**Include non-secret ticket metadata such as option, transport, assignment, state, and priority. */
+        includeTicketMetadata:boolean,
+        /**Include current live ticket participant labels and ids. */
+        includeParticipants:boolean,
+        /**Include the current ticket-managed form answer snapshot when available. */
+        includeManagedFormSnapshot:boolean,
+        /**Include bot-authored live ticket messages. */
+        includeBotMessages:boolean
+    },
+    /**Provider-owned non-secret profile settings. */
+    settings:Record<string, unknown>
+}
+
+/**## ODJsonConfig_DefaultAiAssistProfilesData `type`
+ * All contents of the `ai-assist-profiles.json` config file.
+ */
+export type ODJsonConfig_DefaultAiAssistProfilesData = ODJsonConfig_DefaultAiAssistProfileType[]
+
+/**## ODJsonConfig_DefaultAiAssistProfiles `default_class`
+ * This default class is made for the `ai-assist-profiles.json` config!
+ */
+export class ODJsonConfig_DefaultAiAssistProfiles extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultAiAssistProfilesData
+}
+
+/**## ODJsonConfig_DefaultKnowledgeSourceType `interface`
+ * A local file knowledge source usable by AI assist profiles.
+ */
+export interface ODJsonConfig_DefaultKnowledgeSourceType {
+    /**Unique knowledge source id. */
+    id:string,
+    /**Human-readable source label. */
+    label:string,
+    /**The supported local source kind. */
+    kind:"markdown-file"|"faq-json",
+    /**A relative local path under knowledge/ or .docs/. */
+    path:string,
+    /**When disabled, the source is ignored at runtime. */
+    enabled:boolean
+}
+
+/**## ODJsonConfig_DefaultKnowledgeSourcesData `type`
+ * All contents of the `knowledge-sources.json` config file.
+ */
+export type ODJsonConfig_DefaultKnowledgeSourcesData = ODJsonConfig_DefaultKnowledgeSourceType[]
+
+/**## ODJsonConfig_DefaultKnowledgeSources `default_class`
+ * This default class is made for the `knowledge-sources.json` config!
+ */
+export class ODJsonConfig_DefaultKnowledgeSources extends ODJsonConfig {
+    declare data: ODJsonConfig_DefaultKnowledgeSourcesData
 }
 
 /**## ODJsonConfig_DefaultPanelEmbedSettingsType `interface`

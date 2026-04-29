@@ -19,9 +19,9 @@ import { ODPriorityLevel } from "../openticket/priority"
 export interface ODActionManagerIds_Default {
     "opendiscord:create-ticket-permissions":{
         source:"panel-button"|"panel-dropdown"|"slash"|"text"|"other",
-        params:{guild:discord.Guild,user:discord.User,option:ODTicketOption},
+        params:{guild:discord.Guild,user:discord.User,option:ODTicketOption,answers?:{id:string,name:string,type:"short"|"paragraph",value:string|null}[]},
         result:{valid:boolean,reason:"blacklist"|"cooldown"|"global-limit"|"global-user-limit"|"option-limit"|"option-user-limit"|"custom"|null,cooldownUntil?:Date,customReason?:string},
-        workers:"opendiscord:check-blacklist"|"opendiscord:check-cooldown"|"opendiscord:check-global-limits"|"opendiscord:check-option-limits"|"opendiscord:valid"
+        workers:"opendiscord:check-blacklist"|"opendiscord:check-cooldown"|"opendiscord:check-global-limits"|"opendiscord:check-option-limits"|"opendiscord:ticket-integration-eligibility"|"opendiscord:valid"
     },
     "opendiscord:create-transcript":{
         source:"slash"|"text"|"ticket-message"|"reopen-message"|"close-message"|"autoclose-message"|"autodelete"|"clear"|"other",
@@ -36,7 +36,7 @@ export interface ODActionManagerIds_Default {
         workers:"opendiscord:create-ticket"|"opendiscord:send-ticket-message"|"opendiscord:discord-logs"|"opendiscord:logs"
     },
     "opendiscord:close-ticket":{
-        source:"slash"|"text"|"ticket-message"|"reopen-message"|"autoclose"|"other",
+        source:"slash"|"text"|"ticket-message"|"reopen-message"|"autoclose"|"close-request"|"awaiting-user-timeout"|"other",
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,allowCategoryChange?:boolean},
         result:{},
         workers:"opendiscord:close-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
@@ -65,6 +65,12 @@ export interface ODActionManagerIds_Default {
         result:{},
         workers:"opendiscord:unclaim-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
     },
+    "opendiscord:assign-ticket":{
+        source:"slash"|"text"|"ticket-message"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,assigneeUserId:string},
+        result:{},
+        workers:"opendiscord:assign-ticket"|"opendiscord:logs"
+    },
     "opendiscord:pin-ticket":{
         source:"slash"|"text"|"ticket-message"|"unpin-message"|"other",
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean},
@@ -88,6 +94,12 @@ export interface ODActionManagerIds_Default {
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,data:ODTicketOption},
         result:{},
         workers:"opendiscord:move-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
+    },
+    "opendiscord:escalate-ticket":{
+        source:"slash"|"text"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,sendMessage:boolean,data:ODTicketOption},
+        result:{},
+        workers:"opendiscord:escalate-ticket"|"opendiscord:logs"
     },
     "opendiscord:add-ticket-user":{
         source:"slash"|"text"|"other",
@@ -130,6 +142,42 @@ export interface ODActionManagerIds_Default {
         params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,newCreator:discord.User,reason:string|null,sendMessage:boolean},
         result:{},
         workers:"opendiscord:transfer-ticket"|"opendiscord:discord-logs"|"opendiscord:logs"
+    },
+    "opendiscord:request-close":{
+        source:"button"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:request-close"
+    },
+    "opendiscord:cancel-close-request":{
+        source:"button"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:cancel-close-request"
+    },
+    "opendiscord:approve-close-request":{
+        source:"button"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null,member?:discord.GuildMember|null},
+        result:{},
+        workers:"opendiscord:approve-close-request"
+    },
+    "opendiscord:dismiss-close-request":{
+        source:"button"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:dismiss-close-request"
+    },
+    "opendiscord:set-awaiting-user":{
+        source:"slash"|"text"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:set-awaiting-user"
+    },
+    "opendiscord:clear-awaiting-user":{
+        source:"slash"|"text"|"dashboard"|"other",
+        params:{guild:discord.Guild,channel:discord.GuildTextBasedChannel,user:discord.User,ticket:ODTicket,reason:string|null},
+        result:{},
+        workers:"opendiscord:clear-awaiting-user"
     },
 }
 

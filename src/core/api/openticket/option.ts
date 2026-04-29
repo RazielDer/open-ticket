@@ -149,7 +149,10 @@ export interface ODTicketOptionIds {
     "opendiscord:admins-readonly":ODOptionData<string[]>,
     "opendiscord:allow-blacklisted-users":ODOptionData<boolean>,
     "opendiscord:questions":ODOptionData<string[]>,
+    "opendiscord:integration-profile":ODOptionData<string>,
     
+    "opendiscord:channel-transport-mode":ODOptionData<"channel_text"|"private_thread">,
+    "opendiscord:channel-thread-parent":ODOptionData<string>,
     "opendiscord:channel-prefix":ODOptionData<string>,
     "opendiscord:channel-suffix":ODOptionData<"user-name"|"user-nickname"|"user-id"|"random-number"|"random-hex"|"counter-dynamic"|"counter-fixed">,
     "opendiscord:channel-category":ODOptionData<string>,
@@ -157,6 +160,16 @@ export interface ODTicketOptionIds {
     "opendiscord:channel-category-backup":ODOptionData<string>,
     "opendiscord:channel-categories-claimed":ODOptionData<{user:string,category:string}[]>,
     "opendiscord:channel-topic":ODOptionData<string>,
+
+    "opendiscord:routing-support-team":ODOptionData<string>,
+    "opendiscord:routing-escalation-targets":ODOptionData<string[]>,
+
+    "opendiscord:workflow-close-request-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-reminder-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-reminder-hours":ODOptionData<number>,
+    "opendiscord:workflow-awaiting-user-autoclose-enabled":ODOptionData<boolean>,
+    "opendiscord:workflow-awaiting-user-autoclose-hours":ODOptionData<number>,
     
     "opendiscord:dm-message-enabled":ODOptionData<boolean>,
     "opendiscord:dm-message-text":ODOptionData<string>,

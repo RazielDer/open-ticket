@@ -1,5 +1,13 @@
 import * as discord from "discord.js"
 import { api, opendiscord, utilities } from "#opendiscord"
+import {
+    completeFeedbackSession,
+    createDeliveryFailedFeedbackSession,
+    createFeedbackSession,
+    type OTFeedbackAfterFeedbackPayload,
+    type OTFeedbackSession,
+    type OTFeedbackTriggerMode
+} from "./service/feedback-session.js"
 
 //DECLARATION
 export interface OTFeedbackConfigQuestion {
@@ -71,7 +79,7 @@ declare module "#opendiscord-types" {
     }
     export interface ODEventIds_Default {
         "ot-feedback:onFeedback":api.ODEvent_Default<(questions:OTFeedbackConfigValidQuestion[]) => api.ODPromiseVoid>
-        "ot-feedback:afterFeedback":api.ODEvent_Default<(responses:OTFeedbackConfigAnsweredValidQuestion[]) => api.ODPromiseVoid>
+        "ot-feedback:afterFeedback":api.ODEvent_Default<(payload:OTFeedbackAfterFeedbackPayload<OTFeedbackConfigAnsweredValidQuestion>) => api.ODPromiseVoid>
     }
     export interface ODTicketIds {
         "ot-feedback:close-count":api.ODTicketData<number>
@@ -117,6 +125,17 @@ const transformToLetter = (mode:"alphabetical"|"numeric",index:number): string =
     if (mode == "numeric") return (index+1).toString()
     else if (mode == "alphabetical") return alphabet[index].toUpperCase()
     else return "<UNKNOWN>"
+}
+const emitAfterFeedback = async (session:OTFeedbackSession,responses:OTFeedbackConfigAnsweredValidQuestion[]) => {
+    await opendiscord.events.get("ot-feedback:afterFeedback").emit([{session,responses}])
+}
+const getCloseCountData = (ticket:api.ODTicket) => {
+    if (!ticket.exists("ot-feedback:close-count")){
+        ticket.add(new api.ODTicketData("ot-feedback:close-count",0))
+    }
+    const closeCount = ticket.get("ot-feedback:close-count")
+    if (typeof closeCount.value != "number") closeCount.value = 0
+    return closeCount
 }
 
 //REGISTER CONFIG
@@ -275,33 +294,48 @@ opendiscord.events.get("onReadyForUsage").listen(() => {
     const config = opendiscord.configs.get("ot-feedback:config")
     const reviewWebhook = new discord.WebhookClient({url:config.data.webhookUrl})
 
-    function feedbackHandler(ticket:api.ODTicket,user:discord.User,channel:discord.GuildTextBasedChannel){
+    function feedbackHandler(ticket:api.ODTicket,user:discord.User,channel:discord.GuildTextBasedChannel,triggerMode:OTFeedbackTriggerMode,closeCountAtTrigger:number){
         const channelName = channel.name
+        const session = createFeedbackSession({
+            ticketId:ticket.id.value,
+            triggerMode,
+            closeCountAtTrigger
+        })
 
         utilities.runAsync(async () => {
             //add some delay so that the message arrives after the default close message
             await utilities.timer(2000)
 
-            const creator = await opendiscord.tickets.getTicketUser(ticket, "creator");
-            if (!creator) throw new api.ODPluginError("Couldn't find ticket creator on ticket close!")
-        
-            //send initial message
-            const statusQuestions: OTFeedbackConfigAnsweredValidQuestion[] = config.data.questions.map((value) => {
-                if (value.type == "image") return {label:value.label,type:value.type,allowGifs:value.allowGifs,answer:null}
-                else if (value.type == "attachment") return {label:value.label,type:value.type,allowZipFiles:value.allowZipFiles,allowExecutables:value.allowExecutables,answer:null}
-                else if (value.type == "choice") return {label:value.label,type:value.type,choiceOrdering:value.choiceOrdering,choices:value.choices,answer:null}
-                else return {label:value.label,type:value.type,answer:null}
-            })
-            const statusResult = await opendiscord.client.sendUserDm(creator,await opendiscord.builders.messages.getSafe("ot-feedback:response").build("other",{questions:statusQuestions}))
-            if (!statusResult.message) throw new api.ODPluginError("Unable to send OT Feedback status message!")
+            let creator: discord.User | null = null
+            let statusMessage: discord.Message | null = null
+            try{
+                creator = await opendiscord.tickets.getTicketUser(ticket, "creator");
+                if (!creator) throw new api.ODPluginError("Couldn't find ticket creator on ticket close!")
             
-            opendiscord.log(creator.displayName+" is now able to fill-in the feedback!","plugin",[
-                {key:"user",value:creator.username},
-                {key:"userid",value:creator.id,hidden:true},
-                {key:"questions",value:config.data.questions.length.toString()}
-            ])
+                //send initial message
+                const statusQuestions: OTFeedbackConfigAnsweredValidQuestion[] = config.data.questions.map((value) => {
+                    if (value.type == "image") return {label:value.label,type:value.type,allowGifs:value.allowGifs,answer:null}
+                    else if (value.type == "attachment") return {label:value.label,type:value.type,allowZipFiles:value.allowZipFiles,allowExecutables:value.allowExecutables,answer:null}
+                    else if (value.type == "choice") return {label:value.label,type:value.type,choiceOrdering:value.choiceOrdering,choices:value.choices,answer:null}
+                    else return {label:value.label,type:value.type,answer:null}
+                })
+                const statusResult = await opendiscord.client.sendUserDm(creator,await opendiscord.builders.messages.getSafe("ot-feedback:response").build("other",{questions:statusQuestions}))
+                if (!statusResult.message) throw new api.ODPluginError("Unable to send OT Feedback status message!")
+                statusMessage = statusResult.message
 
-            await opendiscord.events.get("ot-feedback:onFeedback").emit([config.data.questions])
+                opendiscord.log(creator.displayName+" is now able to fill-in the feedback!","plugin",[
+                    {key:"user",value:creator.username},
+                    {key:"userid",value:creator.id,hidden:true},
+                    {key:"questions",value:config.data.questions.length.toString()}
+                ])
+
+                await opendiscord.events.get("ot-feedback:onFeedback").emit([config.data.questions])
+            }catch(err){
+                await emitAfterFeedback(createDeliveryFailedFeedbackSession(session),[])
+                throw err
+            }
+
+            if (!creator || !statusMessage) throw new api.ODPluginError("Unable to bootstrap OT Feedback session!")
             
             //loop over each question and ask ticket creator
             const responses: OTFeedbackConfigAnsweredValidQuestion[] = []
@@ -347,7 +381,7 @@ opendiscord.events.get("onReadyForUsage").listen(() => {
                     responses.forEach((res,index) => {
                         newStatusQuestions[index] = res
                     })
-                    await statusResult.message.edit((await opendiscord.builders.messages.getSafe("ot-feedback:response").build("other",{questions:newStatusQuestions})).message)
+                    await statusMessage.edit((await opendiscord.builders.messages.getSafe("ot-feedback:response").build("other",{questions:newStatusQuestions})).message)
                 
                 }catch (err){
                     //send canceled
@@ -361,33 +395,40 @@ opendiscord.events.get("onReadyForUsage").listen(() => {
                 }
             }
             
-            //send completed
-            await opendiscord.client.sendUserDm(creator,await opendiscord.builders.messages.getSafe("ot-feedback:completed").build("other",{responses}))
-            if (config.data.sendWebhookWhenEmpty || !responses.every((r) => r.answer === null)) await reviewWebhook.send((await opendiscord.builders.messages.getSafe("ot-feedback:overview").build("other",{questions:responses,ticket,user:creator,channelName})).message)
+            const completedSession = completeFeedbackSession(session,responses,creator.id)
+            let postCompletionError: unknown = null
+            try{
+                //send completed
+                await opendiscord.client.sendUserDm(creator,await opendiscord.builders.messages.getSafe("ot-feedback:completed").build("other",{responses}))
+                if (config.data.sendWebhookWhenEmpty || !responses.every((r) => r.answer === null)) await reviewWebhook.send((await opendiscord.builders.messages.getSafe("ot-feedback:overview").build("other",{questions:responses,ticket,user:creator,channelName})).message)
 
-            //update stats
-            if (!responses.every((r) => r.answer === null)) await opendiscord.stats.get("opendiscord:global").setStat("ot-feedback:feedback-created",1,"increase")
+                //update stats
+                if (!responses.every((r) => r.answer === null)) await opendiscord.stats.get("opendiscord:global").setStat("ot-feedback:feedback-created",1,"increase")
+            }catch(err){
+                postCompletionError = err
+            }
             
-            await opendiscord.events.get("ot-feedback:afterFeedback").emit([responses])
+            await emitAfterFeedback(completedSession,responses)
+            if (postCompletionError) throw postCompletionError
         })
     }
 
     //ACTIVATE FEEDBACK SYSTEM (doesn't block process => utilities.runAsync())
     opendiscord.events.get("onTicketClose").listen((ticket,closer,channel) => {
         //handle close count
-        if (!ticket.exists("ot-feedback:close-count")){
-            ticket.add(new api.ODTicketData("ot-feedback:close-count",0))
-        }
-        const closeCount = ticket.get("ot-feedback:close-count")
+        const closeCount = getCloseCountData(ticket)
+        const closeCountAtTrigger = closeCount.value
         
         //handle close
-        if (config.data.trigger == "close") feedbackHandler(ticket,closer,channel)
-        if (config.data.trigger == "first-close-only" && closeCount.value === 0) feedbackHandler(ticket,closer,channel)
+        if (config.data.trigger == "close") feedbackHandler(ticket,closer,channel,"close",closeCountAtTrigger)
+        if (config.data.trigger == "first-close-only" && closeCountAtTrigger === 0) feedbackHandler(ticket,closer,channel,"first-close-only",closeCountAtTrigger)
         
         //increase close count
-        closeCount.value = closeCount.value+1
+        closeCount.value = closeCountAtTrigger+1
     })
-    if (config.data.trigger == "delete") opendiscord.events.get("onTicketDelete").listen(feedbackHandler)
+    if (config.data.trigger == "delete") opendiscord.events.get("onTicketDelete").listen((ticket,deleter,channel) => {
+        feedbackHandler(ticket,deleter,channel,"delete",getCloseCountData(ticket).value)
+    })
 })
 
 //REGISTER CLOSE COUNT

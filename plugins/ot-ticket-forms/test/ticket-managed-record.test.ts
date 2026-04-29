@@ -111,3 +111,18 @@ test("answers embed copy distinguishes saved drafts from submitted applications"
     assert.equal(source.includes("Draft saved. Use the ${OT_FORMS_CONTINUE_APPLICATION_BUTTON_LABEL} button or the Edit a saved answer menu on the ticket card to keep working."), true)
     assert.equal(source.includes("Submitted for staff review. This mirror stays pinned to the last submitted answers until the applicant sends an updated retry submission."), true)
 })
+
+test("managed-record applicant activity clears awaiting-user without rebinding to current creator", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "src", "actions", "ticketWorkflow.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+    const start = source.indexOf("export async function clearAwaitingUserForApplicantMutation")
+    const end = source.indexOf("export async function runAwaitingUserWorkflowScan")
+
+    assert.notEqual(start, -1)
+    assert.notEqual(end, -1)
+
+    const applicantClearFunction = source.slice(start, end)
+    assert.match(applicantClearFunction, /authoritativeApplicantUserId/)
+    assert.match(applicantClearFunction, /clearAwaitingUserForAuthorizedActivity/)
+    assert.doesNotMatch(applicantClearFunction, /clearAwaitingUserForRequesterActivity/)
+})

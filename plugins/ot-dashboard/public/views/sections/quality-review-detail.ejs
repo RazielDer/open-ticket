@@ -1,0 +1,486 @@
+<%
+  const detail = qualityReviewDetail.detailRecord
+%>
+
+<% if (!qualityReviewDetail.available) { %>
+  <section class="section-card transcript-workspace-shell quality-review-detail-shell">
+    <div class="empty-panel">
+      <h3><%= t("qualityReview.detail.unavailableTitle") %></h3>
+      <p><%= qualityReviewDetail.warningMessage %></p>
+    </div>
+  </section>
+<% } else if (detail) { %>
+  <% if (detail.telemetryWarning) { %>
+    <div class="inline-alert warning"><%= detail.telemetryWarning %></div>
+  <% } %>
+
+  <section class="section-card transcript-workspace-shell quality-review-detail-shell">
+    <div class="transcript-workspace-header">
+      <div class="transcript-workspace-copy">
+        <h2 class="transcript-workspace-title"><%= detail.ticketId %></h2>
+        <p class="item-copy"><%= detail.historicalSummary.live ? t("qualityReview.detail.liveBody") : t("qualityReview.detail.historicalOnlyBody") %></p>
+      </div>
+      <div class="card-actions">
+        <% if (qualityReviewDetail.canManage) { %>
+          <a class="btn secondary" href="<%= qualityReviewDetail.supervisionHref %>"><%= t("qualityReview.supervision.entryAction") %></a>
+        <% } %>
+        <% if (qualityReviewDetail.ticketWorkbenchHref) { %>
+          <a class="btn secondary" href="<%= qualityReviewDetail.ticketWorkbenchHref %>"><%= t("qualityReview.detail.ticketWorkbenchAction") %></a>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.currentTicketTitle") %></h3>
+      <% if (!detail.historicalSummary.live) { %>
+        <span class="status-pill tone-muted"><%= t("qualityReview.detail.noLongerActiveBadge") %></span>
+      <% } %>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.facts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3>Adjudication</h3>
+      <span class="status-pill tone-<%= detail.reviewCase.state === 'resolved' ? 'success' : detail.reviewCase.state === 'in_review' ? 'warning' : 'muted' %>"><%= detail.reviewCase.state === 'in_review' ? 'In review' : detail.reviewCase.state === 'resolved' ? 'Resolved' : 'Unreviewed' %></span>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.adjudicationFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="section-heading">
+      <h3>Queue governance</h3>
+      <% if (detail.reviewCase.overdue) { %>
+        <span class="status-pill tone-warning">Overdue</span>
+      <% } else { %>
+        <span class="status-pill tone-muted">Not overdue</span>
+      <% } %>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.governanceFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="section-heading">
+      <h3>Notifications</h3>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.notificationFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
+    <% if (qualityReviewDetail.canManage) { %>
+      <div class="stack-form">
+        <form method="post" action="<%= qualityReviewDetail.stateActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Review state</span>
+            <select class="select-input" name="state">
+              <option value="unreviewed" <%= detail.reviewCase.state === 'unreviewed' ? 'selected' : '' %>>Unreviewed</option>
+              <option value="in_review" <%= detail.reviewCase.state === 'in_review' ? 'selected' : '' %>>In review</option>
+            </select>
+          </label>
+          <button class="btn primary" type="submit">Set state</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.resolveOutcomeActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Resolution outcome</span>
+            <select class="select-input" name="resolutionOutcome" required>
+              <% qualityReviewDetail.resolutionOutcomeOptions.forEach((option) => { %>
+                <option value="<%= option.value %>" <%= detail.reviewCase.resolutionOutcome === option.value ? 'selected' : '' %>><%= option.label %></option>
+              <% }) %>
+            </select>
+          </label>
+          <button class="btn primary" type="submit">Resolve with outcome</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.assignOwnerActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Assign owner</span>
+            <% if (qualityReviewDetail.ownerChoices.length) { %>
+              <select class="select-input" name="ownerUserId">
+                <% qualityReviewDetail.ownerChoices.forEach((choice) => { %>
+                  <option value="<%= choice.value %>" <%= detail.reviewCase.ownerUserId === choice.value ? 'selected' : '' %>><%= choice.label %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input class="text-input" type="text" name="ownerUserId" value="<%= detail.reviewCase.ownerUserId || '' %>">
+            <% } %>
+          </label>
+          <button class="btn secondary" type="submit">Assign owner</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.clearOwnerActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <button class="btn secondary" type="submit">Clear owner</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.addNoteActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Add note</span>
+            <textarea class="text-input" name="note" maxlength="4000" rows="4"></textarea>
+          </label>
+          <button class="btn primary" type="submit">Add note</button>
+        </form>
+      </div>
+    <% } %>
+
+    <% if (detail.reviewCase.notes.length) { %>
+      <div class="entry-stack">
+        <% detail.reviewCase.notes.forEach((note) => { %>
+          <article class="inline-panel">
+            <div class="section-heading">
+              <strong><%= note.authorLabel %></strong>
+              <% if (note.latestAdjustment) { %>
+                <span class="status-pill tone-<%= note.latestAdjustment.mode === 'redacted' ? 'danger' : 'warning' %>"><%= note.latestAdjustment.mode === 'redacted' ? 'Redacted' : 'Corrected' %></span>
+              <% } %>
+            </div>
+            <div class="field-help"><%= new Date(note.createdAt).toLocaleString() %></div>
+            <p><%= note.body %></p>
+            <% if (note.latestAdjustment) { %>
+              <div class="field-help">Adjusted by <%= note.latestAdjustment.actorLabel %> on <%= new Date(note.latestAdjustment.createdAt).toLocaleString() %>: <%= note.latestAdjustment.reason %></div>
+            <% } %>
+            <% if (qualityReviewDetail.canManage) { %>
+              <% if (note.adjustmentHistory && note.adjustmentHistory.length) { %>
+                <details class="editor-disclosure">
+                  <summary class="transcript-filter-advanced-summary">
+                    <div>
+                      <h4>Adjustment history</h4>
+                    </div>
+                  </summary>
+                  <div class="editor-disclosure-body">
+                    <div class="entry-stack">
+                      <% note.adjustmentHistory.forEach((adjustment) => { %>
+                        <div class="inline-panel">
+                          <div class="section-heading">
+                            <strong><%= adjustment.mode === 'redacted' ? 'Redacted note' : 'Corrected note' %></strong>
+                            <span class="status-pill tone-<%= adjustment.mode === 'redacted' ? 'danger' : 'warning' %>"><%= adjustment.mode === 'redacted' ? 'Redacted' : 'Corrected' %></span>
+                          </div>
+                          <div class="field-help">Adjusted by <%= adjustment.actorLabel %> on <%= new Date(adjustment.createdAt).toLocaleString() %></div>
+                          <p><%= adjustment.reason %></p>
+                        </div>
+                      <% }) %>
+                    </div>
+                  </div>
+                </details>
+              <% } %>
+              <details class="editor-disclosure">
+                <summary class="transcript-filter-advanced-summary">
+                  <div>
+                    <h4>Adjust note</h4>
+                  </div>
+                </summary>
+                <div class="editor-disclosure-body">
+                  <form method="post" action="<%= qualityReviewDetail.correctNoteActionHref %>" class="stack-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+                    <input type="hidden" name="noteId" value="<%= note.noteId %>">
+                    <label>
+                      <span class="field-label">Correction reason</span>
+                      <input class="text-input" type="text" name="reason" maxlength="500" required>
+                    </label>
+                    <label>
+                      <span class="field-label">Replacement note</span>
+                      <textarea class="text-input" name="replacementBody" maxlength="4000" rows="3" required></textarea>
+                    </label>
+                    <button class="btn secondary" type="submit">Correct note</button>
+                  </form>
+                  <form method="post" action="<%= qualityReviewDetail.redactNoteActionHref %>" class="stack-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+                    <input type="hidden" name="noteId" value="<%= note.noteId %>">
+                    <label>
+                      <span class="field-label">Redaction reason</span>
+                      <input class="text-input" type="text" name="reason" maxlength="500" required>
+                    </label>
+                    <button class="btn secondary" type="submit">Redact note</button>
+                  </form>
+                </div>
+              </details>
+            <% } %>
+          </article>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3>No notes</h3>
+        <p>No quality-review notes have been recorded for this case.</p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3>Raw feedback</h3>
+    </div>
+    <% if (qualityReviewDetail.rawFeedbackSessions.length) { %>
+      <div class="entry-stack">
+        <% qualityReviewDetail.rawFeedbackSessions.forEach((session) => { %>
+          <article class="inline-panel">
+            <div class="section-heading">
+              <h4><%= session.sessionId %></h4>
+              <span class="status-pill tone-<%= session.statusTone %>"><%= session.statusLabel %></span>
+            </div>
+            <div class="field-help">Captured <%= session.capturedAt %> / expires <%= session.expiresAt %></div>
+            <% session.warnings.forEach((warning) => { %>
+              <div class="inline-alert warning"><%= warning %></div>
+            <% }) %>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>Type</th>
+                    <th>Answer</th>
+                    <th>Assets</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% session.answers.forEach((answer) => { %>
+                    <tr>
+                      <td><strong><%= answer.label || ('Question ' + answer.position) %></strong></td>
+                      <td><%= answer.type %></td>
+                      <td><%= answer.value %></td>
+                      <td>
+                        <% if (answer.assets.length) { %>
+                          <ul class="entry-stack">
+                            <% answer.assets.forEach((asset) => { %>
+                              <li>
+                                <strong><%= asset.fileName %></strong>
+                                <div class="field-help"><%= asset.contentType %> / <%= asset.byteSize %> / <%= asset.status %><%= asset.reason ? ' / ' + asset.reason : '' %></div>
+                                <% if (asset.downloadHref) { %>
+                                  <a class="transcript-table-link" href="<%= asset.downloadHref %>">Download</a>
+                                <% } %>
+                              </li>
+                            <% }) %>
+                          </ul>
+                        <% } else { %>
+                          <span class="status-pill tone-muted">No mirrored assets</span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3>Raw feedback not captured</h3>
+        <p>No completed answered feedback session has a raw-feedback custody record for this case.</p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.latestFeedbackTitle") %></h3>
+    </div>
+    <% if (detail.latestFeedbackSession) { %>
+      <div class="facts-grid">
+        <% qualityReviewDetail.latestFeedbackFacts.forEach((fact) => { %>
+          <div class="fact-row">
+            <span class="fact-label"><%= fact.label %></span>
+            <strong><%= fact.value %></strong>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noFeedbackTitle") %></h3>
+        <p><%= t("qualityReview.detail.noFeedbackBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.ratingAnswersTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.ratingRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.question") %></th>
+              <th><%= t("qualityReview.detail.table.rating") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.ratingRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.label %></strong></td>
+                <td><%= row.value %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noRatingsTitle") %></h3>
+        <p><%= t("qualityReview.detail.noRatingsBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.feedbackHistoryTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.feedbackRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.session") %></th>
+              <th><%= t("qualityReview.detail.table.status") %></th>
+              <th><%= t("qualityReview.detail.table.triggered") %></th>
+              <th><%= t("qualityReview.detail.table.completed") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.feedbackRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.status %></td>
+                <td><%= row.triggeredAt %></td>
+                <td><%= row.completedAt %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noFeedbackTitle") %></h3>
+        <p><%= t("qualityReview.detail.noFeedbackBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.reopenHistoryTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.reopenRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.event") %></th>
+              <th><%= t("qualityReview.detail.table.occurred") %></th>
+              <th><%= t("qualityReview.detail.table.actor") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.reopenRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.occurredAt %></td>
+                <td><%= row.actor %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noReopenTitle") %></h3>
+        <p><%= t("qualityReview.detail.noReopenBody") %></p>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("qualityReview.detail.lifecycleTitle") %></h3>
+    </div>
+    <% if (qualityReviewDetail.lifecycleRows.length) { %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><%= t("qualityReview.detail.table.event") %></th>
+              <th><%= t("qualityReview.detail.table.type") %></th>
+              <th><%= t("qualityReview.detail.table.occurred") %></th>
+              <th><%= t("qualityReview.detail.table.actor") %></th>
+              <th><%= t("qualityReview.detail.table.window") %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% qualityReviewDetail.lifecycleRows.forEach((row) => { %>
+              <tr>
+                <td><strong><%= row.id %></strong></td>
+                <td><%= row.type %></td>
+                <td><%= row.occurredAt %></td>
+                <td><%= row.actor %></td>
+                <td>
+                  <% if (row.matched) { %>
+                    <span class="pill-tag"><%= t("qualityReview.detail.currentWindow") %></span>
+                  <% } else { %>
+                    <span class="status-pill tone-muted"><%= t("qualityReview.detail.outsideWindow") %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="empty-panel">
+        <h3><%= t("qualityReview.detail.noLifecycleTitle") %></h3>
+        <p><%= t("qualityReview.detail.noLifecycleBody") %></p>
+      </div>
+    <% } %>
+  </section>
+<% } %>

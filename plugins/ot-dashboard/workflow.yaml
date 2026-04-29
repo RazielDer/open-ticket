@@ -133,8 +133,8 @@ decisions:
   - Use an equivalent authenticated transcript fixture when `127.0.0.1:3360` is unavailable to automation.
   - Let wide admin content surfaces use the shell's available content track unless a page has a concrete functional reason to stay narrower.
   - Fix add-ons/transcripts page-fill gaps through shared admin CSS rather than new route-specific layout wrappers.
-  - Retire the dedicated `/admin/tickets` surface and keep only the ticket summary signals that still add value on Home and in shared health details.
-  - Preserve historical `/admin/tickets` bookmarks by redirecting them to `/admin` instead of leaving a dead page or hard 404.
+  - Historical note: the old local-only retirement of `/admin/tickets` is superseded by the workspace SLICE-010 controller contract; `/admin/tickets` is again an active dashboard workbench route instead of a redirect.
+  - Preserve the retired-surface evidence as historical context only; the current route contract is the restored detail-first ticket workbench for editor and admin users.
   - Keep the next General-specific follow-up focused on layout structure and scan flow rather than reopening the broader editor system.
   - Use the General page's wide editor lane for calmer section grouping instead of leaving every secondary section as another full-width slab.
   - Keep the General advanced-tools tray behavior intact while reducing page clutter through denser navigation, clearer stats, and a non-overlapping save row.
@@ -704,22 +704,22 @@ phases:
   - id: P43
     title: Tickets surface retirement and safe redirect
     slice: 51-tickets-surface-retirement-and-safe-redirect
-    status: completed
+    status: superseded-by-workspace-slice-010
     depends_on:
       - P42
     outputs:
-      - The obsolete Tickets admin surface is removed from the authenticated rail and its dedicated template is deleted
-      - `/admin/tickets` redirects safely to `/admin` instead of rendering the retired page
-      - Home and shared health surfaces keep the remaining useful ticket summary signals
+      - Historical outcome: the obsolete March 2026 Tickets admin surface was removed from the authenticated rail and its dedicated template was deleted
+      - Superseded route contract: workspace `SLICE-010` restores `/admin/tickets` as a detail-first ticket workbench instead of a redirect
+      - Home and shared health surfaces keep ticket summary signals while the restored workbench owns operator ticket workflows
   - id: P44
     title: Final tickets surface retirement verification
     slice: 52-final-tickets-surface-retirement-verification
-    status: completed
+    status: superseded-by-workspace-slice-010
     depends_on:
       - P43
     outputs:
-      - The Tickets-surface retirement closes with build, tests, and authenticated browser verification
-      - Evidence captures the rail removal and safe redirect behavior
+      - Historical verification captured the rail removal and safe redirect behavior before workspace `SLICE-010`
+      - Superseded route contract: current verification must expect the restored Tickets rail item and `/admin/tickets` workbench
   - id: P45
     title: General workspace structure and density rebalance
     slice: 53-general-workspace-structure-and-density-rebalance

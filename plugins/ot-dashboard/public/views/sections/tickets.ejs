@@ -1,0 +1,522 @@
+<%
+  const hasActiveFilters = ticketList.activeFilters.length > 0
+%>
+
+<section class="section-card transcript-workspace-shell ticket-workbench-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h2 class="transcript-workspace-title"><%= t("tickets.page.workspaceTitle") %></h2>
+      <p class="item-copy"><%= t("tickets.page.workspaceBody") %></p>
+    </div>
+    <% if (ticketList.qualityReviewHref) { %>
+      <div class="card-actions">
+        <a class="btn secondary" href="<%= ticketList.qualityReviewHref %>"><%= t("qualityReview.entryAction") %></a>
+      </div>
+    <% } %>
+  </div>
+
+  <% if (!ticketList.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= ticketList.warningMessage %></p>
+    </div>
+  <% } %>
+
+  <% if (ticketList.telemetryWarningMessage) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.telemetryDegradedBadge") %></span>
+      <p class="item-copy"><%= ticketList.telemetryWarningMessage %></p>
+    </div>
+  <% } %>
+
+  <% if (ticketList.queueWarningMessage) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.queueDegradedBadge") %></span>
+      <p class="item-copy"><%= ticketList.queueWarningMessage %></p>
+    </div>
+  <% } %>
+</section>
+
+<section class="section-card transcript-workspace-shell ticket-saved-views-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h3><%= t("tickets.page.savedViewsTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.savedViewsBody") %></p>
+    </div>
+  </div>
+
+  <% if (!ticketList.savedViews.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= ticketList.savedViews.unavailableMessage %></p>
+    </div>
+  <% } %>
+
+  <div class="form-grid three-up transcript-filter-grid">
+    <div>
+      <h4><%= t("tickets.page.savedViewsPrivateTitle") %></h4>
+      <% if (ticketList.savedViews.privateViews.length) { %>
+        <div class="sticky-actions transcript-active-filters-list">
+          <% ticketList.savedViews.privateViews.forEach((view) => { %>
+            <a class="pill-tag <%= view.active ? 'tone-success' : '' %>" href="<%= view.applyHref %>"><%= view.name %></a>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <p class="field-help"><%= t("tickets.page.savedViewsEmptyPrivate") %></p>
+      <% } %>
+    </div>
+    <div>
+      <h4><%= t("tickets.page.savedViewsSharedTitle") %></h4>
+      <% if (ticketList.savedViews.sharedViews.length) { %>
+        <div class="sticky-actions transcript-active-filters-list">
+          <% ticketList.savedViews.sharedViews.forEach((view) => { %>
+            <a class="pill-tag <%= view.active ? 'tone-success' : '' %>" href="<%= view.applyHref %>"><%= view.name %></a>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <p class="field-help"><%= t("tickets.page.savedViewsEmptyShared") %></p>
+      <% } %>
+    </div>
+    <form method="post" action="<%= ticketList.savedViews.createAction %>" class="stack-form">
+      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+      <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+      <% Object.entries(ticketList.savedViews.currentQuery).forEach(([key, value]) => { %>
+        <input type="hidden" name="<%= key %>" value="<%= value %>">
+      <% }) %>
+      <h4><%= t("tickets.page.savedViewsCreateTitle") %></h4>
+      <label>
+        <span class="field-label"><%= t("tickets.page.savedViewsNameLabel") %></span>
+        <input class="text-input" type="text" name="name" placeholder="<%= t('tickets.page.savedViewsNamePlaceholder') %>" <%= ticketList.savedViews.available ? '' : 'disabled' %>>
+      </label>
+      <label>
+        <span class="field-label"><%= t("tickets.page.savedViewsScopeLabel") %></span>
+        <select class="select-input" name="scope" <%= ticketList.savedViews.available ? '' : 'disabled' %>>
+          <option value="private"><%= t("tickets.page.savedViewsPrivateScope") %></option>
+          <% if (ticketList.savedViews.canManageShared) { %>
+            <option value="shared"><%= t("tickets.page.savedViewsSharedScope") %></option>
+          <% } %>
+        </select>
+      </label>
+      <button class="btn primary" type="submit" <%= ticketList.savedViews.available ? '' : 'disabled' %>><%= t("tickets.page.savedViewsCreateAction") %></button>
+    </form>
+  </div>
+
+  <% if (ticketList.savedViews.activeView && (ticketList.savedViews.activeView.canUpdate || ticketList.savedViews.activeView.canDelete)) { %>
+    <div class="transcript-bulk-toolbar ticket-bulk-toolbar">
+      <% if (ticketList.savedViews.activeView.canUpdate) { %>
+        <form method="post" action="<%= ticketList.savedViews.activeView.updateAction %>" class="stack-form transcript-bulk-reason">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+          <% Object.entries(ticketList.savedViews.currentQuery).forEach(([key, value]) => { %>
+            <input type="hidden" name="<%= key %>" value="<%= value %>">
+          <% }) %>
+          <h4><%= t("tickets.page.savedViewsUpdateTitle") %></h4>
+          <label>
+            <span class="field-label"><%= t("tickets.page.savedViewsNameLabel") %></span>
+            <input class="text-input" type="text" name="name" value="<%= ticketList.savedViews.activeView.name %>">
+          </label>
+          <label>
+            <span class="field-label"><%= t("tickets.page.savedViewsScopeLabel") %></span>
+            <select class="select-input" name="scope">
+              <option value="private" <%= ticketList.savedViews.activeView.scope === 'private' ? 'selected' : '' %>><%= t("tickets.page.savedViewsPrivateScope") %></option>
+              <% if (ticketList.savedViews.canManageShared) { %>
+                <option value="shared" <%= ticketList.savedViews.activeView.scope === 'shared' ? 'selected' : '' %>><%= t("tickets.page.savedViewsSharedScope") %></option>
+              <% } %>
+            </select>
+          </label>
+          <button class="btn secondary" type="submit"><%= t("tickets.page.savedViewsUpdateAction") %></button>
+        </form>
+      <% } %>
+      <% if (ticketList.savedViews.activeView.canDelete) { %>
+        <form method="post" action="<%= ticketList.savedViews.activeView.deleteAction %>" class="stack-form transcript-bulk-reason">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+          <h4><%= ticketList.savedViews.activeView.name %></h4>
+          <p class="field-help"><%= t("tickets.page.savedViewsDeleteBody") %></p>
+          <button class="btn danger" type="submit"><%= t("tickets.page.savedViewsDeleteAction") %></button>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
+</section>
+
+<details class="section-card editor-disclosure transcript-filter-shell ticket-filter-shell" data-responsive-disclosure="ticket-filters" open>
+  <summary class="transcript-filter-summary">
+    <div class="transcript-filter-heading">
+      <h3><%= t("tickets.page.filtersTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.filtersBody") %></p>
+    </div>
+    <% if (hasActiveFilters) { %>
+      <span class="pill-tag"><%= t("tickets.page.activeFilterCount", { count: ticketList.activeFilters.length }) %></span>
+    <% } %>
+  </summary>
+
+  <div class="editor-disclosure-body">
+    <form method="get" action="<%= ticketList.filterAction %>" class="stack-form">
+      <% if (ticketList.savedViews.activeView) { %>
+        <input type="hidden" name="viewId" value="<%= ticketList.savedViews.activeView.viewId %>">
+      <% } %>
+      <div class="form-grid transcript-filter-grid">
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.searchLabel") %></span>
+          <input class="text-input" type="search" name="q" value="<%= ticketList.request.q %>" placeholder="<%= t('tickets.page.filters.searchPlaceholder') %>">
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.statusLabel") %></span>
+          <select class="select-input" name="status">
+            <% ticketList.request.statusOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.status === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.transportLabel") %></span>
+          <select class="select-input" name="transport">
+            <% ticketList.request.transportOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.transport === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.queueStateLabel") %></span>
+          <select class="select-input" name="queueState">
+            <% ticketList.request.queueStateOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.queueState === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.attentionLabel") %></span>
+          <select class="select-input" name="attention">
+            <% ticketList.request.attentionOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.attention === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label>
+          <span class="field-label"><%= t("tickets.page.filters.sortLabel") %></span>
+          <select class="select-input" name="sort">
+            <% ticketList.request.sortOptions.forEach((option) => { %>
+              <option value="<%= option.value %>" <%= ticketList.request.sort === option.value ? 'selected' : '' %>><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <details class="editor-disclosure transcript-filter-advanced" <%= (ticketList.request.teamId || ticketList.request.assigneeId || ticketList.request.optionId || ticketList.request.panelId || ticketList.request.creatorId || ticketList.request.feedback !== 'all' || ticketList.request.reopened !== 'all' || ticketList.request.queueState !== 'all' || ticketList.request.attention !== 'all' || ticketList.request.limit !== 25) ? 'open' : '' %>>
+        <summary class="transcript-filter-advanced-summary">
+          <div>
+            <h4><%= t("tickets.page.filters.moreTitle") %></h4>
+            <p class="item-copy"><%= t("tickets.page.filters.moreBody") %></p>
+          </div>
+        </summary>
+        <div class="editor-disclosure-body">
+          <div class="form-grid three-up transcript-filter-grid transcript-filter-grid-advanced">
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.teamLabel") %></span>
+              <select class="select-input" name="teamId">
+                <option value=""><%= t("tickets.page.filters.anyTeam") %></option>
+                <option value="__unassigned" <%= ticketList.request.teamId === '__unassigned' ? 'selected' : '' %>><%= t("tickets.page.filters.unassignedTeam") %></option>
+                <% ticketList.supportTeams.forEach((team) => { %>
+                  <option value="<%= team.id %>" <%= ticketList.request.teamId === team.id ? 'selected' : '' %>><%= team.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.assigneeLabel") %></span>
+              <input class="text-input" type="text" name="assigneeId" value="<%= ticketList.request.assigneeId %>" placeholder="<%= t('tickets.page.filters.assigneePlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.optionLabel") %></span>
+              <select class="select-input" name="optionId">
+                <option value=""><%= t("tickets.page.filters.anyOption") %></option>
+                <% ticketList.options.forEach((option) => { %>
+                  <option value="<%= option.id %>" <%= ticketList.request.optionId === option.id ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.panelLabel") %></span>
+              <select class="select-input" name="panelId">
+                <option value=""><%= t("tickets.page.filters.anyPanel") %></option>
+                <% ticketList.panels.forEach((panel) => { %>
+                  <option value="<%= panel.id %>" <%= ticketList.request.panelId === panel.id ? 'selected' : '' %>><%= panel.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.creatorLabel") %></span>
+              <input class="text-input" type="text" name="creatorId" value="<%= ticketList.request.creatorId %>" placeholder="<%= t('tickets.page.filters.creatorPlaceholder') %>">
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.feedbackLabel") %></span>
+              <select class="select-input" name="feedback">
+                <% ticketList.request.feedbackOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= ticketList.request.feedback === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.reopenedLabel") %></span>
+              <select class="select-input" name="reopened">
+                <% ticketList.request.reopenedOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= ticketList.request.reopened === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label"><%= t("tickets.page.filters.rowsLabel") %></span>
+              <select class="select-input" name="limit">
+                <% ticketList.request.limitOptions.forEach((value) => { %>
+                  <option value="<%= value %>" <%= ticketList.request.limit === value ? 'selected' : '' %>><%= value %></option>
+                <% }) %>
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <div class="transcript-filter-footer">
+        <div class="sticky-actions transcript-filter-actions">
+          <button class="btn primary" type="submit"><%= t("tickets.page.filters.applyAction") %></button>
+          <a class="btn secondary" href="<%= ticketList.clearFiltersHref %>"><%= t("tickets.page.filters.clearAction") %></a>
+        </div>
+
+        <% if (hasActiveFilters) { %>
+          <div class="transcript-active-filters-inline">
+            <p class="transcript-inline-label"><%= t("tickets.page.activeFiltersTitle") %></p>
+            <div class="sticky-actions transcript-active-filters-list">
+              <% ticketList.activeFilters.forEach((filter) => { %>
+                <span class="pill-tag"><strong><%= filter.label %>:</strong> <%= filter.value %></span>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </form>
+    <% if (ticketList.exportActions.release) { %>
+      <div class="inline-alert success">
+        <a class="btn primary" href="<%= ticketList.exportActions.release.href %>"><%= t("routeMessages.preparedExportDownload") %></a>
+      </div>
+    <% } %>
+    <div class="sticky-actions transcript-filter-actions">
+      <form method="post" action="<%= ticketList.exportActions.action %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="format" value="json">
+        <input type="hidden" name="returnTo" value="<%= ticketList.exportActions.returnTo %>">
+        <input type="hidden" name="q" value="<%= ticketList.request.q %>">
+        <input type="hidden" name="status" value="<%= ticketList.request.status %>">
+        <input type="hidden" name="transport" value="<%= ticketList.request.transport %>">
+        <input type="hidden" name="queueState" value="<%= ticketList.request.queueState %>">
+        <input type="hidden" name="attention" value="<%= ticketList.request.attention %>">
+        <input type="hidden" name="teamId" value="<%= ticketList.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= ticketList.request.assigneeId %>">
+        <input type="hidden" name="optionId" value="<%= ticketList.request.optionId %>">
+        <input type="hidden" name="panelId" value="<%= ticketList.request.panelId %>">
+        <input type="hidden" name="creatorId" value="<%= ticketList.request.creatorId %>">
+        <input type="hidden" name="feedback" value="<%= ticketList.request.feedback %>">
+        <input type="hidden" name="reopened" value="<%= ticketList.request.reopened %>">
+        <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
+        <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
+        <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <input type="hidden" name="viewId" value="<%= ticketList.request.viewId %>">
+        <button class="btn secondary" type="submit"><%= t("tickets.page.exportJsonAction") %></button>
+      </form>
+      <form method="post" action="<%= ticketList.exportActions.action %>">
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="format" value="csv">
+        <input type="hidden" name="returnTo" value="<%= ticketList.exportActions.returnTo %>">
+        <input type="hidden" name="q" value="<%= ticketList.request.q %>">
+        <input type="hidden" name="status" value="<%= ticketList.request.status %>">
+        <input type="hidden" name="transport" value="<%= ticketList.request.transport %>">
+        <input type="hidden" name="queueState" value="<%= ticketList.request.queueState %>">
+        <input type="hidden" name="attention" value="<%= ticketList.request.attention %>">
+        <input type="hidden" name="teamId" value="<%= ticketList.request.teamId %>">
+        <input type="hidden" name="assigneeId" value="<%= ticketList.request.assigneeId %>">
+        <input type="hidden" name="optionId" value="<%= ticketList.request.optionId %>">
+        <input type="hidden" name="panelId" value="<%= ticketList.request.panelId %>">
+        <input type="hidden" name="creatorId" value="<%= ticketList.request.creatorId %>">
+        <input type="hidden" name="feedback" value="<%= ticketList.request.feedback %>">
+        <input type="hidden" name="reopened" value="<%= ticketList.request.reopened %>">
+        <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
+        <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
+        <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <input type="hidden" name="viewId" value="<%= ticketList.request.viewId %>">
+        <button class="btn secondary" type="submit"><%= t("tickets.page.exportCsvAction") %></button>
+      </form>
+    </div>
+  </div>
+</details>
+
+<section class="section-card transcript-workspace-shell ticket-team-depth-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("tickets.page.teamDepthTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.teamDepthBody") %></p>
+    </div>
+  </div>
+  <% if (ticketList.teamQueueSummaries.length) { %>
+    <div class="transcript-summary-strip">
+      <% ticketList.teamQueueSummaries.forEach((summary) => { %>
+        <article class="transcript-summary-token tone-<%= summary.attentionCount > 0 ? 'warning' : 'muted' %>">
+          <p class="transcript-summary-token-label"><%= summary.teamLabel %></p>
+          <strong class="transcript-summary-token-value"><%= summary.activeCount %></strong>
+          <p class="field-help"><%= t("tickets.page.teamDepthDetail", { waiting: summary.waitingStaffCount, owned: summary.ownedCount, attention: summary.attentionCount }) %></p>
+          <p class="field-help"><%= t("tickets.page.teamDepthOldestAnchor", { value: summary.oldestQueueAnchorLabel }) %></p>
+          <% if (summary.unavailableReason) { %>
+            <p class="field-help"><%= t(summary.unavailableReason) %></p>
+          <% } %>
+          <a class="transcript-table-link" href="<%= summary.viewHref %>"><%= t("tickets.page.teamDepthOpenAction") %></a>
+        </article>
+      <% }) %>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.teamDepthEmptyTitle") %></h3>
+      <p><%= t("tickets.page.teamDepthEmpty") %></p>
+    </div>
+  <% } %>
+</section>
+
+<section class="section-card transcript-records-shell ticket-records-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("tickets.page.inventoryTitle") %></h3>
+      <div class="transcript-records-summary">
+        <p class="transcript-inline-label"><%= t("tickets.page.filteredSummaryTitle") %></p>
+        <div class="transcript-summary-strip" aria-label="<%= t('tickets.page.filteredSummaryTitle') %>">
+          <% ticketList.filteredSummary.cards.forEach((card) => { %>
+            <article class="transcript-summary-token tone-<%= card.tone %>">
+              <p class="transcript-summary-token-label"><%= card.label %></p>
+              <strong class="transcript-summary-token-value"><%= card.value %></strong>
+            </article>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+    <span class="pill-tag"><%= t("tickets.page.inventoryCount", { count: ticketList.total }) %></span>
+  </div>
+
+  <% if (!ticketList.available) { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.unavailableTitle") %></h3>
+      <p><%= ticketList.warningMessage %></p>
+    </div>
+  <% } else if (ticketList.items.length) { %>
+    <% if (ticketList.bulkActions) { %>
+      <form id="ticket-bulk-actions" method="post" action="<%= ticketList.bulkActions.claimSelfAction %>" class="transcript-bulk-toolbar ticket-bulk-toolbar" data-ticket-bulk-form>
+        <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= ticketList.bulkActions.returnTo %>">
+        <div class="transcript-bulk-toolbar-copy">
+          <div class="transcript-bulk-heading">
+            <h4><%= t("tickets.page.bulk.title") %></h4>
+            <span class="pill-tag" data-ticket-selected-count><%= t("tickets.page.bulk.selectionSummary", { count: 0 }) %></span>
+          </div>
+          <p class="field-help"><%= t("tickets.page.bulk.help") %></p>
+        </div>
+        <label class="transcript-bulk-reason">
+          <span class="field-label"><%= t("tickets.page.bulk.reasonLabel") %></span>
+          <input class="text-input" type="text" name="reason" placeholder="<%= t('tickets.page.bulk.reasonPlaceholder') %>">
+        </label>
+        <div class="sticky-actions transcript-bulk-actions">
+          <button class="btn subtle" type="button" data-ticket-select-visible><%= t("tickets.page.bulk.selectVisibleAction") %></button>
+          <button class="btn subtle" type="button" data-ticket-clear-selection><%= t("tickets.page.bulk.clearSelectionAction") %></button>
+          <button class="btn primary" type="submit" formaction="<%= ticketList.bulkActions.claimSelfAction %>" data-ticket-bulk-submit data-confirm-message="<%= t('tickets.page.bulk.claimConfirm') %>" disabled><%= t("tickets.page.bulk.claimAction") %></button>
+          <button class="btn secondary" type="submit" formaction="<%= ticketList.bulkActions.unclaimAction %>" data-ticket-bulk-submit data-confirm-message="<%= t('tickets.page.bulk.unclaimConfirm') %>" disabled><%= t("tickets.page.bulk.unclaimAction") %></button>
+          <button class="btn danger" type="submit" formaction="<%= ticketList.bulkActions.closeAction %>" data-ticket-bulk-submit data-confirm-message="<%= t('tickets.page.bulk.closeConfirm') %>" disabled><%= t("tickets.page.bulk.closeAction") %></button>
+          <button class="btn secondary" type="submit" formaction="<%= ticketList.bulkActions.reopenAction %>" data-ticket-bulk-submit data-confirm-message="<%= t('tickets.page.bulk.reopenConfirm') %>" disabled><%= t("tickets.page.bulk.reopenAction") %></button>
+        </div>
+      </form>
+    <% } %>
+    <div class="table-wrap">
+      <table class="data-table transcript-records-table ticket-records-table">
+        <thead>
+          <tr>
+            <% if (ticketList.bulkActions) { %>
+              <th><span class="sr-only"><%= t("tickets.page.bulk.selectionColumn") %></span></th>
+            <% } %>
+            <th><%= t("tickets.page.table.ticket") %></th>
+            <th><%= t("tickets.page.table.status") %></th>
+            <th><%= t("tickets.page.table.route") %></th>
+            <th><%= t("tickets.page.table.owner") %></th>
+            <th><%= t("tickets.page.table.activity") %></th>
+            <th><%= t("tickets.page.table.access") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% ticketList.items.forEach((item) => { %>
+            <tr data-filter-item="<%= item.searchText %>">
+              <% if (ticketList.bulkActions) { %>
+                <td>
+                  <input
+                    type="checkbox"
+                    name="ticketIds"
+                    value="<%= item.id %>"
+                    form="ticket-bulk-actions"
+                    data-ticket-row-select
+                    aria-label="<%= t('tickets.page.bulk.selectTicketLabel', { id: item.id }) %>"
+                  >
+                </td>
+              <% } %>
+              <td class="transcript-record-cell">
+                <strong class="transcript-record-title"><%= item.id %></strong>
+                <div class="field-help"><%= item.channelNameLabel %> / <%= item.transportLabel %></div>
+              </td>
+              <td>
+                <span class="status-pill tone-<%= item.statusBadge.tone %>"><%= item.statusBadge.label %></span>
+                <span class="status-pill tone-<%= item.queueStateBadge.tone %>"><%= item.queueStateBadge.label %></span>
+                <% item.attentionBadges.forEach((badge) => { %>
+                  <span class="status-pill tone-<%= badge.tone %>"><%= badge.label %></span>
+                <% }) %>
+                <% if (item.feedbackBadge) { %>
+                  <span class="status-pill tone-<%= item.feedbackBadge.tone %>"><%= item.feedbackBadge.label %></span>
+                <% } %>
+                <% if (item.reopenBadge) { %>
+                  <span class="status-pill tone-<%= item.reopenBadge.tone %>"><%= item.reopenBadge.label %></span>
+                <% } %>
+              </td>
+              <td>
+                <strong><%= item.optionLabel %></strong>
+                <div class="field-help"><%= item.panelLabel %></div>
+              </td>
+              <td>
+                <strong><%= item.assigneeLabel %></strong>
+                <div class="field-help"><%= item.teamLabel %> / <%= item.creatorLabel %></div>
+              </td>
+              <td>
+                <div><%= item.activityLabel %></div>
+                <div class="field-help"><%= t("tickets.page.table.openedMeta", { value: item.openedLabel }) %></div>
+                <div class="field-help"><%= t("tickets.page.table.queueAnchorMeta", { value: item.queueAnchorLabel }) %></div>
+              </td>
+              <td><a class="transcript-table-link" href="<%= item.detailHref %>"><%= t("tickets.page.openAction") %></a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar">
+      <p class="pagination-summary"><%= t("tickets.page.paginationShowing", { start: ticketList.pageStart, end: ticketList.pageEnd, total: ticketList.total }) %></p>
+      <div class="sticky-actions">
+        <% if (ticketList.previousHref) { %>
+          <a class="btn secondary" href="<%= ticketList.previousHref %>"><%= t("common.previous") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.previous") %></span>
+        <% } %>
+        <% ticketList.pageLinks.forEach((pageLink) => { %>
+          <a class="btn <%= pageLink.active ? 'primary' : 'subtle' %>" href="<%= pageLink.href %>"><%= pageLink.page %></a>
+        <% }) %>
+        <% if (ticketList.nextHref) { %>
+          <a class="btn secondary" href="<%= ticketList.nextHref %>"><%= t("common.next") %></a>
+        <% } else { %>
+          <span class="btn subtle disabled"><%= t("common.next") %></span>
+        <% } %>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.emptyTitle") %></h3>
+      <p><%= t("tickets.page.emptyBody") %></p>
+    </div>
+  <% } %>
+</section>

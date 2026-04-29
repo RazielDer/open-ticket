@@ -883,12 +883,14 @@ test("operational pages render the beginner-first slice while keeping advanced r
   assert.match(assetHtml, /Recent backups for this file/)
 
   const ticketsResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
-    headers: { cookie },
-    redirect: "manual"
+    headers: { cookie }
   })
-  await ticketsResponse.arrayBuffer()
-  assert.equal(ticketsResponse.status, 302)
-  assert.equal(ticketsResponse.headers.get("location"), "/dash/admin")
+  const ticketsHtml = await ticketsResponse.text()
+  assert.equal(ticketsResponse.status, 200)
+  assert.match(ticketsHtml, /Ticket workbench/)
+  assert.match(ticketsHtml, /Ticket records/)
+  assert.match(ticketsHtml, /Open detail/)
+  assert.doesNotMatch(ticketsHtml, /<button[^>]+type="submit"[^>]*>Close ticket<\/button>/)
 
   const transcriptsResponse = await fetch(`${runtime.baseUrl}/dash/admin/transcripts`, { headers: { cookie } })
   const transcriptsHtml = await transcriptsResponse.text()

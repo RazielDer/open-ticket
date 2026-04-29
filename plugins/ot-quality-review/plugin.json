@@ -1,0 +1,25 @@
+{
+    "name":"OT Quality Review",
+    "id":"ot-quality-review",
+    "version":"1.0.0",
+    "startFile":"index.ts",
+    "supportedVersions":["OTv4.0.x","OTv4.1.x","OTv4.2.x"],
+
+    "enabled":true,
+    "priority":0,
+    "events":[],
+
+    "npmDependencies":[],
+    "requiredPlugins":["ot-feedback","ot-telemetry"],
+    "incompatiblePlugins":[],
+
+    "details":{
+        "author":"EoTFS",
+        "contributors":[],
+        "shortDescription":"Adds quality-review adjudication and raw feedback custody.",
+        "longDescription":"Adds durable review cases, notes, owner assignment, and private raw-feedback asset custody for the dashboard quality-review workspace.",
+        "imageUrl":"",
+        "projectUrl":"",
+        "tags":["ticket","feedback","quality-review","dashboard"]
+    }
+}

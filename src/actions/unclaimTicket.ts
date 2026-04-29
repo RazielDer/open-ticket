@@ -3,6 +3,7 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { applyTicketCategoryRoute, resolveTicketOpenCategoryRoute, setTicketAssignedStaff, type ODTicketOpenCategoryRoute } from "./ticketRouting.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,55 +12,35 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:unclaim-ticket").workers.add([
         new api.ODWorker("opendiscord:unclaim-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to unclaim ticket! Open Ticket doesn't support threads!")
+            const previousAssigneeUserId = typeof ticket.get("opendiscord:assigned-staff").value == "string"
+                ? ticket.get("opendiscord:assigned-staff").value
+                : null
+
+            let openCategoryRoute: ODTicketOpenCategoryRoute|null = null
+            if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
+                openCategoryRoute = await resolveTicketOpenCategoryRoute({guild,option:ticket.option,logPrefix:"Ticket Unclaiming"})
+                if (!openCategoryRoute.ok){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:openCategoryRoute.reason,layout:"simple"})).message).catch(() => null)
+                    return cancel()
+                }
+            }
 
             await opendiscord.events.get("onTicketUnclaim").emit([ticket,user,channel,reason])
+            if (previousAssigneeUserId) await opendiscord.events.get("onTicketUnassign").emit([ticket,user,channel,previousAssigneeUserId,reason])
 
             //update ticket
             ticket.get("opendiscord:claimed").value = false
             ticket.get("opendiscord:claimed-by").value = null
             ticket.get("opendiscord:claimed-on").value = null
             ticket.get("opendiscord:busy").value = true
+            setTicketAssignedStaff(ticket,null)
 
             //update category
-            if (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true){
-                const channelCategory = ticket.option.get("opendiscord:channel-category").value
-                const channelBackupCategory = ticket.option.get("opendiscord:channel-category-backup").value
-                if (channelCategory !== ""){
-                    //category enabled
+            if (!channel.isThread() && (typeof params.allowCategoryChange == "boolean" ? params.allowCategoryChange : true)){
+                if (openCategoryRoute?.ok){
                     try {
-                        const normalCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelCategory)
-                        if (!normalCategory){
-                            //default category was not found
-                            opendiscord.log("Ticket Unclaiming Error: Unable to find category! #1","error",[
-                                {key:"categoryid",value:channelCategory},
-                                {key:"backup",value:"false"}
-                            ])
-                        }else{
-                            //default category was found
-                            if (normalCategory.children.cache.size >= 49 && channelBackupCategory != ""){
-                                //use backup category
-                                const backupCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelBackupCategory)
-                                if (!backupCategory){
-                                    //default category was not found
-                                    opendiscord.log("Ticket Unclaiming Error: Unable to find category! #2","error",[
-                                        {key:"categoryid",value:channelBackupCategory},
-                                        {key:"backup",value:"true"}
-                                    ])
-                                }else{
-                                    //use backup category
-                                    channel.setParent(backupCategory,{lockPermissions:false})
-                                    ticket.get("opendiscord:category-mode").value = "backup"
-                                    ticket.get("opendiscord:category").value = backupCategory.id
-                                }
-                            }else{
-                                //use default category
-                                channel.setParent(normalCategory,{lockPermissions:false})
-                                ticket.get("opendiscord:category-mode").value = "normal"
-                                ticket.get("opendiscord:category").value = normalCategory.id
-                            }
-                        }
-                        
+                        await channel.setParent(openCategoryRoute.categoryId,{lockPermissions:false})
+                        applyTicketCategoryRoute(ticket,openCategoryRoute)
                     }catch(e){
                         opendiscord.log("Unable to move ticket to 'unclaimed category'!","error",[
                             {key:"channel",value:"#"+channel.name},
@@ -67,10 +48,6 @@ export const registerActions = async () => {
                         ])
                         opendiscord.debugfile.writeErrorMessage(new api.ODError(e,"uncaughtException"))
                     }
-                }else{
-                    channel.setParent(null,{lockPermissions:false})
-                    ticket.get("opendiscord:category-mode").value = null
-                    ticket.get("opendiscord:category").value = null
                 }
             }
 
@@ -94,6 +71,7 @@ export const registerActions = async () => {
             if (params.sendMessage) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:unclaim-message").build(source,{guild,channel,user,ticket,reason})).message)
             ticket.get("opendiscord:busy").value = false
             await opendiscord.events.get("afterTicketUnclaimed").emit([ticket,user,channel,reason])
+            if (previousAssigneeUserId) await opendiscord.events.get("afterTicketUnassigned").emit([ticket,user,channel,previousAssigneeUserId,reason])
 
             //update channel topic
             await opendiscord.actions.get("opendiscord:update-ticket-topic").run("ticket-action",{guild,channel,user,ticket,sendMessage:false,newTopic:null})

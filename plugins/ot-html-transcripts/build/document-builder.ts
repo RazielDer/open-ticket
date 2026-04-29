@@ -10,6 +10,7 @@ import type {
     LocalTranscriptDocument,
     LocalTranscriptDropdownOption,
     LocalTranscriptEmbed,
+    LocalTranscriptFormRecord,
     LocalTranscriptMessage,
     LocalTranscriptParticipant,
     LocalTranscriptReaction,
@@ -17,12 +18,19 @@ import type {
 } from "../contracts/document"
 import type { TranscriptStatus } from "../contracts/types"
 import { replaceTranscriptMentions } from "../collect/mention-replacer"
+import {
+    buildLocalTranscriptFormRecord,
+    getFormRecordSearchParts,
+    type TicketFormsCompletedSnapshotLike,
+    type TicketFormsDraftSnapshotLike,
+    type TicketFormsServiceLike
+} from "./form-record-builder"
 import { mapTranscriptHtmlStyleDraft } from "./style-mapper"
 
 export async function buildTranscriptDocument(
     transcriptId: string,
     ticket: api.ODTicket,
-    channel: discord.TextChannel,
+    channel: discord.GuildTextBasedChannel,
     user: discord.User,
     messages: api.ODTranscriptMessageData[],
     participants: { user: discord.User; role: "creator" | "participant" | "admin" }[]
@@ -43,23 +51,27 @@ export async function buildTranscriptDocument(
         interactions: 0
     }
 
+    const formRecordsByMessageId = await buildTicketManagedFormRecordIndex(ticket, channel)
     const renderedMessages: LocalTranscriptMessage[] = []
     for (const message of messages) {
         totals.embeds += message.embeds.length
         totals.attachments += message.files.length
         totals.reactions += message.reactions.length
         totals.interactions += message.components.reduce((count, row) => count + row.components.length, 0)
-        renderedMessages.push(await buildRenderedMessage(message))
+        renderedMessages.push(await buildRenderedMessage(
+            message,
+            formRecordsByMessageId.get(message.id) ?? null
+        ))
     }
 
     const document: LocalTranscriptDocument = {
-        version: "1.0",
+        version: "2.0",
         transcriptId,
         generatedAt: new Date().toISOString(),
         status: "active",
         warningCount: 0,
         warnings: [],
-        searchText: buildSearchText(channel, messages, participants),
+        searchText: buildSearchText(channel, messages, participants, formRecordsByMessageId),
         totals,
         style,
         bot: {
@@ -103,7 +115,12 @@ export function markDocumentStatus(document: LocalTranscriptDocument, status: Tr
     document.warningCount = document.warnings.length
 }
 
-function buildSearchText(channel: discord.TextChannel, messages: api.ODTranscriptMessageData[], participants: { user: discord.User; role: "creator" | "participant" | "admin" }[]) {
+function buildSearchText(
+    channel: discord.GuildTextBasedChannel,
+    messages: api.ODTranscriptMessageData[],
+    participants: { user: discord.User; role: "creator" | "participant" | "admin" }[],
+    formRecordsByMessageId: Map<string, LocalTranscriptFormRecord>
+) {
     const parts = [
         channel.name,
         channel.id,
@@ -113,14 +130,18 @@ function buildSearchText(channel: discord.TextChannel, messages: api.ODTranscrip
             message.author.username,
             message.content ?? "",
             ...message.embeds.flatMap((embed) => [embed.title ?? "", embed.description ?? "", ...embed.fields.flatMap((field) => [field.name, field.value])]),
-            ...message.files.map((file) => file.name)
+            ...message.files.map((file) => file.name),
+            ...getFormRecordSearchParts(formRecordsByMessageId.get(message.id) ?? null)
         ])
     ]
 
     return parts.filter((part) => part.length > 0).join(" ").toLowerCase()
 }
 
-async function buildRenderedMessage(message: api.ODTranscriptMessageData): Promise<LocalTranscriptMessage> {
+async function buildRenderedMessage(
+    message: api.ODTranscriptMessageData,
+    formRecord: LocalTranscriptFormRecord | null
+): Promise<LocalTranscriptMessage> {
     const components: LocalTranscriptComponent[] = []
 
     for (const row of message.components) {
@@ -181,8 +202,74 @@ async function buildRenderedMessage(message: api.ODTranscriptMessageData): Promi
         reply: await buildReply(message.reply),
         embeds: await Promise.all(message.embeds.map((embed) => buildEmbed(embed))),
         attachments: message.files.map((file) => buildAttachment(file)),
-        components
+        components,
+        formRecord
     }
+}
+
+async function buildTicketManagedFormRecordIndex(
+    ticket: api.ODTicket,
+    channel: discord.GuildTextBasedChannel
+): Promise<Map<string, LocalTranscriptFormRecord>> {
+    const records = new Map<string, LocalTranscriptFormRecord>()
+    const service = resolveTicketFormsService()
+    if (!service) return records
+
+    let drafts: TicketFormsDraftSnapshotLike[] = []
+    try {
+        drafts = await service.listTicketDrafts()
+    } catch {
+        return records
+    }
+
+    for (const draft of drafts) {
+        if (draft.ticketChannelId != channel.id && draft.ticketChannelId != ticket.id.value) continue
+        if (draft.answerTarget != "ticket_managed_record") continue
+
+        const managedRecordMessageId = normalizeString(draft.managedRecordMessageId)
+        if (!managedRecordMessageId) continue
+
+        let completedSnapshot: TicketFormsCompletedSnapshotLike | null = null
+        if (service.getCompletedTicketForm) {
+            completedSnapshot = await service.getCompletedTicketForm(draft.ticketChannelId, draft.formId).catch(() => null)
+        }
+
+        const record = buildLocalTranscriptFormRecord(
+            draft,
+            resolveTicketFormName(draft.formId),
+            completedSnapshot
+        )
+        if (record) records.set(managedRecordMessageId, record)
+    }
+
+    return records
+}
+
+function resolveTicketFormsService(): TicketFormsServiceLike | null {
+    try {
+        const service = opendiscord.plugins.classes.get("ot-ticket-forms:service") as unknown as Partial<TicketFormsServiceLike>
+        if (service && typeof service.listTicketDrafts == "function") {
+            return service as TicketFormsServiceLike
+        }
+    } catch {}
+
+    return null
+}
+
+function resolveTicketFormName(formId: string): string | false {
+    try {
+        const formsConfig = opendiscord.configs.get("ot-ticket-forms:config").data as Array<{ id: string; name?: unknown }>
+        const formConfig = formsConfig.find((candidate) => candidate.id == formId)
+        return normalizeString(formConfig?.name) ?? false
+    } catch {
+        return false
+    }
+}
+
+function normalizeString(value: unknown): string | null {
+    if (typeof value != "string") return null
+    const normalized = value.trim()
+    return normalized.length > 0 ? normalized : null
 }
 
 async function buildReply(reply: api.ODTranscriptMessageData["reply"]): Promise<LocalTranscriptReply> {

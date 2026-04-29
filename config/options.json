@@ -15,17 +15,39 @@
         "readonlyAdmins":["discord role id"],
         "allowCreationByBlacklistedUsers":false,
         "questions":["example-question-1","example-question-2"],
+        "integrationProfileId":"",
 
         "channel":{
+            "transportMode":"channel_text OR private_thread",
+            "threadParentChannel":"text channel id for private_thread tickets (or leave empty)",
             "prefix":"question-",
             "suffix":"user-name OR user-id OR random-number OR random-hex OR counter-dynamic OR counter-fixed",
             "category":"category id (or leave empty)",
             "closedCategory":"category id (or leave empty)",
             "backupCategory":"category id (or leave empty)",
+            "overflowCategories":["category id (or leave empty)"],
             "claimedCategory":[
                 {"user":"user id","category":"category id"}
             ],
             "topic":"This is the topic of this ticket channel and is visible to everyone! (or leave empty)"
+        },
+
+        "routing":{
+            "supportTeamId":"support team id (or leave empty)",
+            "escalationTargetOptionIds":[]
+        },
+
+        "workflow":{
+            "closeRequest":{
+                "enabled":false
+            },
+            "awaitingUser":{
+                "enabled":false,
+                "reminderEnabled":false,
+                "reminderHours":24,
+                "autoCloseEnabled":false,
+                "autoCloseHours":72
+            }
         },
         
         "dmMessage":{

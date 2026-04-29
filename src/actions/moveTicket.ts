@@ -3,6 +3,10 @@
 ///////////////////////////////////////
 import {opendiscord, api, utilities} from "../index"
 import * as discord from "discord.js"
+import { PRIVATE_THREAD_ACCESS_WARNING, validateTicketMoveTransport } from "./ticketTransport.js"
+import { applyTicketRoutingAssignment, getTicketOptionSupportTeamRoleIds, resolveTicketOpenCategoryRoute, type ODTicketOpenCategoryRoute } from "./ticketRouting.js"
+import { setTicketIntegrationProfileIdFromOption } from "./ticketIntegration.js"
+import { setTicketAiAssistProfileIdFromOption } from "./ticketAiAssist.js"
 
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 
@@ -11,10 +15,50 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:move-ticket").workers.add([
         new api.ODWorker("opendiscord:move-ticket",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,reason,data} = params
-            if (channel.isThread()) throw new api.ODSystemError("Unable to move ticket! Open Ticket doesn't support threads!")
+            const moveValidation = validateTicketMoveTransport(ticket,data)
+            if (!moveValidation.valid){
+                await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:moveValidation.reason,layout:"simple"})).message).catch(() => null)
+                return cancel()
+            }
+
+            let openCategoryRoute: ODTicketOpenCategoryRoute|null = null
+            if (!channel.isThread()){
+                const rawClaimCategory = data.get("opendiscord:channel-categories-claimed").value.find((c) => c.user == user.id)
+                const claimCategory = (rawClaimCategory) ? rawClaimCategory.category : null
+                const closeCategory = data.get("opendiscord:channel-category-closed").value
+                if (!claimCategory && !(closeCategory != "" && ticket.get("opendiscord:closed").value)){
+                    openCategoryRoute = await resolveTicketOpenCategoryRoute({guild,option:data,logPrefix:"Ticket Move"})
+                    if (!openCategoryRoute.ok){
+                        await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:openCategoryRoute.reason,layout:"simple"})).message).catch(() => null)
+                        return cancel()
+                    }
+                }
+            }
 
             await opendiscord.events.get("onTicketMove").emit([ticket,user,channel,reason])
+            if (channel.isThread()){
+                const targetPrefix = data.get("opendiscord:channel-prefix").value
+                const channelSuffix = ticket.get("opendiscord:channel-suffix").value
+                const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
+                const priorityEmoji = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value).channelEmoji ?? ""
+                const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(targetPrefix+channelSuffix)
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename private-thread ticket on move","warning")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error").build("other",{guild,channel,user,error:PRIVATE_THREAD_ACCESS_WARNING,layout:"simple"})).message).catch(() => null)
+                    return cancel()
+                }
+            }
+            const previousOption = ticket.option
             ticket.option = data
+            setTicketIntegrationProfileIdFromOption(ticket,ticket.option)
+            setTicketAiAssistProfileIdFromOption(ticket,ticket.option)
+            await applyTicketRoutingAssignment(ticket,guild,ticket.option)
+            const permissionLoader = await import("../data/framework/permissionLoader.js")
+            await permissionLoader.removeTicketPermissions(ticket,previousOption)
+            await permissionLoader.addTicketPermissions(ticket)
 
             //update stats
             await opendiscord.stats.get("opendiscord:global").setStat("opendiscord:tickets-moved",1,"increase")
@@ -23,8 +67,6 @@ export const registerActions = async () => {
             //get new channel properties
             const channelPrefix = ticket.option.get("opendiscord:channel-prefix").value
             const channelSuffix = ticket.get("opendiscord:channel-suffix").value
-            const channelCategory = ticket.option.get("opendiscord:channel-category").value
-            const channelBackupCategory = ticket.option.get("opendiscord:channel-category-backup").value
             const rawClaimCategory = ticket.option.get("opendiscord:channel-categories-claimed").value.find((c) => c.user == user.id)
             const claimCategory = (rawClaimCategory) ? rawClaimCategory.category : null
             const closeCategory = ticket.option.get("opendiscord:channel-category-closed").value
@@ -32,8 +74,11 @@ export const registerActions = async () => {
 
             //handle category
             let category: string|null = null
-            let categoryMode: "backup"|"normal"|"closed"|"claimed"|null = null
-            if (claimCategory){
+            let categoryMode: "normal"|"overflow"|"closed"|"claimed"|null = null
+            if (channel.isThread()){
+                category = null
+                categoryMode = null
+            }else if (claimCategory){
                 //use claim category
                 category = claimCategory
                 categoryMode = "claimed"
@@ -41,41 +86,14 @@ export const registerActions = async () => {
                 //use close category
                 category = closeCategory
                 categoryMode = "closed"
-            }else if (channelCategory != ""){
-                //category enabled
-                const normalCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelCategory)
-                if (!normalCategory){
-                    //default category was not found
-                    opendiscord.log("Ticket Move Error: Unable to find category! #1","error",[
-                        {key:"categoryid",value:channelCategory},
-                        {key:"backup",value:"false"}
-                    ])
-                }else{
-                    //default category was found
-                    if (normalCategory.children.cache.size >= 50 && channelBackupCategory != ""){
-                        //use backup category
-                        const backupCategory = await opendiscord.client.fetchGuildCategoryChannel(guild,channelBackupCategory)
-                        if (!backupCategory){
-                            //default category was not found
-                            opendiscord.log("Ticket Move Error: Unable to find category! #2","error",[
-                                {key:"categoryid",value:channelBackupCategory},
-                                {key:"backup",value:"true"}
-                            ])
-                        }else{
-                            category = backupCategory.id
-                            categoryMode = "backup"
-                        }
-                    }else{
-                        //use default category
-                        category = normalCategory.id
-                        categoryMode = "normal"
-                    }
-                }
+            }else if (openCategoryRoute?.ok){
+                category = openCategoryRoute.categoryId
+                categoryMode = openCategoryRoute.categoryMode
             }
 
             try {
                 //only move category when not the same.
-                if (channel.parentId != category) await utilities.timedAwait(channel.setParent(category,{lockPermissions:false}),2500,(err) => {
+                if (!channel.isThread() && channel.parentId != category) await utilities.timedAwait(channel.setParent(category,{lockPermissions:false}),2500,(err) => {
                     opendiscord.log("Failed to change channel category on ticket move","error")
                 })
                 ticket.get("opendiscord:category-mode").value = categoryMode
@@ -99,6 +117,7 @@ export const registerActions = async () => {
             const globalAdmins = opendiscord.configs.get("opendiscord:general").data.globalAdmins
             const optionAdmins = ticket.option.get("opendiscord:admins").value
             const readonlyAdmins = ticket.option.get("opendiscord:admins-readonly").value
+            const supportTeamRoleIds = getTicketOptionSupportTeamRoleIds(ticket.option)
 
             globalAdmins.forEach((admin) => {
                 permissions.push({
@@ -117,9 +136,20 @@ export const registerActions = async () => {
                     deny:[]
                 })
             })
+            supportTeamRoleIds.forEach((admin) => {
+                if (globalAdmins.includes(admin)) return
+                if (optionAdmins.includes(admin)) return
+                permissions.push({
+                    type:discord.OverwriteType.Role,
+                    id:admin,
+                    allow:["ViewChannel","SendMessages","AddReactions","AttachFiles","SendPolls","ReadMessageHistory","ManageMessages"],
+                    deny:[]
+                })
+            })
             readonlyAdmins.forEach((admin) => {
                 if (globalAdmins.includes(admin)) return
                 if (optionAdmins.includes(admin)) return
+                if (supportTeamRoleIds.includes(admin)) return
                 permissions.push({
                     type:discord.OverwriteType.Role,
                     id:admin,
@@ -136,10 +166,12 @@ export const registerActions = async () => {
                     deny:[]
                 })
             })
-            try{
-                await channel.permissionOverwrites.set(permissions)
-            }catch{
-                opendiscord.log("Failed to reset channel permissions on ticket move!","error")
+            if (!channel.isThread()){
+                try{
+                    await channel.permissionOverwrites.set(permissions)
+                }catch{
+                    opendiscord.log("Failed to reset channel permissions on ticket move!","error")
+                }
             }
 
             //handle participants
@@ -157,14 +189,16 @@ export const registerActions = async () => {
             const pinEmoji = ticket.get("opendiscord:pinned").value ? generalConfig.data.system.pinEmoji : ""
             const priorityEmoji = opendiscord.priorities.getFromPriorityLevel(ticket.get("opendiscord:priority").value).channelEmoji ?? ""
             
-            const originalName = channel.name
-            const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channelPrefix+channelSuffix)
-            try{
-                await utilities.timedAwait(channel.setName(newName),2500,(err) => {
-                    opendiscord.log("Failed to rename channel on ticket move","error")
-                })
-            }catch(err){
-                await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-move",{guild,channel,user,originalName,newName:newName})).message)
+            if (!channel.isThread()){
+                const originalName = channel.name
+                const newName = pinEmoji+priorityEmoji+utilities.trimEmojis(channelPrefix+channelSuffix)
+                try{
+                    await utilities.timedAwait(channel.setName(newName),2500,(err) => {
+                        opendiscord.log("Failed to rename channel on ticket move","error")
+                    })
+                }catch(err){
+                    await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:error-channel-rename").build("ticket-move",{guild,channel,user,originalName,newName:newName})).message)
+                }
             }
 
             //update ticket message

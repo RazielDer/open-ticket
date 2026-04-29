@@ -281,3 +281,32 @@ test("dashboard runtime API builds viewer URLs and returns null when publicBaseU
   installDashboardRuntimeApi(baseConfig)
   assert.equal(getDashboardRuntimeApi()?.buildPublicUrl("/transcripts/slug-1"), null)
 })
+
+test("dashboard runtime API exposes metadata-only audit event recorder", async () => {
+  const recorded: unknown[] = []
+  installDashboardRuntimeApi(baseConfig, {
+    recordAuditEvent(event) {
+      recorded.push(event)
+    }
+  })
+
+  const runtimeApi = getDashboardRuntimeApi()
+  assert.ok(runtimeApi)
+  const ok = await runtimeApi!.recordAuditEvent({
+    eventType: "ai-assist-request",
+    actor: { userId: "staff-1", username: "Staff", globalName: null },
+    target: "ticket-1",
+    outcome: "success",
+    details: { action: "summarize", profileId: "assist-1", providerId: "reference", confidence: "high" }
+  })
+
+  assert.equal(ok, true)
+  assert.deepEqual(recorded, [{
+    eventType: "ai-assist-request",
+    actor: { userId: "staff-1", username: "Staff", globalName: null },
+    target: "ticket-1",
+    outcome: "success",
+    details: { action: "summarize", profileId: "assist-1", providerId: "reference", confidence: "high" }
+  }])
+  assert.doesNotMatch(JSON.stringify(recorded), /prompt|answer|summary|draft/i)
+})

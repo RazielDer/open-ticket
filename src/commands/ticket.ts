@@ -7,9 +7,9 @@ import * as discord from "discord.js"
 const generalConfig = opendiscord.configs.get("opendiscord:general")
 const lang = opendiscord.languages
 
-async function checkTicketCreationPerms(instance:api.ODButtonResponderInstance|api.ODDropdownResponderInstance|api.ODModalResponderInstance|api.ODCommandResponderInstance,source:api.ODActionManagerIds_Default["opendiscord:create-ticket-permissions"]["source"],guild:discord.Guild,user:discord.User,option:api.ODTicketOption){
+async function checkTicketCreationPerms(instance:api.ODButtonResponderInstance|api.ODDropdownResponderInstance|api.ODModalResponderInstance|api.ODCommandResponderInstance,source:api.ODActionManagerIds_Default["opendiscord:create-ticket-permissions"]["source"],guild:discord.Guild,user:discord.User,option:api.ODTicketOption,answers:{id:string,name:string,type:"short"|"paragraph",value:string|null}[] = []){
     //check ticket permissions
-    const permsRes = await opendiscord.actions.get("opendiscord:create-ticket-permissions").run(source,{guild,user,option})
+    const permsRes = await opendiscord.actions.get("opendiscord:create-ticket-permissions").run(source,{guild,user,option,answers})
     if (!permsRes.valid && instance.channel){
         //error
         const newSource = (source === "slash" || source === "text") ? source : "other"
@@ -229,7 +229,7 @@ export const registerModalResponders = async () => {
             })
 
             //check ticket permissions
-            if (!(await checkTicketCreationPerms(instance,originalSource,guild,user,option))) return cancel()
+            if (!(await checkTicketCreationPerms(instance,originalSource,guild,user,option,answers))) return cancel()
 
             //create ticket
             const res = await opendiscord.actions.get("opendiscord:create-ticket").run(originalSource,{guild,user,answers,option})

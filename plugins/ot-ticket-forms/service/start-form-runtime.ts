@@ -1,4 +1,5 @@
 import * as discord from "discord.js"
+import { toRicherMessageEditPayload } from "../../../src/core/api/openticket/richer-message"
 import type {
     OTFormsCapturedAnswer,
     OTFormsDraftState,
@@ -297,7 +298,7 @@ export async function ensureStartFormMessage(
         if (mustRecreatePreferred && preferredMessage) {
             await preferredMessage.delete().catch(() => null)
         } else if (preferredMessage && preferredMessage.editable) {
-            await preferredMessage.edit(messagePayload as discord.MessageEditOptions)
+            await preferredMessage.edit(toRicherMessageEditPayload(messagePayload))
             return {
                 messageId: preferredMessage.id,
                 created: false,
@@ -322,7 +323,7 @@ export async function ensureStartFormMessage(
         existingMessage = null
     }
     if (existingMessage && existingMessage.editable) {
-        await existingMessage.edit(messagePayload as discord.MessageEditOptions)
+        await existingMessage.edit(toRicherMessageEditPayload(messagePayload))
         return {
             messageId: existingMessage.id,
             created: false,

@@ -7,6 +7,7 @@ import {
   normalizeDashboardPublicBaseUrl,
   type DashboardConfig
 } from "./dashboard-config"
+import { getTicketPlatformRuntimeApi } from "../../../src/core/api/openticket/ticket-platform"
 import {
   assertOneOf,
   EMOJI_STYLES,
@@ -27,6 +28,7 @@ import {
   ROLE_MODES,
   STATUS_MODES,
   STATUS_TYPES,
+  SUPPORT_TEAM_ASSIGNMENT_STRATEGIES,
   TRANSCRIPT_FILE_MODES,
   TRANSCRIPT_MODES,
   TRANSCRIPT_TEXT_LAYOUTS
@@ -89,6 +91,8 @@ function ensureDirectory(directory: string) {
 function generateWorkspaceRecordId(prefix: string) {
   return `${prefix}-${new Date().toISOString().replace(/[:.]/g, "-")}`
 }
+
+const INTEGRATION_SECRET_REDACTION = "__OPEN_TICKET_REDACTED_SECRET__"
 
 interface DashboardTranscriptHtmlStyleDraftShape {
   background: {
@@ -364,11 +368,14 @@ function inspectGeneralGlobalAdminsValue(input: unknown): DashboardGeneralGlobal
 }
 
 function parseStringArray(input: unknown): string[] {
-  if (Array.isArray(input)) return input.map((item) => String(item))
+  const normalize = (items: unknown[]) => items
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+  if (Array.isArray(input)) return normalize(input)
   if (typeof input === "string" && input.trim().length > 0) {
     try {
       const parsed = JSON.parse(input)
-      if (Array.isArray(parsed)) return parsed.map((item) => String(item))
+      if (Array.isArray(parsed)) return normalize(parsed)
     } catch {
       return input
         .split("\n")
@@ -410,6 +417,47 @@ function normalizeTicketOptionTranscriptRoutingConfig(input: unknown) {
       : true,
     channels: normalizeUniqueStringEntries(input.channels)
   }
+}
+
+function normalizeTicketOptionRoutingConfig(input: unknown) {
+  if (!isPlainObject(input)) {
+    return {
+      supportTeamId: "",
+      escalationTargetOptionIds: []
+    }
+  }
+
+  return {
+    supportTeamId: ensureString(input.supportTeamId, "").trim(),
+    escalationTargetOptionIds: normalizeUniqueStringEntries(input.escalationTargetOptionIds)
+  }
+}
+
+function normalizeSupportTeam(team: any) {
+  const normalized: any = deepMerge(
+    {
+      id: team.id || slugify(team.name || `support-team-${Date.now()}`),
+      name: team.name || "",
+      roleIds: [],
+      assignmentStrategy: "manual"
+    },
+    team
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.name = ensureString(normalized.name, "").trim()
+  normalized.roleIds = normalizeUniqueStringEntries(normalized.roleIds)
+  normalized.assignmentStrategy = ensureString(normalized.assignmentStrategy, "manual")
+  assertOneOf(normalized.assignmentStrategy, SUPPORT_TEAM_ASSIGNMENT_STRATEGIES, "Support team assignment strategy")
+
+  if (!normalized.id) {
+    throw new Error("Support team ID is required.")
+  }
+  if (!normalized.name) {
+    throw new Error("Support team name is required.")
+  }
+
+  return normalized
 }
 
 function normalizeTranscriptHtmlStyleDraftInput(
@@ -523,11 +571,14 @@ function normalizeTicketOption(option: any) {
     readonlyAdmins: [],
     allowCreationByBlacklistedUsers: false,
     questions: [],
+    integrationProfileId: "",
+    aiAssistProfileId: "",
     channel: {
       prefix: "ticket-",
       suffix: "user-name",
       category: "",
       backupCategory: "",
+      overflowCategories: [],
       closedCategory: "",
       claimedCategory: [],
       topic: ""
@@ -593,6 +644,22 @@ function normalizeTicketOption(option: any) {
     transcripts: {
       useGlobalDefault: true,
       channels: []
+    },
+    routing: {
+      supportTeamId: "",
+      escalationTargetOptionIds: []
+    },
+    workflow: {
+      closeRequest: {
+        enabled: false
+      },
+      awaitingUser: {
+        enabled: false,
+        reminderEnabled: false,
+        reminderHours: 24,
+        autoCloseEnabled: false,
+        autoCloseHours: 72
+      }
     }
   }
 
@@ -602,6 +669,8 @@ function normalizeTicketOption(option: any) {
   normalized.ticketAdmins = parseStringArray(normalized.ticketAdmins)
   normalized.readonlyAdmins = parseStringArray(normalized.readonlyAdmins)
   normalized.questions = parseStringArray(normalized.questions)
+  normalized.integrationProfileId = ensureString(normalized.integrationProfileId, "").trim()
+  normalized.aiAssistProfileId = ensureString(normalized.aiAssistProfileId, "").trim()
   normalized.allowCreationByBlacklistedUsers = ensureBoolean(normalized.allowCreationByBlacklistedUsers)
 
   assertPlainObject(normalized.channel, "Ticket channel")
@@ -612,6 +681,15 @@ function normalizeTicketOption(option: any) {
   normalized.channel.backupCategory = ensureString(normalized.channel.backupCategory, "")
   normalized.channel.closedCategory = ensureString(normalized.channel.closedCategory, "")
   normalized.channel.claimedCategory = normalizeClaimedCategories(normalized.channel.claimedCategory ?? [])
+  const rawOverflowCategories = Array.isArray(option?.channel?.overflowCategories)
+    ? option.channel.overflowCategories
+    : normalized.channel.backupCategory
+      ? [normalized.channel.backupCategory]
+      : []
+  normalized.channel.overflowCategories = parseStringArray(rawOverflowCategories)
+    .filter((categoryId, index, values) => values.indexOf(categoryId) === index)
+    .filter((categoryId) => categoryId !== normalized.channel.category)
+  normalized.channel.backupCategory = normalized.channel.overflowCategories[0] || ""
   normalized.channel.topic = ensureString(normalized.channel.topic, "")
 
   validateOptionMessage(normalized.dmMessage, "DM message", false)
@@ -637,8 +715,231 @@ function normalizeTicketOption(option: any) {
   normalized.slowMode.enabled = ensureBoolean(normalized.slowMode.enabled)
   normalized.slowMode.slowModeSeconds = ensureNumber(normalized.slowMode.slowModeSeconds, defaults.slowMode.slowModeSeconds)
   normalized.transcripts = normalizeTicketOptionTranscriptRoutingConfig(normalized.transcripts)
+  normalized.routing = normalizeTicketOptionRoutingConfig(normalized.routing)
+  assertPlainObject(normalized.workflow, "Ticket workflow")
+  assertPlainObject(normalized.workflow.closeRequest, "Ticket close request workflow")
+  assertPlainObject(normalized.workflow.awaitingUser, "Ticket awaiting-user workflow")
+  normalized.workflow.closeRequest.enabled = ensureBoolean(normalized.workflow.closeRequest.enabled)
+  normalized.workflow.awaitingUser.enabled = ensureBoolean(normalized.workflow.awaitingUser.enabled)
+  normalized.workflow.awaitingUser.reminderEnabled = ensureBoolean(normalized.workflow.awaitingUser.reminderEnabled)
+  normalized.workflow.awaitingUser.reminderHours = ensureNumber(normalized.workflow.awaitingUser.reminderHours, defaults.workflow.awaitingUser.reminderHours)
+  normalized.workflow.awaitingUser.autoCloseEnabled = ensureBoolean(normalized.workflow.awaitingUser.autoCloseEnabled)
+  normalized.workflow.awaitingUser.autoCloseHours = ensureNumber(normalized.workflow.awaitingUser.autoCloseHours, defaults.workflow.awaitingUser.autoCloseHours)
+  if (normalized.workflow.awaitingUser.reminderHours <= 0 || normalized.workflow.awaitingUser.autoCloseHours <= 0) {
+    throw new Error("Ticket workflow reminder and timeout hours must be positive.")
+  }
+  if (
+    normalized.workflow.awaitingUser.reminderEnabled
+    && normalized.workflow.awaitingUser.autoCloseEnabled
+    && normalized.workflow.awaitingUser.autoCloseHours <= normalized.workflow.awaitingUser.reminderHours
+  ) {
+    throw new Error("Ticket workflow autoCloseHours must be greater than reminderHours when both settings are enabled.")
+  }
 
   return normalized
+}
+
+function normalizeIntegrationProfile(profile: any) {
+  const normalized: any = deepMerge(
+    {
+      id: profile.id || slugify(profile.label || `integration-profile-${Date.now()}`),
+      providerId: "",
+      label: profile.label || "",
+      enabled: true,
+      settings: {}
+    },
+    profile
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.providerId = ensureString(normalized.providerId, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.enabled = ensureBoolean(normalized.enabled)
+  normalized.settings = isPlainObject(normalized.settings) ? normalized.settings : {}
+
+  if (!normalized.id) {
+    throw new Error("Integration profile ID is required.")
+  }
+  if (!normalized.providerId) {
+    throw new Error("Integration profile providerId is required.")
+  }
+
+  return normalized
+}
+
+const SECRET_SHAPED_KEY_REGEX = /secret|token|password|api[_-]?key|authorization|credential|bearer/i
+
+function findSecretShapedSettingKey(value: unknown, path: string[] = []): string | null {
+  if (value == null || typeof value !== "object") return null
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findSecretShapedSettingKey(value[index], [...path, String(index)])
+      if (found) return found
+    }
+    return null
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    const nextPath = [...path, key]
+    if (SECRET_SHAPED_KEY_REGEX.test(key)) return nextPath.join(".")
+    const found = findSecretShapedSettingKey(nestedValue, nextPath)
+    if (found) return found
+  }
+  return null
+}
+
+function assertNoSecretShapedSettings(settings: Record<string, unknown>, label: string) {
+  const secretKey = findSecretShapedSettingKey(settings)
+  if (secretKey) {
+    throw new Error(`${label} settings must not contain secret-shaped key "${secretKey}". Use host environment variables for provider secrets.`)
+  }
+}
+
+function normalizeAiAssistContext(context: any) {
+  const normalized = isPlainObject(context) ? context : {}
+  const maxRecentMessages = Math.floor(ensureNumber(normalized.maxRecentMessages, 40))
+  return {
+    maxRecentMessages: Math.min(100, Math.max(10, maxRecentMessages)),
+    includeTicketMetadata: normalized.includeTicketMetadata !== false,
+    includeParticipants: normalized.includeParticipants !== false,
+    includeManagedFormSnapshot: normalized.includeManagedFormSnapshot !== false,
+    includeBotMessages: ensureBoolean(normalized.includeBotMessages)
+  }
+}
+
+function normalizeAiAssistProfile(profile: any) {
+  const normalized: any = deepMerge(
+    {
+      id: profile.id || slugify(profile.label || `ai-assist-profile-${Date.now()}`),
+      providerId: "reference",
+      label: profile.label || "",
+      enabled: false,
+      knowledgeSourceIds: [],
+      context: {
+        maxRecentMessages: 40,
+        includeTicketMetadata: true,
+        includeParticipants: true,
+        includeManagedFormSnapshot: true,
+        includeBotMessages: false
+      },
+      settings: {}
+    },
+    profile
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.providerId = ensureString(normalized.providerId, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.enabled = ensureBoolean(normalized.enabled)
+  normalized.knowledgeSourceIds = normalizeUniqueStringEntries(normalized.knowledgeSourceIds)
+  normalized.context = normalizeAiAssistContext(normalized.context)
+  normalized.settings = isPlainObject(normalized.settings) ? normalized.settings : {}
+  assertNoSecretShapedSettings(normalized.settings, "AI assist profile")
+
+  if (!normalized.id) {
+    throw new Error("AI assist profile ID is required.")
+  }
+  if (!normalized.providerId) {
+    throw new Error("AI assist profile providerId is required.")
+  }
+
+  return normalized
+}
+
+function normalizeKnowledgeSourcePath(sourcePath: string, projectRoot: string) {
+  const normalized = ensureString(sourcePath, "").trim().replace(/\\/g, "/")
+  if (!normalized) throw new Error("Knowledge source path is required.")
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    throw new Error("Knowledge sources must be local files, not URLs.")
+  }
+  if (path.isAbsolute(normalized)) {
+    throw new Error("Knowledge source paths must be relative.")
+  }
+  if (normalized.split("/").includes("..")) {
+    throw new Error("Knowledge source paths may not contain '..'.")
+  }
+  if (!(normalized.startsWith("knowledge/") || normalized.startsWith(".docs/"))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+
+  const absolutePath = path.resolve(projectRoot, normalized)
+  const allowedRoots = [path.resolve(projectRoot, "knowledge"), path.resolve(projectRoot, ".docs")]
+  if (!allowedRoots.some((root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Knowledge source paths must stay under knowledge/ or .docs/.")
+  }
+
+  if (fs.existsSync(absolutePath)) {
+    const stats = fs.lstatSync(absolutePath)
+    if (stats.isSymbolicLink()) {
+      throw new Error("Knowledge source files may not be symbolic links.")
+    }
+    const realPath = fs.realpathSync(absolutePath)
+    const realAllowedRoots = allowedRoots.map((root) => fs.existsSync(root) ? fs.realpathSync(root) : root)
+    if (!realAllowedRoots.some((root) => realPath === root || realPath.startsWith(`${root}${path.sep}`))) {
+      throw new Error("Knowledge source files may not escape knowledge/ or .docs/.")
+    }
+  }
+
+  return normalized
+}
+
+function normalizeKnowledgeSource(source: any, projectRoot: string) {
+  const normalized: any = deepMerge(
+    {
+      id: source.id || slugify(source.label || `knowledge-source-${Date.now()}`),
+      label: source.label || "",
+      kind: source.kind || "markdown-file",
+      path: source.path || "knowledge/example.md",
+      enabled: false
+    },
+    source
+  )
+
+  normalized.id = ensureString(normalized.id, "").trim()
+  normalized.label = ensureString(normalized.label, "").trim() || normalized.id
+  normalized.kind = ensureString(normalized.kind, "markdown-file")
+  assertOneOf(normalized.kind, ["markdown-file", "faq-json"], "Knowledge source kind")
+  normalized.path = normalizeKnowledgeSourcePath(normalized.path, projectRoot)
+  normalized.enabled = ensureBoolean(normalized.enabled)
+
+  if (!normalized.id) {
+    throw new Error("Knowledge source ID is required.")
+  }
+
+  return normalized
+}
+
+function validateFaqKnowledgeRecord(record: any, index: number): string | null {
+  if (!isPlainObject(record)) return `FAQ knowledge entry ${index + 1} must be an object.`
+  if (!ensureString(record.id, "").trim()) return `FAQ knowledge entry ${index + 1} must include an id.`
+  if (!ensureString(record.question, "").trim()) return `FAQ knowledge entry ${index + 1} must include a question.`
+  if (!ensureString(record.answer, "").trim()) return `FAQ knowledge entry ${index + 1} must include an answer.`
+  if (record.aliases !== undefined && (!Array.isArray(record.aliases) || record.aliases.some((alias: any) => typeof alias !== "string"))) {
+    return `FAQ knowledge entry ${index + 1} aliases must be strings.`
+  }
+  return null
+}
+
+function validateKnowledgeSourceContent(source: any, projectRoot: string) {
+  if (source.kind !== "faq-json" || source.enabled !== true) return
+  const filePath = path.resolve(projectRoot, source.path)
+  if (!fs.existsSync(filePath)) return
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"))
+  } catch {
+    throw new Error(`FAQ knowledge source "${source.id}" must contain valid JSON.`)
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`FAQ knowledge source "${source.id}" must contain an array of records.`)
+  }
+
+  for (let index = 0; index < parsed.length; index += 1) {
+    const error = validateFaqKnowledgeRecord(parsed[index], index)
+    if (error) throw new Error(error)
+  }
 }
 
 function normalizeRoleOption(option: any) {
@@ -659,6 +960,10 @@ function normalizeRoleOption(option: any) {
   normalized.removeRolesOnAdd = parseStringArray(normalized.removeRolesOnAdd)
   normalized.addOnMemberJoin = ensureBoolean(normalized.addOnMemberJoin)
   delete normalized.transcripts
+  delete normalized.routing
+  delete normalized.workflow
+  delete normalized.integrationProfileId
+  delete normalized.aiAssistProfileId
 
   return normalized
 }
@@ -674,6 +979,10 @@ function normalizeWebsiteOption(option: any) {
   validateOptionButton(normalized.button, false)
   normalized.url = ensureString(normalized.url, "")
   delete normalized.transcripts
+  delete normalized.routing
+  delete normalized.workflow
+  delete normalized.integrationProfileId
+  delete normalized.aiAssistProfileId
 
   return normalized
 }
@@ -824,6 +1133,10 @@ export interface DashboardReferenceItem {
 export interface DashboardEditorDependencyGraph {
   optionPanels: Record<string, DashboardReferenceItem[]>
   questionOptions: Record<string, DashboardReferenceItem[]>
+  supportTeamOptions: Record<string, DashboardReferenceItem[]>
+  integrationProfileOptions: Record<string, DashboardReferenceItem[]>
+  aiAssistProfileOptions: Record<string, DashboardReferenceItem[]>
+  knowledgeSourceProfiles: Record<string, DashboardReferenceItem[]>
 }
 
 export class DashboardConfigOperationError extends Error {
@@ -893,33 +1206,132 @@ function buildQuestionOptionReferences(options: any[]): Record<string, Dashboard
   return references
 }
 
-function buildDuplicateIdError(kind: "option" | "panel" | "question", duplicateId: string) {
+function buildSupportTeamOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const supportTeamId = ensureString(option.routing?.supportTeamId, "").trim()
+    if (!supportTeamId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[supportTeamId] = references[supportTeamId] || []
+    references[supportTeamId].push(reference)
+  })
+
+  return references
+}
+
+function buildIntegrationProfileOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const integrationProfileId = ensureString(option.integrationProfileId, "").trim()
+    if (!integrationProfileId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[integrationProfileId] = references[integrationProfileId] || []
+    references[integrationProfileId].push(reference)
+  })
+
+  return references
+}
+
+function buildAiAssistProfileOptionReferences(options: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  options.forEach((option, index) => {
+    if (option?.type !== "ticket") return
+    const aiAssistProfileId = ensureString(option.aiAssistProfileId, "").trim()
+    if (!aiAssistProfileId) return
+
+    const reference = {
+      id: String(option.id || `option-${index + 1}`),
+      name: String(option.name || option.id || `Option ${index + 1}`),
+      index,
+      type: String(option.type || "")
+    }
+
+    references[aiAssistProfileId] = references[aiAssistProfileId] || []
+    references[aiAssistProfileId].push(reference)
+  })
+
+  return references
+}
+
+function buildKnowledgeSourceProfileReferences(profiles: any[]): Record<string, DashboardReferenceItem[]> {
+  const references: Record<string, DashboardReferenceItem[]> = {}
+
+  profiles.forEach((profile, index) => {
+    normalizeUniqueStringEntries(profile?.knowledgeSourceIds).forEach((sourceId) => {
+      const reference = {
+        id: String(profile.id || `profile-${index + 1}`),
+        name: String(profile.label || profile.id || `Profile ${index + 1}`),
+        index,
+        type: "ai-assist-profile"
+      }
+
+      references[sourceId] = references[sourceId] || []
+      references[sourceId].push(reference)
+    })
+  })
+
+  return references
+}
+
+function buildDuplicateIdError(kind: "option" | "panel" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source", duplicateId: string) {
+  const codeKind = kind.toUpperCase().replace(/\s+/g, "_")
   return new DashboardConfigOperationError(
     `${kind[0].toUpperCase()}${kind.slice(1)} ID "${duplicateId}" already exists.`,
-    `${kind.toUpperCase()}_DUPLICATE_ID`,
+    `${codeKind}_DUPLICATE_ID`,
     `Choose a different ${kind} ID before saving.`
   )
 }
 
 function buildReferenceGuardError(
-  kind: "option" | "question",
+  kind: "option" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source",
   action: "delete" | "rename",
   currentId: string,
   references: DashboardReferenceItem[],
   nextId = ""
 ) {
   const labels = references.map((reference) => `${reference.name} (${reference.id})`).join(", ")
-  const targetLabel = kind === "option" ? "panels" : "options"
+  const targetLabel = kind === "option"
+    ? "panels"
+    : kind === "knowledge source"
+      ? "AI assist profiles"
+      : "options"
   const actionText = action === "delete"
     ? `delete ${kind} "${currentId}"`
     : `change ${kind} "${currentId}" to "${nextId}"`
 
   return new DashboardConfigOperationError(
     `Cannot ${actionText} because these ${targetLabel} still reference it: ${labels}.`,
-    `${kind.toUpperCase()}_${action.toUpperCase()}_BLOCKED`,
+    `${kind.toUpperCase().replace(/\s+/g, "_")}_${action.toUpperCase()}_BLOCKED`,
     kind === "option"
       ? "Remove this option from the listed panels first, then try again."
-      : "Remove this question from the listed options first, then try again.",
+      : kind === "question"
+          ? "Remove this question from the listed options first, then try again."
+          : kind === "support team"
+            ? "Remove this support team from the listed ticket option routes first, then try again."
+            : kind === "knowledge source"
+              ? "Remove this knowledge source from the listed AI assist profiles first, then try again."
+              : kind === "AI assist profile"
+                ? "Remove this AI assist profile from the listed ticket options first, then try again."
+                : "Remove this integration profile from the listed ticket options first, then try again.",
     references
   )
 }
@@ -931,6 +1343,7 @@ export interface DashboardConfigService {
   definitions: ManagedConfigDefinition[]
   getFilePath: (id: ManagedConfigId) => string
   readManagedText: (id: ManagedConfigId) => string
+  readManagedBackupText: (id: ManagedConfigId) => string
   readManagedJson: <T>(id: ManagedConfigId) => T
   writeManagedJson: (id: ManagedConfigId, value: unknown) => void
   prettifyText: (text: string) => string
@@ -938,6 +1351,9 @@ export interface DashboardConfigService {
   listAvailableLanguages: () => string[]
   getAvailableOptions: () => Array<{ id: string; name: string; emoji: string; type: string; description: string }>
   listAvailableQuestions: () => Array<{ id: string; name: string; type: string; required: boolean }>
+  listAvailableSupportTeams: () => Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }>
+  listAvailableIntegrationProfiles: () => Array<{ id: string; providerId: string; label: string; enabled: boolean }>
+  listAvailableAiAssistProfiles: () => Array<{ id: string; providerId: string; label: string; enabled: boolean }>
   getEditorDependencyGraph: () => DashboardEditorDependencyGraph
   normalizeGeneralDraft: (body: Record<string, unknown>, fallback?: Record<string, unknown> | null) => Record<string, unknown>
   inspectGeneralGlobalAdmins: (input: unknown) => DashboardGeneralGlobalAdminsDraftState
@@ -950,12 +1366,13 @@ export interface DashboardConfigService {
   saveOption: (option: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   savePanel: (panel: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   saveQuestion: (question: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
+  saveSupportTeam: (team: Record<string, unknown>, editIndex: number) => { success: true; id: string; action: "created" | "updated"; count: number; item: Record<string, unknown>; index: number }
   reorderArrayItems: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources">,
     orderedIds: string[]
   ) => { success: true; count: number; orderedIds: string[]; items: Record<string, unknown>[] }
   deleteArrayItem: (
-    id: Extract<ManagedConfigId, "options" | "panels" | "questions">,
+    id: Extract<ManagedConfigId, "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources">,
     index: number
   ) => { success: true; count: number; removedId: string; items: Record<string, unknown>[] }
   readDashboardPluginConfig: () => Partial<DashboardConfig>
@@ -999,17 +1416,90 @@ export function createConfigService(
   }
 
   const readManagedText = (id: ManagedConfigId): string => {
-    return fs.readFileSync(getFilePath(id), "utf8")
+    const filePath = getFilePath(id)
+    if (
+      (
+        id === "support-teams"
+        || id === "integration-profiles"
+        || id === "ai-assist-profiles"
+        || id === "knowledge-sources"
+      )
+      && !fs.existsSync(filePath)
+    ) {
+      return "[]\n"
+    }
+    return fs.readFileSync(filePath, "utf8")
   }
 
   const readManagedJson = <T>(id: ManagedConfigId): T => {
     return JSON.parse(readManagedText(id)) as T
   }
 
+  const integrationProviderSecretKeys = (providerId: string): string[] => {
+    const provider = getTicketPlatformRuntimeApi()?.getIntegrationProvider(providerId) ?? null
+    return Array.isArray(provider?.secretSettingKeys)
+      ? provider.secretSettingKeys.map((key) => String(key || "").trim()).filter(Boolean)
+      : []
+  }
+
+  const redactIntegrationProfileSecrets = (profiles: unknown): unknown => {
+    if (!Array.isArray(profiles)) return profiles
+    return profiles.map((entry) => {
+      const profile = normalizeIntegrationProfile(entry)
+      const secretKeys = integrationProviderSecretKeys(profile.providerId)
+      for (const key of secretKeys) {
+        if (Object.prototype.hasOwnProperty.call(profile.settings, key)) {
+          profile.settings[key] = INTEGRATION_SECRET_REDACTION
+        }
+      }
+      return profile
+    })
+  }
+
+  const mergeRedactedIntegrationProfileSecrets = (profiles: unknown): unknown => {
+    if (!Array.isArray(profiles)) return profiles
+    let currentProfiles: any[] = []
+    try {
+      currentProfiles = readManagedJson<any[]>("integration-profiles")
+    } catch {
+      currentProfiles = []
+    }
+    const currentById = new Map(currentProfiles.map((profile) => [String(profile?.id || ""), profile]))
+    return profiles.map((entry) => {
+      const profile = normalizeIntegrationProfile(entry)
+      const current = currentById.get(profile.id)
+      const currentSettings = isPlainObject(current?.settings) ? current.settings : {}
+      for (const key of integrationProviderSecretKeys(profile.providerId)) {
+        if (profile.settings[key] === INTEGRATION_SECRET_REDACTION && Object.prototype.hasOwnProperty.call(currentSettings, key)) {
+          profile.settings[key] = currentSettings[key]
+        }
+      }
+      return profile
+    })
+  }
+
+  const readManagedBackupText = (id: ManagedConfigId): string => {
+    if (id === "ai-assist-profiles") {
+      return JSON.stringify(readManagedJson<any[]>("ai-assist-profiles").map(normalizeAiAssistProfile), null, 2) + "\n"
+    }
+    if (id === "knowledge-sources") {
+      return JSON.stringify(readManagedJson<any[]>("knowledge-sources").map((source) => normalizeKnowledgeSource(source, projectRoot)), null, 2) + "\n"
+    }
+    if (id !== "integration-profiles") return readManagedText(id)
+    return JSON.stringify(redactIntegrationProfileSecrets(readManagedJson<unknown>("integration-profiles")), null, 2) + "\n"
+  }
+
   const writeManagedJson = (id: ManagedConfigId, value: unknown): void => {
     const filePath = getFilePath(id)
     const tempPath = `${filePath}.tmp`
-    fs.writeFileSync(tempPath, JSON.stringify(value, null, 2) + "\n", "utf8")
+    const writableValue = id === "integration-profiles"
+      ? mergeRedactedIntegrationProfileSecrets(value)
+      : id === "ai-assist-profiles"
+        ? Array.isArray(value) ? value.map(normalizeAiAssistProfile) : value
+        : id === "knowledge-sources"
+          ? Array.isArray(value) ? value.map((source) => normalizeKnowledgeSource(source, projectRoot)) : value
+          : value
+    fs.writeFileSync(tempPath, JSON.stringify(writableValue, null, 2) + "\n", "utf8")
     fs.renameSync(tempPath, filePath)
   }
 
@@ -1023,6 +1513,88 @@ export function createConfigService(
 
   const saveRawJson = (id: ManagedConfigId, text: string): unknown => {
     const parsed = JSON.parse(text)
+    if (id === "support-teams") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("support-teams.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((team: any) => String(team?.id || "").trim()).filter(Boolean))
+      const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("support-teams")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("support team", "delete", currentId, currentReferences)
+        }
+      }
+    }
+    if (id === "integration-profiles") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("integration-profiles.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((profile: any) => String(profile?.id || "").trim()).filter(Boolean))
+      const references = buildIntegrationProfileOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("integration-profiles")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("integration profile", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map(normalizeIntegrationProfile)
+      writeManagedJson(id, normalized)
+      return normalized
+    }
+    if (id === "ai-assist-profiles") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("ai-assist-profiles.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((profile: any) => String(profile?.id || "").trim()).filter(Boolean))
+      const references = buildAiAssistProfileOptionReferences(readManagedJson<any[]>("options"))
+      for (const current of readManagedJson<any[]>("ai-assist-profiles")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("AI assist profile", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map(normalizeAiAssistProfile)
+      validateAiAssistProfileKnowledgeReferences(normalized)
+      writeManagedJson(id, normalized)
+      return normalized
+    }
+    if (id === "knowledge-sources") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("knowledge-sources.json must be an array.")
+      }
+      const nextIds = new Set(parsed.map((source: any) => String(source?.id || "").trim()).filter(Boolean))
+      const references = buildKnowledgeSourceProfileReferences(readManagedJson<any[]>("ai-assist-profiles"))
+      for (const current of readManagedJson<any[]>("knowledge-sources")) {
+        const currentId = String(current?.id || "").trim()
+        if (!currentId || nextIds.has(currentId)) continue
+        const currentReferences = references[currentId] || []
+        if (currentReferences.length > 0) {
+          throw buildReferenceGuardError("knowledge source", "delete", currentId, currentReferences)
+        }
+      }
+      const normalized = parsed.map((source: any) => normalizeKnowledgeSource(source, projectRoot))
+      normalized.forEach((source: any) => validateKnowledgeSourceContent(source, projectRoot))
+      writeManagedJson(id, normalized)
+      return normalized
+    }
+    if (id === "options") {
+      if (!Array.isArray(parsed)) {
+        throw new Error("options.json must be an array.")
+      }
+      const normalized = parsed.map(normalizeOption)
+      validateOptionRoutingReferences(normalized)
+      validateOptionIntegrationReferences(normalized)
+      validateOptionAiAssistReferences(normalized)
+      writeManagedJson(id, normalized)
+      return normalized
+    }
     writeManagedJson(id, parsed)
     return parsed
   }
@@ -1280,25 +1852,178 @@ export function createConfigService(
     }))
   }
 
+  const listAvailableSupportTeams = (): Array<{ id: string; name: string; roleIds: string[]; assignmentStrategy: string }> => {
+    const teams = readManagedJson<any[]>("support-teams")
+    return teams.map((team) => ({
+      id: String(team.id || ""),
+      name: String(team.name || team.id || "Support team"),
+      roleIds: parseStringArray(team.roleIds),
+      assignmentStrategy: String(team.assignmentStrategy || "manual")
+    }))
+  }
+
+  const listAvailableIntegrationProfiles = (): Array<{ id: string; providerId: string; label: string; enabled: boolean }> => {
+    const profiles = readManagedJson<any[]>("integration-profiles")
+    return profiles.map((profile) => ({
+      id: String(profile.id || ""),
+      providerId: String(profile.providerId || ""),
+      label: String(profile.label || profile.id || "Integration profile"),
+      enabled: profile.enabled === true
+    }))
+  }
+
+  const listAvailableAiAssistProfiles = (): Array<{ id: string; providerId: string; label: string; enabled: boolean }> => {
+    const profiles = readManagedJson<any[]>("ai-assist-profiles")
+    return profiles.map((profile) => ({
+      id: String(profile.id || ""),
+      providerId: String(profile.providerId || ""),
+      label: String(profile.label || profile.id || "AI assist profile"),
+      enabled: profile.enabled === true
+    }))
+  }
+
   const getEditorDependencyGraph = (): DashboardEditorDependencyGraph => {
     const options = readManagedJson<any[]>("options")
     const panels = readManagedJson<any[]>("panels")
+    const aiAssistProfiles = readManagedJson<any[]>("ai-assist-profiles")
 
     return {
       optionPanels: buildOptionPanelReferences(panels),
-      questionOptions: buildQuestionOptionReferences(options)
+      questionOptions: buildQuestionOptionReferences(options),
+      supportTeamOptions: buildSupportTeamOptionReferences(options),
+      integrationProfileOptions: buildIntegrationProfileOptionReferences(options),
+      aiAssistProfileOptions: buildAiAssistProfileOptionReferences(options),
+      knowledgeSourceProfiles: buildKnowledgeSourceProfileReferences(aiAssistProfiles)
     }
   }
 
   const ensureUniqueArrayId = (
     items: any[],
-    kind: "option" | "panel" | "question",
+    kind: "option" | "panel" | "question" | "support team" | "integration profile" | "AI assist profile" | "knowledge source",
     candidateId: string,
     currentIndex = -1
   ) => {
     const duplicate = items.some((existing, index) => index !== currentIndex && String(existing.id || "") === candidateId)
     if (duplicate) {
       throw buildDuplicateIdError(kind, candidateId)
+    }
+  }
+
+  const validateOptionRoutingReferences = (items: any[]) => {
+    const supportTeamIds = new Set(readManagedJson<any[]>("support-teams").map((team) => String(team.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+    const ticketById = new Map(ticketOptions.map((option) => [String(option.id || ""), option]))
+
+    for (const option of ticketOptions) {
+      const routing = normalizeTicketOptionRoutingConfig(option.routing)
+      if (routing.supportTeamId && !supportTeamIds.has(routing.supportTeamId)) {
+        throw new DashboardConfigOperationError(
+          `Ticket option "${option.id}" references unknown support team "${routing.supportTeamId}".`,
+          "OPTION_ROUTING_UNKNOWN_SUPPORT_TEAM",
+          "Create the support team first or leave supportTeamId empty for legacy role-only routing.",
+          [],
+          400
+        )
+      }
+
+      for (const targetId of routing.escalationTargetOptionIds) {
+        const target = ticketById.get(targetId)
+        if (!target) {
+          throw new DashboardConfigOperationError(
+            `Ticket option "${option.id}" escalation target "${targetId}" must be an existing ticket option.`,
+            "OPTION_ROUTING_UNKNOWN_ESCALATION_TARGET",
+            "Escalation targets must point at existing ticket options.",
+            [],
+            400
+          )
+        }
+
+        const targetRouting = normalizeTicketOptionRoutingConfig(target.routing)
+        if (!targetRouting.supportTeamId) {
+          throw new DashboardConfigOperationError(
+            `Escalation target "${targetId}" must have a non-empty supportTeamId.`,
+            "OPTION_ROUTING_TARGET_WITHOUT_TEAM",
+            "Assign the target option to a support team before using it as an escalation target.",
+            [],
+            400
+          )
+        }
+
+        const sourceMode = option.channel?.transportMode === "private_thread" ? "private_thread" : "channel_text"
+        const targetMode = target.channel?.transportMode === "private_thread" ? "private_thread" : "channel_text"
+        if (sourceMode !== targetMode) {
+          throw new DashboardConfigOperationError(
+            `Escalation target "${targetId}" must use the same transportMode as "${option.id}".`,
+            "OPTION_ROUTING_TRANSPORT_MISMATCH",
+            "Create a same-transport target option for escalation.",
+            [],
+            400
+          )
+        }
+
+        const sourceParent = String(option.channel?.threadParentChannel || "").trim()
+        const targetParent = String(target.channel?.threadParentChannel || "").trim()
+        if (sourceMode === "private_thread" && sourceParent !== targetParent) {
+          throw new DashboardConfigOperationError(
+            `Private-thread escalation target "${targetId}" must use the same threadParentChannel as "${option.id}".`,
+            "OPTION_ROUTING_THREAD_PARENT_MISMATCH",
+            "Private-thread escalation stays inside the same parent text channel.",
+            [],
+            400
+          )
+        }
+      }
+    }
+  }
+
+  const validateOptionIntegrationReferences = (items: any[]) => {
+    const integrationProfileIds = new Set(readManagedJson<any[]>("integration-profiles").map((profile) => String(profile.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+
+    for (const option of ticketOptions) {
+      const integrationProfileId = ensureString(option.integrationProfileId, "").trim()
+      if (!integrationProfileId || integrationProfileIds.has(integrationProfileId)) continue
+      throw new DashboardConfigOperationError(
+        `Ticket option "${option.id}" references unknown integration profile "${integrationProfileId}".`,
+        "OPTION_UNKNOWN_INTEGRATION_PROFILE",
+        "Create the integration profile first or leave integrationProfileId empty.",
+        [],
+        400
+      )
+    }
+  }
+
+  const validateOptionAiAssistReferences = (items: any[]) => {
+    const aiAssistProfileIds = new Set(readManagedJson<any[]>("ai-assist-profiles").map((profile) => String(profile.id || "").trim()).filter(Boolean))
+    const ticketOptions = items.filter((option) => option?.type === "ticket")
+
+    for (const option of ticketOptions) {
+      const aiAssistProfileId = ensureString(option.aiAssistProfileId, "").trim()
+      if (!aiAssistProfileId || aiAssistProfileIds.has(aiAssistProfileId)) continue
+      throw new DashboardConfigOperationError(
+        `Ticket option "${option.id}" references unknown AI assist profile "${aiAssistProfileId}".`,
+        "OPTION_UNKNOWN_AI_ASSIST_PROFILE",
+        "Create the AI assist profile first or leave aiAssistProfileId empty.",
+        [],
+        400
+      )
+    }
+  }
+
+  const validateAiAssistProfileKnowledgeReferences = (items: any[]) => {
+    const knowledgeSourceIds = new Set(readManagedJson<any[]>("knowledge-sources").map((source) => String(source.id || "").trim()).filter(Boolean))
+
+    for (const profile of items) {
+      for (const sourceId of normalizeUniqueStringEntries(profile?.knowledgeSourceIds)) {
+        if (knowledgeSourceIds.has(sourceId)) continue
+        throw new DashboardConfigOperationError(
+          `AI assist profile "${profile.id}" references unknown knowledge source "${sourceId}".`,
+          "AI_ASSIST_PROFILE_UNKNOWN_KNOWLEDGE_SOURCE",
+          "Create the knowledge source first or remove it from knowledgeSourceIds.",
+          [],
+          400
+        )
+      }
     }
   }
 
@@ -1400,6 +2125,7 @@ export function createConfigService(
       "pin",
       "unpin",
       "move",
+      "escalate",
       "rename",
       "add",
       "remove",
@@ -1517,6 +2243,7 @@ export function createConfigService(
     definitions: MANAGED_CONFIGS,
     getFilePath,
     readManagedText,
+    readManagedBackupText,
     readManagedJson,
     writeManagedJson,
     prettifyText,
@@ -1524,6 +2251,9 @@ export function createConfigService(
     listAvailableLanguages,
     getAvailableOptions,
     listAvailableQuestions,
+    listAvailableSupportTeams,
+    listAvailableIntegrationProfiles,
+    listAvailableAiAssistProfiles,
     getEditorDependencyGraph,
     normalizeGeneralDraft,
     inspectGeneralGlobalAdmins(input) {
@@ -1556,6 +2286,9 @@ export function createConfigService(
 
         ensureUniqueArrayId(items, "option", nextId, editIndex)
         items[editIndex] = normalized
+        validateOptionRoutingReferences(items)
+        validateOptionIntegrationReferences(items)
+        validateOptionAiAssistReferences(items)
         writeManagedJson("options", items)
         return {
           success: true as const,
@@ -1572,6 +2305,9 @@ export function createConfigService(
       normalized.id = nextId
       ensureUniqueArrayId(items, "option", nextId)
       items.push(normalized)
+      validateOptionRoutingReferences(items)
+      validateOptionIntegrationReferences(items)
+      validateOptionAiAssistReferences(items)
       writeManagedJson("options", items)
       return {
         success: true as const,
@@ -1685,6 +2421,52 @@ export function createConfigService(
         index: items.length - 1
       }
     },
+    saveSupportTeam(team, editIndex) {
+      const items = deepClone(readManagedJson<any[]>("support-teams"))
+      const action = Number.isInteger(editIndex) && editIndex >= 0 && editIndex < items.length ? "updated" as const : "created" as const
+
+      if (action === "updated") {
+        const current = items[editIndex]
+        const merged = deepMerge(current, team)
+        const normalized = normalizeSupportTeam(merged)
+        const previousId = String(current.id || "")
+        const nextId = String(normalized.id || "")
+
+        if (nextId !== previousId) {
+          const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))[previousId] || []
+          if (references.length > 0) {
+            throw buildReferenceGuardError("support team", "rename", previousId, references, nextId)
+          }
+        }
+
+        ensureUniqueArrayId(items, "support team", nextId, editIndex)
+        items[editIndex] = normalized
+        writeManagedJson("support-teams", items)
+        return {
+          success: true as const,
+          id: nextId,
+          action,
+          count: items.length,
+          item: normalized,
+          index: editIndex
+        }
+      }
+
+      const normalized = normalizeSupportTeam(team)
+      const nextId = String(normalized.id || slugify(normalized.name || `support-team-${Date.now()}`))
+      normalized.id = nextId
+      ensureUniqueArrayId(items, "support team", nextId)
+      items.push(normalized)
+      writeManagedJson("support-teams", items)
+      return {
+        success: true as const,
+        id: nextId,
+        action,
+        count: items.length,
+        item: normalized,
+        index: items.length - 1
+      }
+    },
     reorderArrayItems(id, orderedIds) {
       const items = deepClone(readManagedJson<any[]>(id))
       const normalizedIds = Array.isArray(orderedIds) ? orderedIds.map((value) => String(value)) : []
@@ -1736,6 +2518,34 @@ export function createConfigService(
         const references = buildQuestionOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
         if (references.length > 0) {
           throw buildReferenceGuardError("question", "delete", removedId, references)
+        }
+      }
+
+      if (id === "support-teams") {
+        const references = buildSupportTeamOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("support team", "delete", removedId, references)
+        }
+      }
+
+      if (id === "integration-profiles") {
+        const references = buildIntegrationProfileOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("integration profile", "delete", removedId, references)
+        }
+      }
+
+      if (id === "ai-assist-profiles") {
+        const references = buildAiAssistProfileOptionReferences(readManagedJson<any[]>("options"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("AI assist profile", "delete", removedId, references)
+        }
+      }
+
+      if (id === "knowledge-sources") {
+        const references = buildKnowledgeSourceProfileReferences(readManagedJson<any[]>("ai-assist-profiles"))[removedId] || []
+        if (references.length > 0) {
+          throw buildReferenceGuardError("knowledge source", "delete", removedId, references)
         }
       }
 

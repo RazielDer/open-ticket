@@ -42,6 +42,7 @@ export interface ODSlashCommandManagerIds_Default {
     "opendiscord:pin":ODSlashCommand,
     "opendiscord:unpin":ODSlashCommand,
     "opendiscord:move":ODSlashCommand,
+    "opendiscord:escalate":ODSlashCommand,
     "opendiscord:rename":ODSlashCommand,
     "opendiscord:add":ODSlashCommand,
     "opendiscord:remove":ODSlashCommand,
@@ -53,6 +54,7 @@ export interface ODSlashCommandManagerIds_Default {
     "opendiscord:topic":ODSlashCommand,
     "opendiscord:priority":ODSlashCommand,
     "opendiscord:transfer":ODSlashCommand,
+    "opendiscord:awaiting":ODSlashCommand,
 }
 
 /**## ODSlashCommandManager_Default `default_class`
@@ -107,6 +109,7 @@ export interface ODTextCommandManagerIds_Default {
     "opendiscord:pin":ODTextCommand,
     "opendiscord:unpin":ODTextCommand,
     "opendiscord:move":ODTextCommand,
+    "opendiscord:escalate":ODTextCommand,
     "opendiscord:rename":ODTextCommand,
     "opendiscord:add":ODTextCommand,
     "opendiscord:remove":ODTextCommand,
@@ -127,6 +130,8 @@ export interface ODTextCommandManagerIds_Default {
     "opendiscord:priority-set":ODTextCommand,
     "opendiscord:priority-get":ODTextCommand,
     "opendiscord:transfer":ODTextCommand,
+    "opendiscord:awaiting-set":ODTextCommand,
+    "opendiscord:awaiting-clear":ODTextCommand,
 }
 
 /**## ODTextCommandManager_Default `default_class`

@@ -1,4 +1,5 @@
 import * as discord from "discord.js"
+import { withRicherMessageFlags } from "../../../src/core/api/openticket/richer-message"
 
 type OTFormsMessageBuildResult = import("#opendiscord").api.ODMessageBuildResult
 type OTFormsMessageBuildSentResult = import("#opendiscord").api.ODMessageBuildSentResult<boolean>
@@ -40,10 +41,10 @@ export function buildEphemeralStatusMessage(
 function toInteractionReplyOptions(
     message: OTFormsMessageBuildResult
 ): discord.InteractionReplyOptions {
-    return {
-        ...message.message,
-        flags: message.ephemeral ? [discord.MessageFlags.Ephemeral] : []
-    }
+    return withRicherMessageFlags(
+        message.message as discord.MessageCreateOptions,
+        message.ephemeral ? [discord.MessageFlags.Ephemeral] : []
+    ) as discord.InteractionReplyOptions
 }
 
 async function sendFollowUp(

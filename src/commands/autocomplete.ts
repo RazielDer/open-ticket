@@ -18,7 +18,7 @@ export const registerAutocompleteResponders = async () => {
     }))
 
     //OPTION ID AUTOCOMPLETE
-    opendiscord.responders.autocomplete.add(new api.ODAutocompleteResponder("opendiscord:option-id",/ticket|move/,"id"))
+    opendiscord.responders.autocomplete.add(new api.ODAutocompleteResponder("opendiscord:option-id",/ticket|move|escalate/,"id"))
     opendiscord.responders.autocomplete.get("opendiscord:option-id").workers.add(new api.ODWorker("opendiscord:option-id",0,async (instance,params,source,cancel) => {
         //create ticket choices
         const ticketChoices : {name:string, value:string}[] = []

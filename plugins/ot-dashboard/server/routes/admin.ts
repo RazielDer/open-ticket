@@ -1,8 +1,23 @@
 import fs from "node:fs"
 import type express from "express"
 
-import { buildDashboardAuditActor, createAdminGuard, sanitizeReturnTo } from "../auth"
+import { buildDashboardAuditActor, createAdminGuard, hasDashboardCapability, sanitizeReturnTo } from "../auth"
+import { buildDashboardAnalyticsModel } from "../analytics"
 import type { DashboardAppContext } from "../create-app"
+import {
+  buildAnalyticsExportPayload,
+  buildFullTicketWorkbenchExportPayload,
+  buildTicketDetailExportPayload,
+  buildTicketWorkbenchExportPayload,
+  getAnalyticsExportAuditDetails,
+  getFullTicketWorkbenchExportAuditDetails,
+  getTicketWorkbenchExportAuditDetails,
+  parseDashboardExportFormat
+} from "../export-serializers"
+import {
+  prepareDashboardExport,
+  releaseDashboardPreparedExport
+} from "../prepared-exports"
 import {
   getDashboardSecurityWarnings,
   getDashboardViewerReadiness,
@@ -29,9 +44,12 @@ import {
 } from "../control-center"
 import {
   buildAdvancedWorkspaceModel,
+  buildHomeQualityReviewBlock,
+  buildHomeTicketQueueBlock,
   buildHomeWorkspaceModel,
   buildTranscriptIntegrationWarning
 } from "../home-setup-models"
+import { buildQualityReviewQueueSummary } from "../quality-review-queue"
 import {
   buildTranscriptAvailabilityAlert,
   buildTranscriptDetailIntegritySummaryCard,
@@ -48,6 +66,7 @@ import {
   resolveTranscriptIntegration,
   supportsTranscriptOperationsReads,
   supportsTranscriptOperationsWrites,
+  supportsTranscriptTicketAnalyticsHistory,
   type DashboardListTranscriptEventsResult,
   type DashboardListTranscriptsResult,
   type DashboardTranscriptIntegrityReport,
@@ -58,6 +77,45 @@ import {
   type DashboardTranscriptPrepareExportResult,
   type DashboardTranscriptRetentionPreview
 } from "../transcript-service-bridge"
+import {
+  supportsTicketQueueTelemetryReads,
+  supportsTicketTelemetryReads,
+  supportsTicketWorkbenchReads,
+  supportsTicketWorkbenchWrites,
+  type DashboardRuntimeBridge,
+  type DashboardRuntimeGuildMember
+} from "../runtime-bridge"
+import {
+  buildDashboardQualityReviewDetailModel,
+  buildDashboardQualityReviewListModel,
+  buildDashboardQualityReviewSupervisionModel,
+  buildQualityReviewQueueHref,
+  sanitizeQualityReviewReturnTo
+} from "../quality-review"
+import {
+  buildTicketWorkbenchSavedViewHref,
+  buildFallbackTicketDetail,
+  buildTicketQueueSummary,
+  buildTicketWorkbenchDetailModel,
+  buildTicketWorkbenchListModel,
+  normalizeTicketWorkbenchSavedViewQuery,
+  parseDashboardTicketBulkActionId,
+  parseDashboardTicketActionId,
+  parseTicketWorkbenchListRequest,
+  removeTicketWorkbenchViewIdFromHref,
+  sanitizeTicketWorkbenchReturnTo,
+  TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES,
+  translateTicketWorkbenchMessage
+} from "../ticket-workbench"
+import type {
+  DashboardQualityReviewActionId,
+  DashboardQualityReviewNotificationStatus,
+  DashboardQualityReviewQueueSummary,
+  DashboardTicketLifecycleTelemetryRecord,
+  DashboardTicketQueueSummary,
+  DashboardTicketTelemetrySignals,
+  DashboardTicketWorkbenchViewRecord
+} from "../ticket-workbench-types"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
   const access = res.locals.dashboardAccess as { capabilities?: string[] } | undefined
@@ -79,6 +137,171 @@ function buildBulkActionTone(result: { succeeded: number; skipped: number; faile
   if (result.failed > 0) return "danger"
   if (result.skipped > 0) return "warning"
   return "success"
+}
+
+function normalizeStringListInput(value: unknown) {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? [value] : []
+  return raw
+    .map((entry) => typeof entry === "string" ? entry.trim() : "")
+    .filter(Boolean)
+    .filter((entry, index, values) => values.indexOf(entry) === index)
+}
+
+function normalizeStringInput(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function appendAlertQuery(href: string, status: string, message: string) {
+  return `${href}${href.includes("?") ? "&" : "?"}alertStatus=${encodeURIComponent(status)}&msg=${encodeURIComponent(message)}`
+}
+
+function ticketWorkbenchReturnToViewId(href: string) {
+  try {
+    const url = new URL(`http://dashboard.local${href}`)
+    return normalizeStringInput(url.searchParams.get("viewId"))
+  } catch {
+    return ""
+  }
+}
+
+function redactTicketWorkbenchFreeTextReturnTo(href: string) {
+  try {
+    const url = new URL(`http://dashboard.local${href}`)
+    url.searchParams.delete("q")
+    return `${url.pathname}${url.search}`
+  } catch {
+    return href
+  }
+}
+
+function preparedExportAuditId(value: unknown) {
+  const exportId = String(value || "").trim()
+  return /^dexp_[a-f0-9]{32}$/i.test(exportId) ? exportId : "dexp_invalid"
+}
+
+async function sanitizeAuthorizedTicketWorkbenchReturnTo(
+  basePath: string,
+  runtimeBridge: DashboardRuntimeBridge,
+  actorUserId: string,
+  candidate: unknown
+) {
+  const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, candidate)
+  const viewId = ticketWorkbenchReturnToViewId(returnTo)
+  if (!viewId) return returnTo
+  if (typeof runtimeBridge.listTicketWorkbenchViews !== "function") return removeTicketWorkbenchViewIdFromHref(returnTo)
+  try {
+    const visibleViews = await runtimeBridge.listTicketWorkbenchViews(actorUserId)
+    return visibleViews.some((view) => view.viewId === viewId) ? returnTo : removeTicketWorkbenchViewIdFromHref(returnTo)
+  } catch {
+    return removeTicketWorkbenchViewIdFromHref(returnTo)
+  }
+}
+
+function parseQualityReviewActionId(value: string): DashboardQualityReviewActionId | null {
+  return value === "set-state"
+    || value === "assign-owner"
+    || value === "clear-owner"
+    || value === "add-note"
+    || value === "resolve-with-outcome"
+    || value === "correct-note"
+    || value === "redact-note"
+    ? value
+    : null
+}
+
+function memberHasAdminTier(context: DashboardAppContext, member: DashboardRuntimeGuildMember | null) {
+  if (!member) return false
+  if (context.config.rbac.ownerUserIds.includes(member.userId)) return true
+  if (context.config.rbac.userIds.admin.includes(member.userId)) return true
+  const adminRoleIds = new Set(context.config.rbac.roleIds.admin.map((roleId) => String(roleId || "").trim()).filter(Boolean))
+  return member.roleIds.some((roleId) => adminRoleIds.has(String(roleId || "").trim()))
+}
+
+function dashboardRuntimeMemberLabel(member: DashboardRuntimeGuildMember, fallback: string) {
+  return member.displayName || member.globalName || member.username || fallback
+}
+
+async function resolveQualityReviewOwnerLabel(context: DashboardAppContext, userId: string) {
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(userId).catch(() => null)
+    : null
+  return member ? dashboardRuntimeMemberLabel(member, userId) : `Unknown owner (${userId})`
+}
+
+async function resolveCurrentQualityReviewOwnerLabel(context: DashboardAppContext, userId: string) {
+  const normalizedUserId = String(userId || "").trim()
+  if (!normalizedUserId) return "Unassigned"
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(normalizedUserId).catch(() => null)
+    : null
+  return member && memberHasAdminTier(context, member)
+    ? dashboardRuntimeMemberLabel(member, normalizedUserId)
+    : `Unknown owner (${normalizedUserId})`
+}
+
+async function buildQualityReviewOwnerChoices(context: DashboardAppContext, currentUserId: string | null | undefined) {
+  const ids = new Set<string>()
+  for (const userId of context.config.rbac.ownerUserIds) ids.add(userId)
+  for (const userId of context.config.rbac.userIds.admin) ids.add(userId)
+  if (currentUserId) ids.add(currentUserId)
+
+  const choices = await Promise.all([...ids].map(async (userId) => ({
+    value: userId,
+    label: await resolveQualityReviewOwnerLabel(context, userId)
+  })))
+  return choices
+    .filter((choice) => choice.value.trim().length > 0)
+    .sort((left, right) => left.label.localeCompare(right.label) || left.value.localeCompare(right.value))
+}
+
+async function canAssignQualityReviewOwner(
+  context: DashboardAppContext,
+  access: ReturnType<ReturnType<typeof createAdminGuard>["getAccess"]>,
+  ownerUserId: string
+) {
+  const normalizedOwner = String(ownerUserId || "").trim()
+  if (!normalizedOwner || !access || !hasDashboardCapability(access, "quality.review.manage")) return false
+  if (access.identity?.userId === normalizedOwner) return true
+  if (context.config.rbac.ownerUserIds.includes(normalizedOwner) || context.config.rbac.userIds.admin.includes(normalizedOwner)) return true
+  const member = typeof context.runtimeBridge.resolveGuildMember === "function"
+    ? await context.runtimeBridge.resolveGuildMember(normalizedOwner).catch(() => null)
+    : null
+  return memberHasAdminTier(context, member)
+}
+
+function sanitizeAnalyticsWorkspaceReturnTo(basePath: string, candidate: unknown) {
+  const fallback = joinBasePath(basePath, "admin/analytics")
+  if (typeof candidate !== "string" || candidate.length === 0) return fallback
+  if (!candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("://") || candidate.includes("\\")) return fallback
+  if (basePath !== "/" && !candidate.startsWith(basePath)) return fallback
+  const rawPath = candidate.split(/[?#]/, 1)[0]
+  for (const segment of rawPath.split("/")) {
+    let decoded = segment
+    try {
+      decoded = decodeURIComponent(segment)
+    } catch {
+      return fallback
+    }
+    if (decoded === "." || decoded === ".." || decoded.includes("\\")) return fallback
+  }
+
+  const normalizedBasePath = basePath === "/" ? "" : basePath
+  const analyticsRoot = `${normalizedBasePath}/admin/analytics`
+  if (candidate === analyticsRoot) return candidate
+  if (candidate.startsWith(`${analyticsRoot}?`)) return candidate
+  if (candidate.startsWith(`${analyticsRoot}/`)) return candidate
+  return fallback
+}
+
+function sendDashboardExport(res: express.Response, payload: { fileName: string; contentType: string; body: Buffer | string }) {
+  res.setHeader("Content-Type", payload.contentType)
+  res.setHeader("Content-Disposition", `attachment; filename="${payload.fileName}"`)
+  res.send(payload.body)
+}
+
+function redirectWithPreparedExport(href: string, status: string, message: string, exportId?: string | null) {
+  const withAlert = appendAlertQuery(href, status, message)
+  return exportId ? `${withAlert}&exportId=${encodeURIComponent(exportId)}` : withAlert
 }
 
 function registerPreparedExportCleanup(
@@ -291,8 +514,24 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     backupOrConfigurationNotFound: i18n.t("routeMessages.backupOrConfigurationNotFound"),
     pluginNotFound: i18n.t("routeMessages.pluginNotFound"),
     pluginAssetNotFound: i18n.t("routeMessages.pluginAssetNotFound"),
+    ticketNotFound: i18n.t("routeMessages.ticketNotFound"),
     transcriptNotFound: i18n.t("routeMessages.transcriptNotFound"),
     reviewTokenExpired: i18n.t("routeMessages.reviewTokenExpired")
+  }
+  const qualityReviewHrefForAccess = (res: express.Response) => {
+    const access = adminGuard.getAccess(res)
+    return access && hasDashboardCapability(access, "quality.review")
+      ? buildQualityReviewQueueHref(basePath)
+      : null
+  }
+  const translateTicketWorkbenchViewMessage = (message: string) => (
+    message.startsWith("tickets.page.savedViews.")
+      ? i18n.t(message)
+      : message
+  )
+  const qualityReviewRuntimeBridge: DashboardRuntimeBridge = {
+    ...runtimeBridge,
+    resolveQualityReviewOwnerLabel: (userId) => resolveCurrentQualityReviewOwnerLabel(context, userId)
   }
   const managedConfigRequirement = (req: express.Request) => {
     const definition = requireManagedConfig(req.params.id)
@@ -309,16 +548,232 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       : "config.write.general" as const
   }
 
-  app.get(joinBasePath(basePath, "admin"), adminGuard.page("admin.shell"), (req, res) => {
+  const buildAnalyticsWorkspaceModel = async (query: Record<string, unknown>, qualityReviewHref: string | null = null) => {
+    const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
+    const transcriptService = transcriptIntegration.state === "ready" && supportsTranscriptTicketAnalyticsHistory(transcriptIntegration.service)
+      ? transcriptIntegration.service
+      : null
+    return await buildDashboardAnalyticsModel({
+      basePath,
+      query,
+      configService,
+      runtimeBridge,
+      transcriptService,
+      t: i18n.t,
+      qualityReviewHref,
+      exportId: normalizeStringInput(query.exportId)
+    })
+  }
+
+  const buildTicketWorkbenchWorkspaceModel = async (
+    query: Record<string, unknown>,
+    currentHref: string,
+    qualityReviewHref: string | null = null,
+    savedViewOptions: {
+      savedViews?: DashboardTicketWorkbenchViewRecord[]
+      actorUserId?: string
+      canManageSharedViews?: boolean
+      savedViewsAvailable?: boolean
+      savedViewsUnavailableMessage?: string
+      exportId?: string | null
+      hydrateAllFilteredTelemetry?: boolean
+    } = {}
+  ) => {
+    const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+    const runtimeAvailable = snapshot.ticketSummary.available === true
+    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
+    const request = parseTicketWorkbenchListRequest(query)
+    const tickets = readsSupported ? runtimeBridge.listTickets() : []
+    let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
+    const queueTelemetrySupported = readsSupported && supportsTicketQueueTelemetryReads(runtimeBridge)
+    let telemetrySignals: Record<string, DashboardTicketTelemetrySignals> = {}
+    let telemetryFilterSignals: Record<string, DashboardTicketTelemetrySignals> = {}
+    let queueLifecycleRecords: DashboardTicketLifecycleTelemetryRecord[] = []
+    let telemetryWarningMessage = ""
+    let queueWarningMessage = ""
+
+    if (readsSupported) {
+      if (queueTelemetrySupported && runtimeBridge.listLifecycleTelemetry) {
+        try {
+          const queueTelemetry = await runtimeBridge.listLifecycleTelemetry({
+            eventTypes: [...TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES],
+            order: "desc",
+            limit: 500
+          })
+          queueLifecycleRecords = queueTelemetry.items
+          if (queueTelemetry.truncated) {
+            queueWarningMessage = "Ticket lifecycle telemetry exceeded the queue governance scan ceiling; stale-owner attention may be incomplete."
+          } else if (queueTelemetry.warnings.length > 0) {
+            queueWarningMessage = queueTelemetry.warnings[0]
+          }
+        } catch {
+          queueWarningMessage = "Ticket lifecycle telemetry could not be read; stale-owner attention is unavailable."
+        }
+      } else {
+        queueWarningMessage = "Ticket lifecycle telemetry reads are unavailable; stale-owner attention is unavailable."
+      }
+    }
+
+    if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
+      try {
+        const telemetryFiltersActive = request.feedback !== "all" || request.reopened !== "all"
+        if (telemetryFiltersActive) {
+          telemetryFilterSignals = await runtimeBridge.getTicketTelemetrySignals(tickets.map((ticket) => ticket.id))
+        }
+        const preview = buildTicketWorkbenchListModel({
+          basePath,
+          currentHref,
+          request,
+          tickets,
+          configService,
+          readsSupported,
+          writesSupported,
+          telemetrySupported,
+          telemetrySignals: telemetryFilterSignals,
+          telemetryFilterSignals,
+          queueLifecycleRecords,
+          queueTelemetryAvailable: queueTelemetrySupported && !queueWarningMessage,
+          queueWarningMessage,
+          warningMessage: runtimeAvailable
+            ? ""
+            : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+          telemetryWarningMessage,
+          qualityReviewHref
+        })
+        const visibleTicketIds = preview.items.map((item) => item.id)
+        const telemetryTicketIds = savedViewOptions.hydrateAllFilteredTelemetry
+          ? preview.allExportRows.map((row) => row.ticketId)
+          : visibleTicketIds
+        telemetrySignals = telemetryTicketIds.length > 0
+          ? await runtimeBridge.getTicketTelemetrySignals(telemetryTicketIds)
+          : {}
+      } catch {
+        telemetrySupported = false
+        telemetryFilterSignals = {}
+        telemetrySignals = {}
+        telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+      }
+    } else if (readsSupported) {
+      telemetryWarningMessage = "Ticket telemetry reads are unavailable; feedback and reopen filters are disabled."
+    }
+
+    return buildTicketWorkbenchListModel({
+      basePath,
+      currentHref,
+      request,
+      tickets,
+      configService,
+      readsSupported,
+      writesSupported,
+      telemetrySupported,
+      telemetrySignals,
+      telemetryFilterSignals,
+      queueLifecycleRecords,
+      queueTelemetryAvailable: queueTelemetrySupported && !queueWarningMessage,
+      queueWarningMessage,
+      warningMessage: runtimeAvailable
+        ? ""
+        : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
+      telemetryWarningMessage,
+      qualityReviewHref,
+      savedViews: savedViewOptions.savedViews,
+      actorUserId: savedViewOptions.actorUserId,
+      canManageSharedViews: savedViewOptions.canManageSharedViews,
+      savedViewsAvailable: savedViewOptions.savedViewsAvailable,
+      savedViewsUnavailableMessage: savedViewOptions.savedViewsUnavailableMessage,
+      exportId: savedViewOptions.exportId ?? normalizeStringInput(query.exportId)
+    })
+  }
+
+  app.get(joinBasePath(basePath, "admin"), adminGuard.page("viewer.portal"), async (req, res) => {
     const access = adminGuard.getAccess(res)
-    if (access?.tier !== "admin") {
+    const canReadTicketQueue = hasDashboardCapability(access, "ticket.workbench")
+    const canReadQualityReview = hasDashboardCapability(access, "quality.review")
+    if (access?.tier !== "admin" && !canReadQualityReview && !canReadTicketQueue) {
       return res.redirect(access?.preferredEntryPath || joinBasePath(basePath, "visual/options"))
     }
 
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
-    const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration)
+    const unavailableTicketQueueSummary = () => buildTicketQueueSummary([], {
+      unavailableReason: "Ticket queue summary could not be read."
+    })
+    const unavailableQueueSummary = () => buildQualityReviewQueueSummary([], {
+      unavailableReason: "Quality review queue summary could not be read."
+    })
+    let ticketQueueSummary: DashboardTicketQueueSummary | null = null
+    let queueSummary: DashboardQualityReviewQueueSummary | null = null
+    let notificationStatus: DashboardQualityReviewNotificationStatus | null = null
+    if (canReadTicketQueue) {
+      ticketQueueSummary = access?.identity && typeof runtimeBridge.getTicketQueueSummary === "function"
+        ? await runtimeBridge.getTicketQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableTicketQueueSummary())
+        : unavailableTicketQueueSummary()
+      if (!ticketQueueSummary) {
+        ticketQueueSummary = unavailableTicketQueueSummary()
+      }
+    }
+    if (canReadQualityReview) {
+      queueSummary = access?.identity && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
+        ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableQueueSummary())
+        : unavailableQueueSummary()
+      if (!queueSummary) {
+        queueSummary = unavailableQueueSummary()
+      }
+      notificationStatus = typeof qualityReviewRuntimeBridge.getQualityReviewNotificationStatus === "function"
+        ? await qualityReviewRuntimeBridge.getQualityReviewNotificationStatus({ now: Date.now() }).catch(() => null)
+        : null
+    }
+    const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration, {
+      ticketQueue: canReadTicketQueue
+        ? buildHomeTicketQueueBlock(context, ticketQueueSummary)
+        : null,
+      qualityReview: canReadQualityReview
+        ? buildHomeQualityReviewBlock(context, queueSummary, notificationStatus)
+        : null
+    })
     const setupNeedsAttention = homeModel.setupCounts.needsSetup + homeModel.setupCounts.needsAttention
+    const adminHome = access?.tier === "admin"
+    const summaryCards = adminHome
+      ? [
+          metricCard(
+            i18n.t("home.summary.setup"),
+            String(homeModel.setupCounts.ready),
+            i18n.t("home.summary.setupDetail", {
+              ready: homeModel.setupCounts.ready,
+              total: homeModel.setup.items.length
+            }),
+            setupNeedsAttention > 0 ? "warning" : "success"
+          ),
+          metricCard(
+            i18n.t("home.summary.addOns"),
+            String(snapshot.pluginSummary.discovered),
+            i18n.t("home.summary.addOnsDetail", { count: snapshot.pluginSummary.crashed }),
+            snapshot.pluginSummary.crashed > 0 ? "warning" : "muted"
+          ),
+          metricCard(
+            i18n.t("home.summary.tickets"),
+            String(snapshot.ticketSummary.total),
+            i18n.t("home.summary.ticketsDetail", { count: snapshot.ticketSummary.recentActivityCount })
+          )
+        ]
+      : []
+    if (homeModel.ticketQueue) {
+      summaryCards.push(metricCard(
+        homeModel.ticketQueue.summaryCard.label,
+        homeModel.ticketQueue.summaryCard.value,
+        homeModel.ticketQueue.summaryCard.detail,
+        homeModel.ticketQueue.summaryCard.tone
+      ))
+    }
+    if (homeModel.qualityReview) {
+      summaryCards.push(metricCard(
+        homeModel.qualityReview.summaryCard.label,
+        homeModel.qualityReview.summaryCard.value,
+        homeModel.qualityReview.summaryCard.detail,
+        homeModel.qualityReview.summaryCard.tone
+      ))
+    }
 
     renderPage(res, "admin-shell", buildAdminShell(context, "home", {
       pageTitle: `${i18n.t("home.title")} | ${brand.title}`,
@@ -326,31 +781,14 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       pageHeadline: i18n.t("home.headline"),
       pageSubtitle: i18n.t("home.subtitle"),
       pageAlert: getAlert(req) || buildTranscriptIntegrationWarning(context, transcriptIntegration),
-      summaryCards: [
-        metricCard(
-          i18n.t("home.summary.setup"),
-          String(homeModel.setupCounts.ready),
-          i18n.t("home.summary.setupDetail", {
-            ready: homeModel.setupCounts.ready,
-            total: homeModel.setup.items.length
-          }),
-          setupNeedsAttention > 0 ? "warning" : "success"
-        ),
-        metricCard(
-          i18n.t("home.summary.addOns"),
-          String(snapshot.pluginSummary.discovered),
-          i18n.t("home.summary.addOnsDetail", { count: snapshot.pluginSummary.crashed }),
-          snapshot.pluginSummary.crashed > 0 ? "warning" : "muted"
-        ),
-        metricCard(
-          i18n.t("home.summary.tickets"),
-          String(snapshot.ticketSummary.total),
-          i18n.t("home.summary.ticketsDetail", { count: snapshot.ticketSummary.recentActivityCount })
-        )
-      ],
+      summaryCards,
       contentView: "sections/overview",
       recommendedAction: homeModel.recommendedAction,
-      setupCards: homeModel.setupCards
+      setupCards: adminHome ? homeModel.setupCards : [],
+      showSetupStatus: adminHome,
+      showWarnings: adminHome,
+      ticketQueueHome: homeModel.ticketQueue,
+      qualityReviewHome: homeModel.qualityReview
     }))
   })
 
@@ -963,13 +1401,1105 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }))
   })
 
-  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("admin.shell"), (_req, res) => {
-    const access = adminGuard.getAccess(res)
-    if (access?.tier !== "admin") {
-      return res.redirect(access?.preferredEntryPath || joinBasePath(basePath, "visual/options"))
+  app.get(joinBasePath(basePath, "admin/analytics"), adminGuard.page("analytics.view"), async (req, res, next) => {
+    try {
+      const model = await buildAnalyticsWorkspaceModel(req.query as Record<string, unknown>, qualityReviewHrefForAccess(res))
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "analytics", {
+        pageTitle: `${i18n.t("analytics.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("analytics.page.eyebrow"),
+        pageHeadline: i18n.t("analytics.page.headline"),
+        pageSubtitle: i18n.t("analytics.page.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        pageClass: "page-analytics-workspace",
+        contentView: "sections/analytics",
+        analytics: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/analytics/export/:format"), adminGuard.form("analytics.view"), async (req, res) => {
+    const returnTo = sanitizeAnalyticsWorkspaceReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.params.format)
+    const actor = adminGuard.getAccess(res)?.identity
+    if (!format) {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: {
+          format: String(req.params.format || ""),
+          warningCount: 0,
+          unavailableSectionCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
     }
 
-    res.redirect(joinBasePath(basePath, "admin"))
+    try {
+      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>, qualityReviewHrefForAccess(res))
+      const payload = await buildAnalyticsExportPayload(model, format)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "success",
+        reason: "analytics-export",
+        details: getAnalyticsExportAuditDetails(model, format)
+      })
+      return sendDashboardExport(res, payload)
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "analytics-export",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: {
+          format,
+          warningCount: 0,
+          unavailableSectionCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/analytics/export"), adminGuard.form("analytics.view"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = sanitizeAnalyticsWorkspaceReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.body?.format)
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (!format) {
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+    try {
+      const model = await buildAnalyticsWorkspaceModel(req.body as Record<string, unknown>, qualityReviewHrefForAccess(res))
+      const payload = await buildAnalyticsExportPayload(model, format)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "analytics-report",
+          format,
+          createdByUserId: actorUserId,
+          fileName: payload.fileName,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "analytics-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          ...getAnalyticsExportAuditDetails(model, format)
+        }
+      })
+      return res.redirect(redirectWithPreparedExport(returnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: "analytics",
+        outcome: "failure",
+        reason: "analytics-export",
+        details: { format }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/exports/:exportId"), adminGuard.page("admin.shell"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    const exportId = String(req.params.exportId || "").trim()
+    const result = await releaseDashboardPreparedExport({
+      projectRoot: context.projectRoot,
+      runtimeBridge,
+      exportId,
+      actorUserId
+    })
+    res.setHeader("Cache-Control", "no-store, private")
+    if (result.status !== "available") {
+      const auditExportId = preparedExportAuditId(exportId)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-released",
+        target: auditExportId,
+        outcome: "failure",
+        reason: result.status,
+        details: {
+          exportId: auditExportId,
+          status: result.status
+        }
+      })
+      if (result.status === "expired") return res.status(410).send(i18n.t("routeMessages.preparedExportExpired"))
+      return res.status(404).send(i18n.t("routeMessages.preparedExportMissing"))
+    }
+
+    await recordAdminAuditEvent(context, req, actor, {
+      eventType: "prepared-export-released",
+      target: result.record.exportId,
+      outcome: "success",
+      reason: result.record.scope,
+      details: {
+        exportId: result.record.exportId,
+        scope: result.record.scope,
+        format: result.record.format,
+        createdByUserId: result.record.createdByUserId,
+        byteSize: result.record.byteSize
+      }
+    })
+    res.setHeader("Content-Type", result.record.contentType)
+    res.setHeader("Content-Disposition", `attachment; filename="${result.record.fileName.replace(/"/g, "")}"`)
+    return res.send(result.body)
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review"), adminGuard.page("quality.review"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const canManage = Boolean(access && hasDashboardCapability(access, "quality.review.manage"))
+      const model = await buildDashboardQualityReviewListModel({
+        basePath,
+        projectRoot: context.projectRoot,
+        currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review"),
+        query: req.query as Record<string, unknown>,
+        configService,
+        runtimeBridge: qualityReviewRuntimeBridge,
+        actorUserId: access?.identity?.userId || "",
+        canManage
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `${i18n.t("qualityReview.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.page.eyebrow"),
+        pageHeadline: i18n.t("qualityReview.page.headline"),
+        pageSubtitle: i18n.t("qualityReview.page.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        hidePageIntro: true,
+        pageClass: "page-quality-review",
+        contentView: "sections/quality-review",
+        qualityReview: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/supervision"), adminGuard.page("quality.review.manage"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const model = await buildDashboardQualityReviewSupervisionModel({
+        basePath,
+        currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review/supervision"),
+        query: req.query as Record<string, unknown>,
+        runtimeBridge: qualityReviewRuntimeBridge,
+        actorUserId: access?.identity?.userId || ""
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `Quality Review Supervision | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.supervision.eyebrow"),
+        pageHeadline: i18n.t("qualityReview.supervision.headline"),
+        pageSubtitle: i18n.t("qualityReview.supervision.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        heroActions: [
+          { href: model.queueHref, label: i18n.t("qualityReview.supervision.queueAction"), variant: "secondary" }
+        ],
+        hidePageIntro: true,
+        pageClass: "page-quality-review-supervision",
+        contentView: "sections/quality-review-supervision",
+        qualityReviewSupervision: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/:ticketId"), adminGuard.page("quality.review"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const canManage = Boolean(access && hasDashboardCapability(access, "quality.review.manage"))
+      const model = await buildDashboardQualityReviewDetailModel({
+        basePath,
+        projectRoot: context.projectRoot,
+        ticketId: req.params.ticketId,
+        actorUserId: access?.identity?.userId || "",
+        currentHref: req.originalUrl || joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(req.params.ticketId)}`),
+        returnTo: req.query.returnTo,
+        query: req.query as Record<string, unknown>,
+        configService,
+        runtimeBridge: qualityReviewRuntimeBridge,
+        ticketWorkbenchAccessible: Boolean(access && hasDashboardCapability(access, "ticket.workbench")),
+        canManage,
+        ownerChoices: canManage ? await buildQualityReviewOwnerChoices(context, access?.identity?.userId) : []
+      })
+
+      if (model.available && !model.detailRecord) {
+        return res.status(404).send(routeText.ticketNotFound)
+      }
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `${req.params.ticketId} | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.detail.eyebrow"),
+        pageHeadline: model.detailRecord
+          ? i18n.t("qualityReview.detail.headline", { id: model.detailRecord.ticketId })
+          : i18n.t("qualityReview.detail.unavailableTitle"),
+        pageSubtitle: i18n.t("qualityReview.detail.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        heroActions: [
+          { href: model.backHref, label: i18n.t("qualityReview.detail.backAction"), variant: "secondary" }
+        ],
+        pageClass: "page-quality-review-detail",
+        contentView: "sections/quality-review-detail",
+        qualityReviewDetail: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/quality-review/:ticketId/actions/:actionId"), adminGuard.form("quality.review.manage"), async (req, res) => {
+    const action = parseQualityReviewActionId(req.params.actionId)
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const returnTo = sanitizeQualityReviewReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const detailHref = joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(req.params.ticketId)}`)
+    const redirectToDetail = (status: string, message: string) => {
+      const params = new URLSearchParams({ status, msg: message, returnTo })
+      return `${detailHref}?${params.toString()}`
+    }
+
+    if (!action) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "quality-review-action",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "invalid-action",
+        details: { actionId: req.params.actionId, actorUserId }
+      })
+      return res.redirect(redirectToDetail("warning", "Unsupported quality review action."))
+    }
+
+    if (action === "assign-owner") {
+      const ownerUserId = typeof req.body?.ownerUserId === "string" ? req.body.ownerUserId.trim() : ""
+      if (!await canAssignQualityReviewOwner(context, access, ownerUserId)) {
+        await recordAdminAuditEvent(context, req, access?.identity, {
+          eventType: "quality-review-action",
+          target: req.params.ticketId,
+          outcome: "failure",
+          reason: "invalid-owner",
+          details: { action, ownerUserId, actorUserId }
+        })
+        return res.redirect(redirectToDetail("warning", "Quality review owner must be a current dashboard admin."))
+      }
+    }
+
+    if (action === "set-state" && req.body?.state === "resolved") {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "quality-review-action",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "resolution-outcome-required",
+        details: { action, actorUserId }
+      })
+      return res.redirect(redirectToDetail("warning", "Resolved quality review cases require a resolution outcome."))
+    }
+
+    const result = typeof runtimeBridge.runQualityReviewAction === "function"
+      ? await runtimeBridge.runQualityReviewAction({
+          ticketId: req.params.ticketId,
+          action,
+          actorUserId,
+          state: typeof req.body?.state === "string" ? req.body.state : undefined,
+          ownerUserId: typeof req.body?.ownerUserId === "string" ? req.body.ownerUserId : undefined,
+          note: typeof req.body?.note === "string" ? req.body.note : undefined,
+          resolutionOutcome: typeof req.body?.resolutionOutcome === "string" ? req.body.resolutionOutcome : undefined,
+          noteId: typeof req.body?.noteId === "string" ? req.body.noteId : undefined,
+          reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+          replacementBody: typeof req.body?.replacementBody === "string" ? req.body.replacementBody : undefined
+        })
+      : { ok: false, status: "warning" as const, message: "Quality review service is unavailable." }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "quality-review-action",
+      target: req.params.ticketId,
+      outcome: result.ok ? "success" : "failure",
+      reason: action,
+      details: {
+        action,
+        actorUserId,
+        resolutionOutcome: typeof req.body?.resolutionOutcome === "string" ? req.body.resolutionOutcome : undefined,
+        noteId: typeof req.body?.noteId === "string" ? req.body.noteId : undefined,
+        status: result.status,
+        warnings: result.warnings || []
+      }
+    })
+
+    return res.redirect(redirectToDetail(result.status, result.message))
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/:ticketId/feedback/:sessionId/assets/:assetId"), adminGuard.page("quality.review.manage"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const result = typeof runtimeBridge.resolveQualityReviewAsset === "function"
+      ? await runtimeBridge.resolveQualityReviewAsset(req.params.ticketId, req.params.sessionId, req.params.assetId, actorUserId)
+      : {
+          status: "missing" as const,
+          filePath: null,
+          fileName: null,
+          contentType: null,
+          byteSize: 0,
+          message: "Quality review service is unavailable."
+        }
+
+    res.setHeader("Cache-Control", "no-store, private")
+    res.setHeader("X-Content-Type-Options", "nosniff")
+    if (result.status === "expired") return res.status(410).send(result.message)
+    if (result.status !== "available" || !result.filePath) return res.status(404).send(result.message)
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "quality-review-asset-access",
+      target: req.params.ticketId,
+      outcome: "success",
+      reason: "raw-feedback-asset",
+      details: {
+        ticketId: req.params.ticketId,
+        sessionId: req.params.sessionId,
+        assetId: req.params.assetId,
+        actorUserId,
+        byteSize: result.byteSize
+      }
+    })
+
+    if (result.contentType) res.type(result.contentType)
+    if (result.fileName) res.setHeader("Content-Disposition", `attachment; filename="${result.fileName.replace(/"/g, "")}"`)
+    return res.sendFile(result.filePath)
+  })
+
+  app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const actorUserId = access?.identity?.userId || ""
+      const actorIsAdmin = access?.tier === "admin"
+      const savedViewsAvailable = typeof runtimeBridge.listTicketWorkbenchViews === "function"
+      let savedViews: DashboardTicketWorkbenchViewRecord[] = []
+      let savedViewsUnavailableMessage = ""
+
+      if (savedViewsAvailable) {
+        try {
+          savedViews = await runtimeBridge.listTicketWorkbenchViews!(actorUserId)
+        } catch {
+          savedViewsUnavailableMessage = i18n.t("tickets.page.savedViews.unavailable")
+        }
+      } else {
+        savedViewsUnavailableMessage = i18n.t("tickets.page.savedViews.unavailable")
+      }
+
+      const listRequest = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
+      const activeSavedView = listRequest.viewId
+        ? savedViews.find((view) => view.viewId === listRequest.viewId) || null
+        : null
+      if (listRequest.viewId && savedViewsAvailable && !savedViewsUnavailableMessage && !activeSavedView) {
+        await recordAdminAuditEvent(context, req, access?.identity, {
+          eventType: "ticket-workbench-view",
+          target: listRequest.viewId,
+          outcome: "failure",
+          reason: "view-unavailable",
+          details: {
+            viewId: listRequest.viewId,
+            actorUserId
+          }
+        })
+        const fallback = removeTicketWorkbenchViewIdFromHref(req.originalUrl || joinBasePath(basePath, "admin/tickets"))
+        return res.redirect(appendAlertQuery(fallback, "warning", i18n.t("tickets.page.savedViews.viewUnavailable")))
+      }
+
+      if (activeSavedView) {
+        const explicitQuery = normalizeTicketWorkbenchSavedViewQuery(req.query as Record<string, unknown>)
+        if (Object.keys(explicitQuery).length === 0 && Object.keys(activeSavedView.query).length > 0) {
+          return res.redirect(buildTicketWorkbenchSavedViewHref(basePath, activeSavedView))
+        }
+      }
+
+      const model = await buildTicketWorkbenchWorkspaceModel(
+        req.query as Record<string, unknown>,
+        req.originalUrl || joinBasePath(basePath, "admin/tickets"),
+        qualityReviewHrefForAccess(res),
+        {
+          savedViews,
+          actorUserId,
+          canManageSharedViews: actorIsAdmin,
+          savedViewsAvailable: savedViewsAvailable && !savedViewsUnavailableMessage,
+          savedViewsUnavailableMessage
+        }
+      )
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
+        pageTitle: `${i18n.t("tickets.title")} | ${brand.title}`,
+        pageEyebrow: i18n.t("tickets.page.eyebrow"),
+        pageHeadline: i18n.t("tickets.page.headline"),
+        pageSubtitle: i18n.t("tickets.page.subtitle"),
+        pageAlert: getAlert(req),
+        hidePageIntro: true,
+        pageClass: "page-ticket-workbench",
+        contentView: "sections/tickets",
+        ticketList: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/views/create"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const scope = req.body?.scope === "shared" ? "shared" as const : "private" as const
+    const name = normalizeStringInput(req.body?.name)
+    const query = normalizeTicketWorkbenchSavedViewQuery(req.body as Record<string, unknown>)
+
+    if (scope === "shared" && !actorIsAdmin) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "ticket-workbench-view",
+        target: "new",
+        outcome: "failure",
+        reason: "shared-write-denied",
+        details: {
+          action: "create",
+          scope,
+          actorUserId,
+          queryKeys: Object.keys(query).sort()
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.savedViews.sharedWriteDenied")))
+    }
+
+    const result = typeof runtimeBridge.createTicketWorkbenchView === "function"
+      ? await runtimeBridge.createTicketWorkbenchView({
+        actorUserId,
+        actorIsAdmin,
+        scope,
+        ownerUserId: actorUserId,
+        name,
+        query
+      })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: result.view?.viewId || "new",
+      outcome: result.ok ? "success" : "failure",
+      reason: "create",
+      details: {
+        action: "create",
+        viewId: result.view?.viewId || null,
+        scope,
+        ownerUserId: result.view?.ownerUserId || actorUserId || null,
+        actorUserId,
+        queryKeys: Object.keys(query).sort()
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    if (result.ok && result.view) {
+      return res.redirect(appendAlertQuery(buildTicketWorkbenchSavedViewHref(basePath, result.view), result.status, message))
+    }
+    return res.redirect(appendAlertQuery(returnTo, result.status, message))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/views/:viewId/update"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const viewId = normalizeStringInput(req.params.viewId)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const scope = req.body?.scope === "shared" ? "shared" as const : "private" as const
+    const name = normalizeStringInput(req.body?.name)
+    const query = normalizeTicketWorkbenchSavedViewQuery(req.body as Record<string, unknown>)
+
+    if (scope === "shared" && !actorIsAdmin) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "ticket-workbench-view",
+        target: viewId,
+        outcome: "failure",
+        reason: "shared-write-denied",
+        details: {
+          action: "update",
+          viewId,
+          scope,
+          actorUserId,
+          queryKeys: Object.keys(query).sort()
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.savedViews.sharedWriteDenied")))
+    }
+
+    const result = typeof runtimeBridge.updateTicketWorkbenchView === "function"
+      ? await runtimeBridge.updateTicketWorkbenchView({
+        viewId,
+        actorUserId,
+        actorIsAdmin,
+        scope,
+        ownerUserId: actorUserId,
+        name,
+        query
+      })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: viewId,
+      outcome: result.ok ? "success" : "failure",
+      reason: "update",
+      details: {
+        action: "update",
+        viewId,
+        scope,
+        ownerUserId: result.view?.ownerUserId || actorUserId || null,
+        actorUserId,
+        queryKeys: Object.keys(query).sort()
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    if (result.ok && result.view) {
+      return res.redirect(appendAlertQuery(buildTicketWorkbenchSavedViewHref(basePath, result.view), result.status, message))
+    }
+    return res.redirect(appendAlertQuery(returnTo, result.status, message))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/views/:viewId/delete"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const viewId = normalizeStringInput(req.params.viewId)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const result = typeof runtimeBridge.deleteTicketWorkbenchView === "function"
+      ? await runtimeBridge.deleteTicketWorkbenchView({ viewId, actorUserId, actorIsAdmin })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: viewId,
+      outcome: result.ok ? "success" : "failure",
+      reason: "delete",
+      details: {
+        action: "delete",
+        viewId,
+        scope: result.view?.scope || null,
+        ownerUserId: result.view?.ownerUserId || null,
+        actorUserId
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    return res.redirect(appendAlertQuery(removeTicketWorkbenchViewIdFromHref(returnTo), result.status, message))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/export/:format"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const actor = adminGuard.getAccess(res)?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
+    const format = parseDashboardExportFormat(req.params.format)
+    if (!format) {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: {
+          format: String(req.params.format || ""),
+          page: 0,
+          limit: 0,
+          rowCount: 0,
+          warningCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(releaseReturnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+
+    try {
+      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo, qualityReviewHrefForAccess(res))
+      const payload = await buildTicketWorkbenchExportPayload(model, format)
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "success",
+        reason: "ticket-workbench-export",
+        details: getTicketWorkbenchExportAuditDetails(model, format)
+      })
+      return sendDashboardExport(res, payload)
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "ticket-export",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: {
+          format,
+          page: 0,
+          limit: 0,
+          rowCount: 0,
+          warningCount: 0
+        }
+      })
+      return res.redirect(appendAlertQuery(releaseReturnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/export"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
+    const format = parseDashboardExportFormat(req.body?.format)
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (!format) {
+      return res.redirect(appendAlertQuery(releaseReturnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+    }
+    try {
+      const model = await buildTicketWorkbenchWorkspaceModel(
+        req.body as Record<string, unknown>,
+        returnTo,
+        qualityReviewHrefForAccess(res),
+        { hydrateAllFilteredTelemetry: true }
+      )
+      const payload = await buildFullTicketWorkbenchExportPayload(model, format)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "tickets-list",
+          format,
+          createdByUserId: actorUserId,
+          fileName: payload.fileName,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "ticket-workbench-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          ...getFullTicketWorkbenchExportAuditDetails(model, format)
+        }
+      })
+      return res.redirect(redirectWithPreparedExport(releaseReturnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: "ticket-workbench",
+        outcome: "failure",
+        reason: "ticket-workbench-export",
+        details: { format }
+      })
+      return res.redirect(appendAlertQuery(releaseReturnTo, "danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/bulk/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const action = parseDashboardTicketBulkActionId(req.params.actionId)
+    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const ticketIds = normalizeStringListInput(req.body?.ticketIds)
+    const reason = typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined
+
+    if (!action) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "invalid-action",
+        details: {
+          actionId: req.params.actionId,
+          actorUserId
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.invalidAction")))
+    }
+
+    if (ticketIds.length < 1) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "empty-selection",
+        details: {
+          action,
+          requested: 0,
+          succeeded: 0,
+          skipped: 0,
+          failed: 0,
+          actorUserId
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.emptySelection")))
+    }
+
+    const runtimeAvailable = runtimeBridge.getSnapshot(context.projectRoot).ticketSummary.available === true
+    const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+    const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge) && typeof runtimeBridge.runTicketAction === "function"
+    if (!readsSupported || !writesSupported) {
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-bulk-action",
+        target: "bulk",
+        outcome: "failure",
+        reason: "unsupported",
+        details: {
+          action,
+          requested: ticketIds.length,
+          actorUserId
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.bulk.unsupported")))
+    }
+
+    const runtimeAction = action === "claim-self" ? "claim" : action
+    const aggregate = {
+      requested: ticketIds.length,
+      succeeded: 0,
+      skipped: 0,
+      failed: 0
+    }
+
+    for (const ticketId of ticketIds) {
+      const detail = typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(ticketId, actorUserId)
+        : (() => {
+            const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === ticketId) || null
+            return ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+          })()
+      const availability = detail?.actionAvailability?.[runtimeAction]
+      if (!detail || (availability && !availability.enabled)) {
+        aggregate.skipped += 1
+        continue
+      }
+
+      try {
+        const result = await runtimeBridge.runTicketAction!({
+          ticketId,
+          action: runtimeAction,
+          actorUserId,
+          reason
+        })
+        if (result.ok) {
+          aggregate.succeeded += 1
+        } else if (result.status === "warning") {
+          aggregate.skipped += 1
+        } else {
+          aggregate.failed += 1
+        }
+      } catch {
+        aggregate.failed += 1
+      }
+    }
+
+    await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+      eventType: "ticket-bulk-action",
+      target: "bulk",
+      outcome: aggregate.failed > 0 ? "failure" : "success",
+      reason: action,
+      details: {
+        action,
+        runtimeAction,
+        requested: aggregate.requested,
+        succeeded: aggregate.succeeded,
+        skipped: aggregate.skipped,
+        failed: aggregate.failed,
+        actorUserId
+      }
+    })
+
+    const tone = buildBulkActionTone(aggregate)
+    return res.redirect(appendAlertQuery(returnTo, tone, i18n.t("tickets.page.bulk.result", aggregate)))
+  })
+
+  app.get(joinBasePath(basePath, "admin/tickets/:ticketId"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
+    try {
+      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+      const runtimeAvailable = snapshot.ticketSummary.available === true
+      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
+      const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
+      const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+      const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.query.returnTo)
+      let detail = readsSupported && typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(req.params.ticketId, actorUserId)
+        : null
+
+      if (!detail && readsSupported) {
+        const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === req.params.ticketId) || null
+        detail = ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+      }
+
+      if (detail && !detail.telemetry && readsSupported && supportsTicketTelemetryReads(runtimeBridge) && runtimeBridge.getTicketTelemetrySignals) {
+        try {
+          const telemetrySignals = await runtimeBridge.getTicketTelemetrySignals([detail.ticket.id])
+          detail = {
+            ...detail,
+            telemetry: telemetrySignals[detail.ticket.id] || null
+          }
+        } catch {
+          detail = { ...detail, telemetry: null }
+        }
+      }
+
+      if (readsSupported && !detail) {
+        return res.status(404).send(routeText.ticketNotFound)
+      }
+
+      const model = buildTicketWorkbenchDetailModel({
+        basePath,
+        returnTo,
+        ticketId: req.params.ticketId,
+        detail,
+        writesSupported,
+        readsSupported,
+        warningMessage: runtimeAvailable
+          ? writesSupported ? "" : "Ticket action writes are unavailable in the current dashboard runtime."
+          : "The Open Ticket runtime is not exposing ticket detail to the dashboard right now.",
+        t: i18n.t,
+        exportId: normalizeStringInput(req.query.exportId)
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
+        pageTitle: `${detail?.ticket.id || req.params.ticketId} | ${brand.title}`,
+        pageEyebrow: i18n.t("tickets.detail.eyebrow"),
+        pageHeadline: detail
+          ? i18n.t("tickets.detail.headline", { id: detail.ticket.id })
+          : i18n.t("tickets.detail.unavailableTitle"),
+        pageSubtitle: i18n.t("tickets.detail.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards.map((card) => metricCard(card.label, card.value, card.detail, card.tone)),
+        heroActions: [
+          { href: model.backHref, label: i18n.t("tickets.detail.backAction"), variant: "secondary" }
+        ],
+        contentView: "sections/ticket-detail",
+        ticketDetail: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/:ticketId/export"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actor = access?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
+    const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(req.params.ticketId)}`)
+    const redirectToDetail = (status: string, message: string, exportId?: string | null) => {
+      const params = new URLSearchParams({ returnTo: releaseReturnTo })
+      const target = `${detailHref}?${params.toString()}`
+      return redirectWithPreparedExport(target, status, message, exportId)
+    }
+    const format = parseDashboardExportFormat(req.body?.format || "json")
+    if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
+    if (format !== "json") return res.redirect(redirectToDetail("warning", i18n.t("routeMessages.invalidExportFormat")))
+    try {
+      const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
+      const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && snapshot.ticketSummary.available === true
+      let detail = readsSupported && typeof runtimeBridge.getTicketDetail === "function"
+        ? await runtimeBridge.getTicketDetail(req.params.ticketId, actorUserId)
+        : null
+      if (!detail && readsSupported) {
+        const ticket = runtimeBridge.listTickets().find((candidate) => candidate.id === req.params.ticketId) || null
+        detail = ticket ? buildFallbackTicketDetail({ ticket, configService }) : null
+      }
+      if (!detail) {
+        return res.redirect(redirectToDetail("warning", i18n.t("routeMessages.ticketNotFound")))
+      }
+      if (!detail.telemetry && supportsTicketTelemetryReads(runtimeBridge) && runtimeBridge.getTicketTelemetrySignals) {
+        const telemetrySignals = await runtimeBridge.getTicketTelemetrySignals([detail.ticket.id]).catch(() => ({}))
+        detail = { ...detail, telemetry: telemetrySignals[detail.ticket.id] || null }
+      }
+      const model = buildTicketWorkbenchDetailModel({
+        basePath,
+        returnTo,
+        ticketId: req.params.ticketId,
+        detail,
+        writesSupported: supportsTicketWorkbenchWrites(runtimeBridge),
+        readsSupported,
+        t: i18n.t
+      })
+      const payload = await buildTicketDetailExportPayload(model)
+      const record = await prepareDashboardExport({
+        projectRoot: context.projectRoot,
+        runtimeBridge,
+        payload: {
+          scope: "ticket-detail",
+          format: "json",
+          createdByUserId: actorUserId,
+          fileName: `ticket-${detail.ticket.id}.json`,
+          contentType: payload.contentType,
+          body: payload.body
+        }
+      })
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: record.exportId,
+        outcome: "success",
+        reason: "ticket-detail-export",
+        details: {
+          exportId: record.exportId,
+          scope: record.scope,
+          format: "json",
+          createdByUserId: actorUserId,
+          byteSize: record.byteSize,
+          rowCount: 1,
+          queryKeys: ["ticketId"]
+        }
+      })
+      return res.redirect(redirectToDetail("success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+    } catch {
+      await recordAdminAuditEvent(context, req, actor, {
+        eventType: "prepared-export-created",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "ticket-detail-export",
+        details: { format: "json" }
+      })
+      return res.redirect(redirectToDetail("danger", i18n.t("routeMessages.exportFailed")))
+    }
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/:ticketId/actions/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const requestedTicketId = req.params.ticketId
+    const action = parseDashboardTicketActionId(req.params.actionId)
+    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+    const rawReturnTo = req.body?.returnTo || req.query.returnTo
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, rawReturnTo)
+    const redirectToDetail = (ticketId: string, status: string, message: string) => {
+      const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(ticketId)}`)
+      const params = new URLSearchParams({
+        status,
+        msg: message,
+        returnTo
+      })
+      return `${detailHref}?${params.toString()}`
+    }
+
+    if (!action) {
+      const message = i18n.t("tickets.detail.actionResults.unsupportedAction")
+      await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+        eventType: "ticket-action",
+        target: requestedTicketId,
+        outcome: "failure",
+        reason: "invalid-action",
+        details: {
+          actionId: req.params.actionId,
+          actorUserId: adminGuard.getAccess(res)?.identity?.userId || null
+        }
+      })
+      return res.redirect(redirectToDetail(requestedTicketId, "warning", message))
+    }
+
+    const actionRequest = {
+      ticketId: requestedTicketId,
+      action,
+      actorUserId,
+      reason: typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined,
+      assigneeUserId: typeof req.body?.assigneeUserId === "string" ? req.body.assigneeUserId : undefined,
+      targetOptionId: typeof req.body?.targetOptionId === "string" ? req.body.targetOptionId : undefined,
+      newCreatorUserId: typeof req.body?.newCreatorUserId === "string" ? req.body.newCreatorUserId : undefined,
+      participantUserId: typeof req.body?.participantUserId === "string" ? req.body.participantUserId : undefined,
+      priorityId: typeof req.body?.priorityId === "string" ? req.body.priorityId : undefined,
+      topic: typeof req.body?.topic === "string" ? req.body.topic : undefined,
+      renameName: typeof req.body?.renameName === "string" ? req.body.renameName : undefined
+    }
+    let result
+    if (action !== "refresh" && supportsTicketWorkbenchReads(runtimeBridge) && typeof runtimeBridge.getTicketDetail === "function") {
+      const preflightDetail = await runtimeBridge.getTicketDetail(requestedTicketId, actorUserId)
+      const preflightAvailability = preflightDetail?.actionAvailability?.[action]
+      if (!preflightDetail) {
+        result = {
+          ok: false,
+          status: "warning" as const,
+          message: "tickets.detail.actionResults.missingTicket",
+          ticketId: requestedTicketId
+        }
+      } else if (preflightAvailability && !preflightAvailability.enabled) {
+        result = {
+          ok: false,
+          status: "warning" as const,
+          message: translateTicketWorkbenchMessage(i18n.t, preflightAvailability.reason) || i18n.t("tickets.detail.availability.genericUnavailable"),
+          ticketId: requestedTicketId
+        }
+      }
+    }
+
+    if (!result) {
+      result = typeof runtimeBridge.runTicketAction === "function" && (action === "refresh" || supportsTicketWorkbenchWrites(runtimeBridge))
+        ? await runtimeBridge.runTicketAction(actionRequest)
+        : action === "refresh"
+          ? { ok: true, status: "success" as const, message: "tickets.detail.actionResults.refreshSuccess", ticketId: requestedTicketId }
+          : {
+            ok: false,
+            status: "warning" as const,
+            message: "tickets.detail.availability.writesUnavailable",
+            ticketId: requestedTicketId
+          }
+    }
+
+    if (!result.ticketId) {
+      result = { ...result, ticketId: requestedTicketId }
+    }
+
+    await recordAdminAuditEvent(context, req, adminGuard.getAccess(res)?.identity, {
+      eventType: "ticket-action",
+      target: requestedTicketId,
+      outcome: result.ok ? "success" : "failure",
+      reason: action,
+      details: {
+        action,
+        requestedTicketId,
+        resultTicketId: result.ticketId,
+        actorUserId,
+        status: result.status,
+        warnings: "warnings" in result ? result.warnings || [] : []
+      }
+    })
+
+    const resultMessage = translateTicketWorkbenchMessage(i18n.t, result.message) || result.message
+    res.redirect(redirectToDetail(result.ticketId || requestedTicketId, result.status, resultMessage))
   })
 
   app.get(joinBasePath(basePath, "admin/transcripts"), adminGuard.page("transcript.view.global"), async (req, res) => {

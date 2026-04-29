@@ -19,6 +19,7 @@ import {
     splitManagedRecordFields
 } from "./ticket-managed-record-runtime"
 import type { OTFormsCapturedAnswer } from "../types/configDefaults"
+import { cloneOTFormsCapturedAnswers } from "./answer-runtime"
 import {
     type OTFormsApplicantLifecycleState,
     buildStartFormEditAnswerOptions,
@@ -81,10 +82,7 @@ function resolveApplicantLifecycleState(ticketChannelId: string): OTFormsApplica
 function cloneDraftAnswers(
     answers: readonly OTFormsCapturedAnswer[]
 ): OTFormsCapturedAnswer[] {
-    return answers.map((entry) => ({
-        question: { ...entry.question },
-        answer: entry.answer
-    }))
+    return cloneOTFormsCapturedAnswers(answers)
 }
 
 function buildInitialTicketDraftSnapshot(
@@ -236,7 +234,8 @@ export class OTFormsService extends api.ODManagerData {
             answers: draft.answers.map((entry) => ({
                 position: entry.question.position,
                 question: entry.question.question,
-                answer: entry.answer
+                answer: entry.answer,
+                answerData: entry.answerData ?? null
             }))
         }
     }
@@ -346,7 +345,8 @@ export class OTFormsService extends api.ODManagerData {
                     question: entry.question,
                     type: "paragraph" as const
                 },
-                answer: entry.answer
+                answer: entry.answer,
+                answerData: entry.answerData ?? null
             }))
         ))
         const embeds = (

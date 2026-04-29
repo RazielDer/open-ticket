@@ -61,9 +61,102 @@ function buildGeneralValidationMessage(context: DashboardAppContext, code: strin
   }
 }
 
+function normalizeAiAssistRouteInput(
+  body: unknown,
+  action: "summarize" | "answerFaq" | "suggestReply"
+) {
+  const data = body && typeof body === "object" ? body as Record<string, unknown> : {}
+  if (action === "summarize") {
+    return { prompt: "", instructions: "" }
+  }
+  if (action === "answerFaq") {
+    return { prompt: typeof data.question === "string" ? data.question : "", instructions: "" }
+  }
+  return { prompt: "", instructions: typeof data.instructions === "string" ? data.instructions : "" }
+}
+
+function sanitizeAiAssistReason(outcome: string | null | undefined, reason: string | null | undefined) {
+  if (outcome === "provider-error") return "AI assist provider returned an error."
+  if (outcome === "low-confidence") return "AI assist returned low confidence."
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null
+}
+
+function sanitizeAiAssistAuditReason(outcome: string | null | undefined, reason: string | null | undefined) {
+  if (outcome === "provider-error") return "AI assist provider returned an error."
+  if (outcome === "low-confidence") return "AI assist returned low confidence."
+  if (outcome === "success") return null
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null
+}
+
 export function registerApiRoutes(app: express.Express, context: DashboardAppContext) {
   const { basePath, configService } = context
   const adminGuard = createAdminGuard(context)
+
+  const handleAiAssistRequest = async (
+    req: express.Request,
+    res: express.Response,
+    action: "summarize" | "answerFaq" | "suggestReply"
+  ) => {
+    const session = getAdminSession(req)
+    const actorUserId = String(session?.userId || "").trim()
+    const ticketId = String(req.params.ticketId || "").trim()
+    if (!actorUserId || !ticketId || typeof context.runtimeBridge.runTicketAiAssist !== "function") {
+      const outcome = "unavailable"
+      void recordAdminAuditEvent(context, req, {
+        eventType: "ai-assist-request",
+        target: ticketId || "unknown-ticket",
+        outcome,
+        details: { action, profileId: null, providerId: null, confidence: null }
+      })
+      return res.status(400).json({ success: false, outcome, error: "AI assist is unavailable for this dashboard session." })
+    }
+
+    const assistInput = normalizeAiAssistRouteInput(req.body, action)
+    if (action === "answerFaq" && !assistInput.prompt.trim()) {
+      const outcome = "unavailable"
+      const reason = "FAQ assist requires a question."
+      void recordAdminAuditEvent(context, req, {
+        eventType: "ai-assist-request",
+        target: ticketId,
+        outcome,
+        reason,
+        details: { action, profileId: null, providerId: null, confidence: null }
+      })
+      return res.status(400).json({ success: false, outcome, error: reason })
+    }
+
+    const result = await context.runtimeBridge.runTicketAiAssist({
+      ticketId,
+      action,
+      actorUserId,
+      prompt: assistInput.prompt,
+      instructions: assistInput.instructions
+    })
+    const safeReason = sanitizeAiAssistReason(result.outcome, result.degradedReason)
+    const auditReason = sanitizeAiAssistAuditReason(result.outcome, result.degradedReason)
+    const responseResult = { ...result, degradedReason: safeReason }
+
+    void recordAdminAuditEvent(context, req, {
+      eventType: "ai-assist-request",
+      target: ticketId,
+      outcome: result.outcome,
+      reason: auditReason,
+      details: {
+        action,
+        profileId: result.profileId,
+        providerId: result.providerId,
+        confidence: result.confidence
+      }
+    })
+
+    const status = result.ok ? 200 : result.outcome === "denied" ? 403 : result.outcome === "busy" ? 409 : 400
+    const error = result.ok ? null : safeReason || result.message || "AI assist request failed."
+    res.status(status).json({
+      success: result.ok,
+      ...(error ? { error } : {}),
+      result: responseResult
+    })
+  }
 
   app.post(joinBasePath(basePath, "api/config/general"), adminGuard.form("config.write.general"), (req, res) => {
     try {
@@ -311,6 +404,88 @@ export function registerApiRoutes(app: express.Express, context: DashboardAppCon
       res.json(result)
     } catch (error) {
       sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/support-teams/save"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const result = configService.saveSupportTeam(req.body?.team || {}, Number(req.body?.editIndex))
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-save",
+        details: {
+          configId: "support-teams",
+          operation: "save",
+          editIndex: Number(req.body?.editIndex)
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/support-teams/delete/:index"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const result = configService.deleteArrayItem("support-teams", Number(req.params.index))
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-delete",
+        details: {
+          configId: "support-teams",
+          operation: "delete",
+          index: Number(req.params.index)
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/support-teams/reorder"), adminGuard.api("config.write.general"), (req, res) => {
+    try {
+      const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : []
+      const result = configService.reorderArrayItems("support-teams", orderedIds)
+      void recordAdminAuditEvent(context, req, {
+        eventType: "visual-config-save",
+        target: "support-teams",
+        reason: "support-teams-reorder",
+        details: {
+          configId: "support-teams",
+          operation: "reorder",
+          orderedCount: orderedIds.length
+        }
+      })
+      res.json(result)
+    } catch (error) {
+      sendArrayEditorError(res, error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/summarize"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "summarize")
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/answer-faq"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "answerFaq")
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(joinBasePath(basePath, "api/tickets/:ticketId/ai/suggest-reply"), adminGuard.api("ticket.workbench"), async (req, res, next) => {
+    try {
+      await handleAiAssistRequest(req, res, "suggestReply")
+    } catch (error) {
+      next(error)
     }
   })
 }

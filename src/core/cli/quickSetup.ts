@@ -1296,6 +1296,7 @@ async function saveQuickSetupConfig(){
                 pin:"admin",
                 unpin:"admin",
                 move:"admin",
+                escalate:"admin",
                 rename:"admin",
                 add:"admin",
                 remove:"admin",
@@ -1386,6 +1387,8 @@ async function saveQuickSetupConfig(){
             readonlyAdmins:[],
             allowCreationByBlacklistedUsers:false,
             questions:[],
+            integrationProfileId:"",
+            aiAssistProfileId:"",
 
             channel:{
                 prefix:ticket.channelPrefix,
@@ -1393,8 +1396,14 @@ async function saveQuickSetupConfig(){
                 category:quickSetupStorage.ticketCategory ?? "",
                 closedCategory:"",
                 backupCategory:"",
+                overflowCategories:[],
                 claimedCategory:[],
                 topic:ticket.description
+            },
+
+            routing:{
+                supportTeamId:"",
+                escalationTargetOptionIds:[]
             },
             
             dmMessage:{
@@ -1443,6 +1452,18 @@ async function saveQuickSetupConfig(){
                 inactiveDays:7,
                 enableUserLeave:false,
                 disableOnClaim:false
+            },
+            workflow:{
+                closeRequest:{
+                    enabled:false
+                },
+                awaitingUser:{
+                    enabled:false,
+                    reminderEnabled:false,
+                    reminderHours:24,
+                    autoCloseEnabled:false,
+                    autoCloseHours:72
+                }
             },
             cooldown:{
                 enabled:(typeof quickSetupStorage.cooldownMinutes == "number"),

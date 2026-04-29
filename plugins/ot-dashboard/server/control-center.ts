@@ -84,7 +84,9 @@ export function formatDate(value: string | number | null | undefined) {
 export function getAlert(req: express.Request) {
   const message = typeof req.query.msg === "string" ? req.query.msg : ""
   if (!message) return null
-  const rawTone = typeof req.query.status === "string" ? req.query.status : "success"
+  const rawTone = typeof req.query.alertStatus === "string"
+    ? req.query.alertStatus
+    : typeof req.query.status === "string" ? req.query.status : "success"
   const tone = rawTone === "error" || rawTone === "danger"
     ? "danger"
     : rawTone === "warning"
@@ -117,7 +119,9 @@ export function consumePendingReview(req: express.Request, token: string) {
 export function buildAdminNav(context: DashboardAppContext, activeKey: string) {
   const { basePath, i18n } = context
   const items = [
-    { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "admin.shell" },
+    { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "quality.review" },
+    { key: "tickets", label: i18n.t("nav.tickets"), href: joinBasePath(basePath, "admin/tickets"), requiredCapability: "ticket.workbench" },
+    { key: "analytics", label: i18n.t("nav.analytics"), href: joinBasePath(basePath, "admin/analytics"), requiredCapability: "analytics.view" },
     { key: "transcripts", label: i18n.t("nav.transcripts"), href: joinBasePath(basePath, "admin/transcripts"), requiredCapability: "transcript.view.global" },
     { key: "addons", label: i18n.t("nav.addOns"), href: joinBasePath(basePath, "admin/plugins"), requiredCapability: "plugin.manage" },
     { key: "advanced", label: i18n.t("nav.advanced"), href: joinBasePath(basePath, "admin/advanced"), requiredCapability: "config.write.security" }
@@ -288,6 +292,18 @@ export function buildParityWarnings(id: ManagedConfigId) {
     ],
     questions: [
       "The guided editor enforces current question constraints. Use raw JSON when you need a full-fidelity review of the stored schema."
+    ],
+    "support-teams": [
+      "Support-team edits are admin-only because team ids are referenced by ticket-option routing and escalation guards."
+    ],
+    "integration-profiles": [
+      "Integration profile backups redact provider-declared secret settings. Restores keep existing secret values when a redacted placeholder is applied."
+    ],
+    "ai-assist-profiles": [
+      "AI assist profile settings are non-secret only. Provider credentials must stay in host environment variables."
+    ],
+    "knowledge-sources": [
+      "Knowledge source paths must stay under knowledge/ or .docs/. Use raw JSON after adding or reviewing local files."
     ],
     transcripts: [
       "Transcript styling changes can be extensive. Review the raw JSON before applying broad import or restore operations."

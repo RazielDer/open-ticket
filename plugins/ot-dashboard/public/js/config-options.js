@@ -4,9 +4,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const options = ui.readJson("options-data", []);
   const availableQuestions = ui.readJson("available-questions-data", []);
+  const supportTeams = ui.readJson("support-teams-data", []);
+  const integrationProfiles = ui.readJson("integration-profiles-data", []);
+  const aiAssistProfiles = ui.readJson("ai-assist-profiles-data", []);
   const dependencyGraph = ui.readJson("dependency-graph-data", {
     optionPanels: {},
-    questionOptions: {}
+    questionOptions: {},
+    supportTeamOptions: {},
+    integrationProfileOptions: {},
+    aiAssistProfileOptions: {},
+    knowledgeSourceProfiles: {}
   });
   const messages = ui.readJson("page-messages", {});
   const form = document.getElementById("optionForm");
@@ -33,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
     channelCategory: document.getElementById("channelCategory"),
     closedCategory: document.getElementById("closedCategory"),
     backupCategory: document.getElementById("backupCategory"),
+    overflowCategories: document.getElementById("overflowCategories"),
     claimedCategory: document.getElementById("claimedCategory"),
     channelTopic: document.getElementById("channelTopic"),
     cooldownEnabled: document.getElementById("cooldownEnabled"),
@@ -51,6 +59,16 @@ document.addEventListener("DOMContentLoaded", () => {
     transcriptUseGlobalDefault: document.getElementById("transcriptUseGlobalDefault"),
     transcriptChannels: document.getElementById("transcriptChannels"),
     transcriptRoutingHelper: document.getElementById("transcriptRoutingHelper"),
+    routingSupportTeamId: document.getElementById("routingSupportTeamId"),
+    routingEscalationTargetIds: document.getElementById("routingEscalationTargetIds"),
+    integrationProfileId: document.getElementById("integrationProfileId"),
+    aiAssistProfileId: document.getElementById("aiAssistProfileId"),
+    workflowCloseRequestEnabled: document.getElementById("workflowCloseRequestEnabled"),
+    workflowAwaitingUserEnabled: document.getElementById("workflowAwaitingUserEnabled"),
+    workflowAwaitingUserReminderEnabled: document.getElementById("workflowAwaitingUserReminderEnabled"),
+    workflowAwaitingUserReminderHours: document.getElementById("workflowAwaitingUserReminderHours"),
+    workflowAwaitingUserAutocloseEnabled: document.getElementById("workflowAwaitingUserAutocloseEnabled"),
+    workflowAwaitingUserAutocloseHours: document.getElementById("workflowAwaitingUserAutocloseHours"),
     slowModeEnabled: document.getElementById("slowModeEnabled"),
     slowModeSeconds: document.getElementById("slowModeSeconds"),
     dmMessageJson: document.getElementById("dmMessageJson"),
@@ -86,6 +104,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const buttonColors = Array.from(fields.buttonColor?.options || []).map((option) => option.value);
   const channelSuffixes = Array.from(fields.channelSuffix?.options || []).map((option) => option.value);
   const roleModes = Array.from(fields.roleMode?.options || []).map((option) => option.value);
+  const supportTeamIds = new Set(supportTeams.map((team) => String(team.id || "")));
+  const integrationProfileIds = new Set(integrationProfiles.map((profile) => String(profile.id || "")));
+  const aiAssistProfileIds = new Set(aiAssistProfiles.map((profile) => String(profile.id || "")));
   const questionCheckboxes = Array.from(document.querySelectorAll("[data-question-id]"));
   const questionById = new Map(availableQuestions.map((question) => [String(question.id), question]));
   const inventoryButtons = Array.from(document.querySelectorAll("[data-option-select]"));
@@ -138,6 +159,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       useGlobalDefault: true,
       channels: []
+    };
+  }
+
+  function buildDefaultWorkflow() {
+    return {
+      closeRequest: {
+        enabled: false
+      },
+      awaitingUser: {
+        enabled: false,
+        reminderEnabled: false,
+        reminderHours: 24,
+        autoCloseEnabled: false,
+        autoCloseHours: 72
+      }
     };
   }
 
@@ -298,6 +334,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.type.value = "";
     fields.ticketAdmins.value = "[]";
     fields.readonlyAdmins.value = "[]";
+    fields.overflowCategories.value = ui.stringifyList([]);
     fields.claimedCategory.value = ui.stringifyJson([]);
     fields.roleIds.value = "[]";
     fields.removeRoleIds.value = "[]";
@@ -314,6 +351,16 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.userMaximum.value = 3;
     fields.transcriptUseGlobalDefault.checked = true;
     fields.transcriptChannels.value = ui.stringifyList(buildDefaultTranscriptRouting().channels);
+    fields.routingSupportTeamId.value = "";
+    fields.routingEscalationTargetIds.value = "[]";
+    fields.integrationProfileId.value = "";
+    fields.aiAssistProfileId.value = "";
+    fields.workflowCloseRequestEnabled.checked = false;
+    fields.workflowAwaitingUserEnabled.checked = false;
+    fields.workflowAwaitingUserReminderEnabled.checked = false;
+    fields.workflowAwaitingUserReminderHours.value = 24;
+    fields.workflowAwaitingUserAutocloseEnabled.checked = false;
+    fields.workflowAwaitingUserAutocloseHours.value = 72;
     fields.slowModeSeconds.value = 20;
     fields.dmMessageJson.value = ui.stringifyJson(buildDefaultDmMessage());
     fields.ticketMessageJson.value = ui.stringifyJson(buildDefaultTicketMessage());
@@ -341,6 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.channelCategory.value = option.channel?.category || "";
     fields.closedCategory.value = option.channel?.closedCategory || "";
     fields.backupCategory.value = option.channel?.backupCategory || "";
+    fields.overflowCategories.value = ui.stringifyList(option.channel?.overflowCategories || (option.channel?.backupCategory ? [option.channel.backupCategory] : []));
     fields.claimedCategory.value = ui.stringifyJson(option.channel?.claimedCategory || []);
     fields.channelTopic.value = option.channel?.topic || "";
     fields.cooldownEnabled.checked = Boolean(option.cooldown?.enabled);
@@ -358,6 +406,16 @@ document.addEventListener("DOMContentLoaded", () => {
     fields.userMaximum.value = option.limits?.userMaximum ?? 3;
     fields.transcriptUseGlobalDefault.checked = option.transcripts?.useGlobalDefault !== false;
     fields.transcriptChannels.value = ui.stringifyList(option.transcripts?.channels || []);
+    fields.routingSupportTeamId.value = option.routing?.supportTeamId || "";
+    fields.routingEscalationTargetIds.value = ui.stringifyList(option.routing?.escalationTargetOptionIds || []);
+    fields.integrationProfileId.value = option.integrationProfileId || "";
+    fields.aiAssistProfileId.value = option.aiAssistProfileId || "";
+    fields.workflowCloseRequestEnabled.checked = Boolean(option.workflow?.closeRequest?.enabled);
+    fields.workflowAwaitingUserEnabled.checked = Boolean(option.workflow?.awaitingUser?.enabled);
+    fields.workflowAwaitingUserReminderEnabled.checked = Boolean(option.workflow?.awaitingUser?.reminderEnabled);
+    fields.workflowAwaitingUserReminderHours.value = option.workflow?.awaitingUser?.reminderHours ?? 24;
+    fields.workflowAwaitingUserAutocloseEnabled.checked = Boolean(option.workflow?.awaitingUser?.autoCloseEnabled);
+    fields.workflowAwaitingUserAutocloseHours.value = option.workflow?.awaitingUser?.autoCloseHours ?? 72;
     fields.slowModeEnabled.checked = Boolean(option.slowMode?.enabled);
     fields.slowModeSeconds.value = option.slowMode?.slowModeSeconds ?? 20;
     fields.dmMessageJson.value = ui.stringifyJson(option.dmMessage || buildDefaultDmMessage());
@@ -407,6 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
         category: fields.channelCategory.value.trim(),
         closedCategory: fields.closedCategory.value.trim(),
         backupCategory: fields.backupCategory.value.trim(),
+        overflowCategories: ui.parseList(fields.overflowCategories.value),
         claimedCategory: parseClaimedCategories(),
         topic: fields.channelTopic.value.trim()
       };
@@ -445,6 +504,43 @@ document.addEventListener("DOMContentLoaded", () => {
         useGlobalDefault: fields.transcriptUseGlobalDefault.checked,
         channels: ui.parseList(fields.transcriptChannels.value)
       };
+      const routingSupportTeamId = fields.routingSupportTeamId.value.trim();
+      if (routingSupportTeamId && !supportTeamIds.has(routingSupportTeamId)) {
+        throw new Error(messages["options.flash.validationRoutingTargets"] || "Choose an existing support team for this route.");
+      }
+      option.routing = {
+        supportTeamId: routingSupportTeamId,
+        escalationTargetOptionIds: ui.parseList(fields.routingEscalationTargetIds.value)
+      };
+      const integrationProfileId = fields.integrationProfileId.value.trim();
+      if (integrationProfileId && !integrationProfileIds.has(integrationProfileId)) {
+        throw new Error(messages["options.flash.validationIntegrationProfile"] || "Choose an existing integration profile.");
+      }
+      option.integrationProfileId = integrationProfileId;
+      const aiAssistProfileId = fields.aiAssistProfileId.value.trim();
+      if (aiAssistProfileId && !aiAssistProfileIds.has(aiAssistProfileId)) {
+        throw new Error(messages["options.flash.validationAiAssistProfile"] || "Choose an existing AI assist profile.");
+      }
+      option.aiAssistProfileId = aiAssistProfileId;
+      option.workflow = {
+        closeRequest: {
+          enabled: fields.workflowCloseRequestEnabled.checked
+        },
+        awaitingUser: {
+          enabled: fields.workflowAwaitingUserEnabled.checked,
+          reminderEnabled: fields.workflowAwaitingUserReminderEnabled.checked,
+          reminderHours: Number(fields.workflowAwaitingUserReminderHours.value || 24),
+          autoCloseEnabled: fields.workflowAwaitingUserAutocloseEnabled.checked,
+          autoCloseHours: Number(fields.workflowAwaitingUserAutocloseHours.value || 72)
+        }
+      };
+      if (
+        option.workflow.awaitingUser.reminderEnabled
+        && option.workflow.awaitingUser.autoCloseEnabled
+        && option.workflow.awaitingUser.autoCloseHours <= option.workflow.awaitingUser.reminderHours
+      ) {
+        throw new Error(messages["options.flash.validationWorkflowHours"] || "Awaiting-user timeout hours must be greater than reminder hours.");
+      }
       option.slowMode = {
         enabled: fields.slowModeEnabled.checked,
         slowModeSeconds: Number(fields.slowModeSeconds.value || 20)

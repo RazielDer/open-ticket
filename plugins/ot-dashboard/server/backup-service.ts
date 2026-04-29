@@ -66,7 +66,7 @@ export function createBackupService(projectRoot: string, configService: Dashboar
     ensureDirectory(directory)
 
     const configs = MANAGED_CONFIGS.map((definition) => {
-      const text = configService.readManagedText(definition.id)
+      const text = configService.readManagedBackupText(definition.id)
       fs.writeFileSync(filePath(rootDir, id, definition.fileName), text, "utf8")
       return {
         id: definition.id,

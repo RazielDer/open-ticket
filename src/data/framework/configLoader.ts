@@ -1,5 +1,7 @@
 import {opendiscord, api, utilities} from "../../index"
 import * as fjs from "formatted-json-stringify"
+import fs from "fs"
+import path from "path"
 
 /** (CONTRIBUTOR GUIDE) HOW TO ADD NEW CONFIG VARIABLES?
  * - Make the change to the config file in (./config/) and be aware of the following things:
@@ -24,12 +26,28 @@ import * as fjs from "formatted-json-stringify"
 export const loadAllConfigs = async () => {
     const devconfigFlag = opendiscord.flags.get("opendiscord:dev-config")
     const isDevconfig = devconfigFlag ? devconfigFlag.value : false
+    const getConfigPath = (fileName: string) => {
+        if (!isDevconfig) return "./config/"
+        if (
+            (
+                fileName == "integration-profiles.json"
+                || fileName == "ai-assist-profiles.json"
+                || fileName == "knowledge-sources.json"
+            )
+            && !fs.existsSync(path.join("./devconfig/",fileName))
+        ) return "./config/"
+        return "./devconfig/"
+    }
     
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:general","general.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultGeneralFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:questions","questions.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultQuestionsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultOptionsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultPanelsFormatter))
-    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",(isDevconfig) ? "./devconfig/" : "./config/",defaultTranscriptsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:general","general.json",getConfigPath("general.json"),defaultGeneralFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:questions","questions.json",getConfigPath("questions.json"),defaultQuestionsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:options","options.json",getConfigPath("options.json"),defaultOptionsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:panels","panels.json",getConfigPath("panels.json"),defaultPanelsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:support-teams","support-teams.json",getConfigPath("support-teams.json"),defaultSupportTeamsFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:integration-profiles","integration-profiles.json",getConfigPath("integration-profiles.json"),defaultIntegrationProfilesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:ai-assist-profiles","ai-assist-profiles.json",getConfigPath("ai-assist-profiles.json"),defaultAiAssistProfilesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:knowledge-sources","knowledge-sources.json",getConfigPath("knowledge-sources.json"),defaultKnowledgeSourcesFormatter))
+    opendiscord.configs.add(new api.ODJsonConfig("opendiscord:transcripts","transcripts.json",getConfigPath("transcripts.json"),defaultTranscriptsFormatter))
 }
 
 //FORMATTERS
@@ -126,6 +144,7 @@ export const defaultGeneralFormatter = new fjs.ObjectFormatter(null,true,[
             new fjs.PropertyFormatter("pin"),
             new fjs.PropertyFormatter("unpin"),
             new fjs.PropertyFormatter("move"),
+            new fjs.PropertyFormatter("escalate"),
             new fjs.PropertyFormatter("rename"),
             new fjs.PropertyFormatter("add"),
             new fjs.PropertyFormatter("remove"),
@@ -206,18 +225,41 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.ArrayFormatter("readonlyAdmins",false,new fjs.PropertyFormatter(null)),
         new fjs.PropertyFormatter("allowCreationByBlacklistedUsers"),
         new fjs.ArrayFormatter("questions",false,new fjs.PropertyFormatter(null)),
+        new fjs.PropertyFormatter("integrationProfileId"),
+        new fjs.PropertyFormatter("aiAssistProfileId"),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("channel",true,[
+            new fjs.PropertyFormatter("transportMode"),
+            new fjs.PropertyFormatter("threadParentChannel"),
             new fjs.PropertyFormatter("prefix"),
             new fjs.PropertyFormatter("suffix"),
             new fjs.PropertyFormatter("category"),
             new fjs.PropertyFormatter("backupCategory"),
+            new fjs.ArrayFormatter("overflowCategories",false,new fjs.PropertyFormatter(null)),
             new fjs.PropertyFormatter("closedCategory"),
             new fjs.ArrayFormatter("claimedCategory",true,new fjs.ObjectFormatter(null,false,[
                 new fjs.PropertyFormatter("user"),
                 new fjs.PropertyFormatter("category"),
             ])),
             new fjs.PropertyFormatter("topic"),
+        ]),
+        new fjs.TextFormatter(""),
+        new fjs.ObjectFormatter("routing",true,[
+            new fjs.PropertyFormatter("supportTeamId"),
+            new fjs.ArrayFormatter("escalationTargetOptionIds",false,new fjs.PropertyFormatter(null)),
+        ]),
+        new fjs.TextFormatter(""),
+        new fjs.ObjectFormatter("workflow",true,[
+            new fjs.ObjectFormatter("closeRequest",true,[
+                new fjs.PropertyFormatter("enabled"),
+            ]),
+            new fjs.ObjectFormatter("awaitingUser",true,[
+                new fjs.PropertyFormatter("enabled"),
+                new fjs.PropertyFormatter("reminderEnabled"),
+                new fjs.PropertyFormatter("reminderHours"),
+                new fjs.PropertyFormatter("autoCloseEnabled"),
+                new fjs.PropertyFormatter("autoCloseHours"),
+            ]),
         ]),
         new fjs.TextFormatter(""),
         new fjs.ObjectFormatter("dmMessage",true,[
@@ -319,6 +361,45 @@ export const defaultOptionsFormatter = new fjs.ArrayFormatter(null,true,new fjs.
         new fjs.ArrayFormatter("removeRolesOnAdd",false,new fjs.PropertyFormatter(null)),
         new fjs.PropertyFormatter("addOnMemberJoin"),
     ])}
+]))
+
+export const defaultSupportTeamsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("name"),
+    new fjs.ArrayFormatter("roleIds",false,new fjs.PropertyFormatter(null)),
+    new fjs.PropertyFormatter("assignmentStrategy"),
+]))
+
+export const defaultIntegrationProfilesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("providerId"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("enabled"),
+    new fjs.DefaultFormatter("settings",true),
+]))
+
+export const defaultAiAssistProfilesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("providerId"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("enabled"),
+    new fjs.ArrayFormatter("knowledgeSourceIds",false,new fjs.PropertyFormatter(null)),
+    new fjs.ObjectFormatter("context",true,[
+        new fjs.PropertyFormatter("maxRecentMessages"),
+        new fjs.PropertyFormatter("includeTicketMetadata"),
+        new fjs.PropertyFormatter("includeParticipants"),
+        new fjs.PropertyFormatter("includeManagedFormSnapshot"),
+        new fjs.PropertyFormatter("includeBotMessages"),
+    ]),
+    new fjs.DefaultFormatter("settings",true),
+]))
+
+export const defaultKnowledgeSourcesFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[
+    new fjs.PropertyFormatter("id"),
+    new fjs.PropertyFormatter("label"),
+    new fjs.PropertyFormatter("kind"),
+    new fjs.PropertyFormatter("path"),
+    new fjs.PropertyFormatter("enabled"),
 ]))
 
 export const defaultPanelsFormatter = new fjs.ArrayFormatter(null,true,new fjs.ObjectFormatter(null,true,[

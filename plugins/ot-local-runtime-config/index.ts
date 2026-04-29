@@ -5,6 +5,10 @@ if (utilities.project != "openticket") throw new api.ODPluginError("This plugin 
 
 const DEFAULT_SERVER_ID = "1433418426029834305"
 const WHITELIST_OPTION_ID = "whitelist-application-ticket-81642e12"
+const WHITELIST_INTEGRATION_PROFILE_ID = "eotfs-whitelist"
+const DEFAULT_AI_ASSIST_PROFILE_ID = "eotfs-reference-assist"
+const DEFAULT_KNOWLEDGE_SOURCE_ID = "eotfs-staff-faq"
+const WHITELIST_BRIDGE_PROVIDER_ID = "ot-eotfs-bridge"
 const DEFAULT_WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ID = "1489383064810553480"
 const WHITELIST_TRANSCRIPT_ARCHIVE_CHANNEL_ENV = "EOTFS_OT_WHITELIST_TRANSCRIPT_CHANNEL_ID"
 const WHITELIST_CANONICAL_STAFF_GUILD_ENV = "EOTFS_OT_WHITELIST_CANONICAL_STAFF_GUILD_ID"
@@ -22,6 +26,7 @@ const DEFAULT_PERMISSIONS = {
     pin:"admin",
     unpin:"admin",
     move:"admin",
+    escalate:"admin",
     rename:"admin",
     add:"admin",
     remove:"admin",
@@ -51,15 +56,25 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
     readonlyAdmins:[],
     allowCreationByBlacklistedUsers:false,
     questions:[],
+    integrationProfileId:WHITELIST_INTEGRATION_PROFILE_ID,
+    aiAssistProfileId:"",
 
     channel:{
+        transportMode:"channel_text",
+        threadParentChannel:"",
         prefix:"whitelist-",
         suffix:"user-name",
         category:"",
         closedCategory:"",
         backupCategory:"",
+        overflowCategories:[],
         claimedCategory:[],
         topic:""
+    },
+
+    routing:{
+        supportTeamId:"",
+        escalationTargetOptionIds:[]
     },
 
     dmMessage:{
@@ -117,6 +132,18 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         inactiveDays:7,
         enableUserLeave:false,
         disableOnClaim:false
+    },
+    workflow:{
+        closeRequest:{
+            enabled:false
+        },
+        awaitingUser:{
+            enabled:false,
+            reminderEnabled:false,
+            reminderHours:24,
+            autoCloseEnabled:false,
+            autoCloseHours:72
+        }
     },
     cooldown:{
         enabled:false,
@@ -425,11 +452,92 @@ const sanitizeBridgeConfig = () => {
     }
 }
 
+const sanitizeIntegrationProfilesConfig = () => {
+    const profilesConfig = opendiscord.configs.get("opendiscord:integration-profiles")
+    const bridgeConfig = opendiscord.configs.get("ot-eotfs-bridge:config")
+    if (!profilesConfig || !Array.isArray(profilesConfig.data) || !bridgeConfig || typeof bridgeConfig.data != "object" || !bridgeConfig.data) return
+
+    const bridge = bridgeConfig.data as Record<string, unknown>
+    const profile = {
+        id:WHITELIST_INTEGRATION_PROFILE_ID,
+        providerId:WHITELIST_BRIDGE_PROVIDER_ID,
+        label:"EoTFS whitelist intake",
+        enabled:true,
+        settings:{
+            integrationId:typeof bridge.integrationId == "string" ? bridge.integrationId : "local-whitelist-intake",
+            endpointBaseUrl:typeof bridge.endpointBaseUrl == "string" ? bridge.endpointBaseUrl : "",
+            sharedSecret:typeof bridge.sharedSecret == "string" ? bridge.sharedSecret : "",
+            formId:typeof bridge.formId == "string" ? bridge.formId : "whitelist-review-form",
+            targetGroupKey:typeof bridge.targetGroupKey == "string" ? bridge.targetGroupKey : "community_mirror",
+            authorizedRoleIds:Array.isArray(bridge.authorizedRoleIds) ? bridge.authorizedRoleIds.filter((value) => typeof value == "string") : [],
+            canonicalStaffGuildId:typeof bridge.canonicalStaffGuildId == "string" ? bridge.canonicalStaffGuildId : null,
+            formContract:bridge.formContract && typeof bridge.formContract == "object" && !Array.isArray(bridge.formContract)
+                ? bridge.formContract
+                : {
+                    discordUsernamePosition:1,
+                    alderonIdsPosition:2,
+                    rulesPasswordPosition:19,
+                    requiredAcknowledgementPositions:[5,6,7,8,9,17,18]
+                }
+        }
+    }
+
+    const index = profilesConfig.data.findIndex((entry:any) => entry && typeof entry == "object" && entry.id == WHITELIST_INTEGRATION_PROFILE_ID)
+    if (index >= 0) profilesConfig.data[index] = profile
+    else profilesConfig.data.unshift(profile)
+    opendiscord.log("Whitelist integration profile is managed by local runtime config.", "plugin")
+}
+
+const sanitizeAiAssistProfilesConfig = () => {
+    const profilesConfig = opendiscord.configs.get("opendiscord:ai-assist-profiles")
+    if (!profilesConfig || !Array.isArray(profilesConfig.data)) return
+
+    const profile = {
+        id:DEFAULT_AI_ASSIST_PROFILE_ID,
+        providerId:"reference",
+        label:"EoTFS reference assist",
+        enabled:false,
+        knowledgeSourceIds:[DEFAULT_KNOWLEDGE_SOURCE_ID],
+        context:{
+            maxRecentMessages:40,
+            includeTicketMetadata:true,
+            includeParticipants:true,
+            includeManagedFormSnapshot:true,
+            includeBotMessages:false
+        },
+        settings:{}
+    }
+
+    const index = profilesConfig.data.findIndex((entry:any) => entry && typeof entry == "object" && entry.id == DEFAULT_AI_ASSIST_PROFILE_ID)
+    if (index >= 0) profilesConfig.data[index] = profile
+    else profilesConfig.data.unshift(profile)
+}
+
+const sanitizeKnowledgeSourcesConfig = () => {
+    const sourcesConfig = opendiscord.configs.get("opendiscord:knowledge-sources")
+    if (!sourcesConfig || !Array.isArray(sourcesConfig.data)) return
+
+    const source: api.ODJsonConfig_DefaultKnowledgeSourceType = {
+        id:DEFAULT_KNOWLEDGE_SOURCE_ID,
+        label:"EoTFS staff FAQ",
+        kind:"faq-json",
+        path:"knowledge/eotfs-staff-faq.json",
+        enabled:false
+    }
+
+    const index = sourcesConfig.data.findIndex((entry:any) => entry && typeof entry == "object" && entry.id == DEFAULT_KNOWLEDGE_SOURCE_ID)
+    if (index >= 0) sourcesConfig.data[index] = source
+    else sourcesConfig.data.unshift(source)
+}
+
 opendiscord.events.get("afterConfigsInitiated").listen(() => {
     sanitizeGeneralConfig()
     sanitizeOptionsConfig()
     sanitizePanelsConfig()
     sanitizeTranscriptsConfig()
     sanitizeBridgeConfig()
+    sanitizeIntegrationProfilesConfig()
+    sanitizeAiAssistProfilesConfig()
+    sanitizeKnowledgeSourcesConfig()
     opendiscord.log("Applied local runtime config overrides.","plugin")
 })

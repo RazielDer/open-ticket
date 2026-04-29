@@ -1,12 +1,14 @@
 import { api, opendiscord, utilities } from "#opendiscord"
+import fs from "fs"
 import * as discord from "discord.js";
 
 if (utilities.project != "openticket") throw new api.ODPluginError("This plugin only works in Open Ticket!")
 
-type ManagedReloadTarget = "general" | "options" | "panels" | "questions" | "transcripts"
+type ManagedReloadTarget = "general" | "options" | "panels" | "questions" | "transcripts" | "ai-assist-profiles" | "knowledge-sources"
 type DashboardReloadTarget = ManagedReloadTarget | "all"
 
-const RELOADABLE_CONFIGS: ManagedReloadTarget[] = ["general", "options", "panels", "questions", "transcripts"]
+const RELOADABLE_CONFIGS: ManagedReloadTarget[] = ["general", "options", "panels", "questions", "transcripts", "ai-assist-profiles", "knowledge-sources"]
+const DEVCONFIG_FALLBACK_TARGETS: ManagedReloadTarget[] = ["ai-assist-profiles", "knowledge-sources"]
 
 //DECLARATION
 declare module "#opendiscord-types" {
@@ -43,28 +45,37 @@ const lang = opendiscord.languages;
 const acot = discord.ApplicationCommandOptionType;
 
 //CHECK IF USING DEVCONFIG
-function getConfigPath(){
+function getConfigPath(target?: ManagedReloadTarget){
     const devconfigFlag = opendiscord.flags.get("opendiscord:dev-config")
     const isDevconfig = devconfigFlag ? devconfigFlag.value : false
 
-    return (isDevconfig) ? "./devconfig/" : "./config/"
+    if (!isDevconfig) return "./config/"
+    if (
+        target
+        && DEVCONFIG_FALLBACK_TARGETS.includes(target)
+        && !fs.existsSync(`./devconfig/${target}.json`)
+        && fs.existsSync(`./config/${target}.json`)
+    ) {
+        return "./config/"
+    }
+    return "./devconfig/"
 }
 
 function withTemporaryChecker(target: ManagedReloadTarget, config: api.ODJsonConfig) {
     const checker = opendiscord.checkers.get(`opendiscord:${target}`)
-    const originalConfig = checker?.config
+    const originalConfig = checker?.config ?? null
     if (checker) {
         checker.config = config
     }
     return () => {
-        if (checker) {
+        if (checker && originalConfig) {
             checker.config = originalConfig
         }
     }
 }
 
 async function prepareTargetChecker(target: ManagedReloadTarget) {
-    const temporaryConfig = new api.ODJsonConfig(`ot-config-reload:${target}`, `${target}.json`, getConfigPath())
+    const temporaryConfig = new api.ODJsonConfig(`ot-config-reload:${target}`, `${target}.json`, getConfigPath(target))
     await temporaryConfig.init()
     return withTemporaryChecker(target, temporaryConfig)
 }
@@ -121,6 +132,8 @@ opendiscord.events.get("onSlashCommandLoad").listen((slash) => {
                     { name: "panels", value: "panels" },
                     { name: "questions", value: "questions" },
                     { name: "transcripts", value: "transcripts" },
+                    { name: "ai-assist-profiles", value: "ai-assist-profiles" },
+                    { name: "knowledge-sources", value: "knowledge-sources" },
                 ],
             }
         ]
@@ -148,6 +161,8 @@ opendiscord.events.get("onTextCommandLoad").listen((text) => {
                         "panels",
                         "questions",
                         "transcripts",
+                        "ai-assist-profiles",
+                        "knowledge-sources",
                     ]
                 }
             ]

@@ -190,6 +190,10 @@ export interface ODEventIds_Default {
     "afterTicketClaimed": ODEvent_Default<(ticket:ODTicket, claimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "onTicketUnclaim": ODEvent_Default<(ticket:ODTicket, unclaimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "afterTicketUnclaimed": ODEvent_Default<(ticket:ODTicket, unclaimer:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
+    "onTicketAssign": ODEvent_Default<(ticket:ODTicket, assigner:discord.User, channel:discord.GuildTextBasedChannel, assigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "afterTicketAssigned": ODEvent_Default<(ticket:ODTicket, assigner:discord.User, channel:discord.GuildTextBasedChannel, assigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "onTicketUnassign": ODEvent_Default<(ticket:ODTicket, unassigner:discord.User, channel:discord.GuildTextBasedChannel, previousAssigneeUserId:string, reason:string|null) => ODPromiseVoid>
+    "afterTicketUnassigned": ODEvent_Default<(ticket:ODTicket, unassigner:discord.User, channel:discord.GuildTextBasedChannel, previousAssigneeUserId:string, reason:string|null) => ODPromiseVoid>
     "onTicketPin": ODEvent_Default<(ticket:ODTicket, pinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "afterTicketPinned": ODEvent_Default<(ticket:ODTicket, pinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
     "onTicketUnpin": ODEvent_Default<(ticket:ODTicket, unpinner:discord.User, channel:discord.GuildTextBasedChannel, reason:string|null) => ODPromiseVoid>
@@ -226,14 +230,14 @@ export interface ODEventIds_Default {
     "afterTranscriptHistoryLoaded": ODEvent_Default<(transcripts:ODTranscriptManager_Default) => ODPromiseVoid>
 
     //transcript creation
-    "onTranscriptCreate": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "afterTranscriptCreated": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "onTranscriptInit": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "afterTranscriptInitiated": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "onTranscriptCompile": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "afterTranscriptCompiled": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "onTranscriptReady": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
-    "afterTranscriptReady": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.TextChannel,user:discord.User) => ODPromiseVoid>
+    "onTranscriptCreate": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "afterTranscriptCreated": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "onTranscriptInit": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "afterTranscriptInitiated": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "onTranscriptCompile": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "afterTranscriptCompiled": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "onTranscriptReady": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
+    "afterTranscriptReady": ODEvent_Default<(transcripts:ODTranscriptManager_Default,ticket:ODTicket,channel:discord.GuildTextBasedChannel,user:discord.User) => ODPromiseVoid>
 
     //plugin loading before builders
     "onPluginBeforeBuilderLoad": ODEvent_Default<() => ODPromiseVoid>,

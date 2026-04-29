@@ -75,6 +75,8 @@ if (utilities.project != "openticket") throw new api.ODPluginError("This plugin 
 
 const BRIDGE_CONFIG_ID = "ot-eotfs-bridge:config"
 const BRIDGE_SERVICE_ID = "ot-eotfs-bridge:service"
+const BRIDGE_PROVIDER_ID = "ot-eotfs-bridge"
+const WHITELIST_INTEGRATION_PROFILE_ID = "eotfs-whitelist"
 const BRIDGE_STATE_CATEGORY = "ot-eotfs-bridge:ticket-bridge-state"
 const BRIDGE_BUTTON_RESPONDER_ID = "ot-eotfs-bridge:button"
 const BRIDGE_BUTTON_PREFIX = "ot-eotfs-bridge:btn:"
@@ -84,7 +86,11 @@ const BRIDGE_HARD_DENY_CONFIRM_ACTION = "confirm_hard_deny"
 const BRIDGE_POLL_LOOP_INTERVAL_MS = 10_000
 const APPLICANT_START_FORM_BUTTON_PREFIX = "ot-ticket-forms:sb_"
 const WHITELIST_PRESENTATION_STACK_VERSION = 2
+const BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE = "Whitelist bridge requires a canonical integrationProfileId binding for this ticket. Bind this ticket option through integrationProfileId before using whitelist bridge runtime actions."
 const DISCORD_SNOWFLAKE_RE = /^\d{17,20}$/
+type BridgeDashboardLockedAction =
+    "claim"|"unclaim"|"assign"|"escalate"|"move"|"transfer"|"add-participant"|"remove-participant"|"set-priority"|"set-topic"|"close"|"reopen"|"delete"|"pin"|"unpin"|"rename"|"refresh"|
+    "request-close"|"cancel-close-request"|"approve-close-request"|"dismiss-close-request"|"set-awaiting-user"|"clear-awaiting-user"
 
 class OTEotfsBridgeConfig extends api.ODJsonConfig {
     declare data: BridgeConfigData
@@ -96,12 +102,7 @@ class OTEotfsBridgeService extends api.ODManagerData {
     }
 
     resolveApplicantLifecycleState(ticketChannelId: string): "unsubmitted" | "submitted" | "retry_reopened" | "locked" {
-        const state = bridgeTicketStateStore.get(ticketChannelId)
-        if (!state || !state.bridgeCaseId) return "unsubmitted"
-        const status = state.lastStatus?.status ?? null
-        if (status == BRIDGE_CASE_STATUS_RETRY_DENIED) return "retry_reopened"
-        if (status == BRIDGE_CASE_STATUS_PENDING_REVIEW) return "submitted"
-        return "locked"
+        return resolveBridgeApplicantLifecycleState(ticketChannelId)
     }
 
     canApplicantEdit(ticketChannelId: string): boolean {
@@ -122,7 +123,31 @@ class OTEotfsBridgeService extends api.ODManagerData {
     }
 
     ownsTicketFollowups(optionId: string): boolean {
-        return isEligibleOptionId(getBridgeConfig().eligibleOptionIds, optionId)
+        const profileId = getRuntimeOptionIntegrationProfileId(optionId)
+        return profileId ? isBridgeIntegrationProfile(profileId) : false
+    }
+
+    async getDashboardTicketLockState(ticketId: string): Promise<{
+        providerId: string
+        title: string
+        message: string
+        lockedActions: BridgeDashboardLockedAction[]
+    } | null> {
+        const state = bridgeTicketStateStore.get(ticketId)
+        if (!state || !state.bridgeCaseId) return null
+
+        const lifecycleState = this.resolveApplicantLifecycleState(ticketId)
+        const lockedActions: BridgeDashboardLockedAction[] = lifecycleState == "submitted" || lifecycleState == "locked"
+            ? ["escalate","move","transfer","close","reopen","delete","request-close","cancel-close-request","approve-close-request","dismiss-close-request","set-awaiting-user","clear-awaiting-user"]
+            : []
+        if (lockedActions.length < 1) return null
+
+        return {
+            providerId: "ot-eotfs-bridge",
+            title: "Whitelist bridge",
+            message: "This ticket is owned by the whitelist bridge lifecycle. Bridge-owned terminal and route actions stay disabled in the dashboard.",
+            lockedActions
+        }
     }
 }
 
@@ -164,7 +189,264 @@ class BridgeTicketStateStore {
 
 const bridgeTicketStateStore = new BridgeTicketStateStore()
 const createEligibilityOutageMap = new Map<string, string>()
+const missingCanonicalBridgeProfileWarnings = new Set<string>()
 let bridgePollLoop: NodeJS.Timeout | null = null
+
+function resolveBridgeApplicantLifecycleState(ticketChannelId: string): "unsubmitted" | "submitted" | "retry_reopened" | "locked" {
+    const state = bridgeTicketStateStore.get(ticketChannelId)
+    if (!state || !state.bridgeCaseId) return "unsubmitted"
+    const status = state.lastStatus?.status ?? null
+    if (status == BRIDGE_CASE_STATUS_RETRY_DENIED) return "retry_reopened"
+    if (status == BRIDGE_CASE_STATUS_PENDING_REVIEW) return "submitted"
+    return "locked"
+}
+
+function getRuntimeOptionIntegrationProfileId(optionId: string): string {
+    const option = opendiscord.options.get(optionId)
+    const value = option?.get?.("opendiscord:integration-profile")?.value
+    return typeof value == "string" ? value.trim() : ""
+}
+
+function getOptionIntegrationProfileId(option: {get?: (id:string) => {value?: unknown}|null} | null | undefined): string {
+    const value = option?.get?.("opendiscord:integration-profile")?.value
+    return typeof value == "string" ? value.trim() : ""
+}
+
+function getIntegrationProfilesConfig(): api.TicketIntegrationProfile[] {
+    const config = opendiscord.configs.get("opendiscord:integration-profiles") as { data?: unknown } | null
+    const data = Array.isArray(config?.data) ? config.data : []
+    return data
+        .filter((profile): profile is Record<string, unknown> => Boolean(profile) && typeof profile == "object" && !Array.isArray(profile))
+        .map((profile) => ({
+            id: typeof profile.id == "string" ? profile.id.trim() : "",
+            providerId: typeof profile.providerId == "string" ? profile.providerId.trim() : "",
+            label: typeof profile.label == "string" ? profile.label.trim() : "",
+            enabled: profile.enabled === true,
+            settings: profile.settings && typeof profile.settings == "object" && !Array.isArray(profile.settings) ? profile.settings as Record<string, unknown> : {}
+        }))
+        .filter((profile) => profile.id.length > 0)
+}
+
+function isBridgeIntegrationProfile(profileId: string): boolean {
+    if (profileId == WHITELIST_INTEGRATION_PROFILE_ID) return true
+    const profile = getIntegrationProfilesConfig().find((entry) => entry.id == profileId)
+    return profile?.providerId == BRIDGE_PROVIDER_ID
+}
+
+function resolveBridgeProfile(profileId: string): api.TicketIntegrationProfile | null {
+    if (!profileId) return null
+    const profile = getIntegrationProfilesConfig().find((entry) => entry.id == profileId) ?? null
+    return profile?.providerId == BRIDGE_PROVIDER_ID ? profile : null
+}
+
+function resolveBridgeProfileForOption(optionId: string): api.TicketIntegrationProfile | null {
+    const profileId = getRuntimeOptionIntegrationProfileId(optionId)
+    return resolveBridgeProfile(profileId)
+}
+
+function parseStringArraySetting(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    return value.map((entry) => typeof entry == "string" ? entry.trim() : "").filter(Boolean)
+}
+
+function parseNullableStringSetting(value: unknown): string | null {
+    return typeof value == "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+function parseNumberSetting(value: unknown, fallback: number): number {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeBridgeFormContractSetting(value: unknown, fallback: BridgeConfigData["formContract"]): BridgeConfigData["formContract"] {
+    const input = value && typeof value == "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+    const acknowledgements = Array.isArray(input.requiredAcknowledgementPositions)
+        ? input.requiredAcknowledgementPositions.map((entry) => Number(entry)).filter((entry) => Number.isFinite(entry) && entry > 0)
+        : fallback.requiredAcknowledgementPositions
+    return {
+        discordUsernamePosition: parseNumberSetting(input.discordUsernamePosition, fallback.discordUsernamePosition),
+        alderonIdsPosition: parseNumberSetting(input.alderonIdsPosition, fallback.alderonIdsPosition),
+        rulesPasswordPosition: parseNumberSetting(input.rulesPasswordPosition, fallback.rulesPasswordPosition),
+        requiredAcknowledgementPositions: acknowledgements
+    }
+}
+
+function bridgeConfigFromSettings(settings: Record<string, unknown>, referencedOptionIds: string[] = []): BridgeConfigData {
+    const fallback = getBridgeConfig()
+    return {
+        integrationId: typeof settings.integrationId == "string" && settings.integrationId.trim().length > 0 ? settings.integrationId.trim() : fallback.integrationId,
+        endpointBaseUrl: normalizeEndpointBaseUrl(typeof settings.endpointBaseUrl == "string" ? settings.endpointBaseUrl : fallback.endpointBaseUrl),
+        sharedSecret: typeof settings.sharedSecret == "string" && settings.sharedSecret.trim().length > 0 ? settings.sharedSecret.trim() : fallback.sharedSecret,
+        eligibleOptionIds: referencedOptionIds.length > 0 ? referencedOptionIds : fallback.eligibleOptionIds,
+        formId: typeof settings.formId == "string" && settings.formId.trim().length > 0 ? settings.formId.trim() : fallback.formId,
+        targetGroupKey: typeof settings.targetGroupKey == "string" && settings.targetGroupKey.trim().length > 0 ? settings.targetGroupKey.trim() : fallback.targetGroupKey,
+        authorizedRoleIds: parseStringArraySetting(settings.authorizedRoleIds).length > 0 ? parseStringArraySetting(settings.authorizedRoleIds) : fallback.authorizedRoleIds,
+        canonicalStaffGuildId: parseNullableStringSetting(settings.canonicalStaffGuildId) ?? fallback.canonicalStaffGuildId,
+        formContract: normalizeBridgeFormContractSetting(settings.formContract, fallback.formContract)
+    }
+}
+
+function resolveBridgeConfigForOption(optionId: string): BridgeConfigData | null {
+    const profile = resolveBridgeProfileForOption(optionId)
+    return profile ? bridgeConfigFromSettings(profile.settings, [optionId]) : null
+}
+
+function resolveBridgeConfigForTicket(ticket: api.ODTicket): BridgeConfigData | null {
+    const optionId = ticket.option.id.value
+    const stored = api.resolveTicketIntegrationProfileState(ticket)
+    if (stored.hasStoredValue) {
+        if (stored.profileId) {
+            const profile = resolveBridgeProfile(stored.profileId)
+            return profile ? bridgeConfigFromSettings(profile.settings, [optionId]) : null
+        }
+        return null
+    }
+    return resolveBridgeConfigForOption(optionId)
+}
+
+function ticketHasCanonicalBridgeProfile(ticket: api.ODTicket): boolean {
+    const stored = api.resolveTicketIntegrationProfileState(ticket)
+    if (stored.hasStoredValue) return Boolean(stored.profileId && resolveBridgeProfile(stored.profileId))
+    return Boolean(resolveBridgeProfileForOption(ticket.option.id.value))
+}
+
+function warnMissingCanonicalBridgeProfile(ticket: api.ODTicket | null, context: string) {
+    const ticketId = ticket?.id?.value ?? "unknown"
+    const optionId = ticket?.option?.id?.value ?? "unknown"
+    const warningKey = `${context}:${ticketId}:${optionId}`
+    if (missingCanonicalBridgeProfileWarnings.has(warningKey)) return
+    missingCanonicalBridgeProfileWarnings.add(warningKey)
+    opendiscord.log(
+        "Whitelist bridge warning: canonical integrationProfileId binding is required before live bridge runtime actions can run.",
+        "warning",
+        [
+            { key: "context", value: context },
+            { key: "channelid", value: ticketId, hidden: true },
+            { key: "option", value: optionId }
+        ]
+    )
+}
+
+function resolveRequiredBridgeConfigForTicket(ticket: api.ODTicket, context: string): BridgeConfigData | null {
+    if (!ticketHasCanonicalBridgeProfile(ticket)) {
+        warnMissingCanonicalBridgeProfile(ticket, context)
+        return null
+    }
+    const config = resolveBridgeConfigForTicket(ticket)
+    if (!config) {
+        warnMissingCanonicalBridgeProfile(ticket, context)
+        return null
+    }
+    return config
+}
+
+function requireBridgeConfigForTicket(ticket: api.ODTicket, context: string): BridgeConfigData {
+    const config = resolveRequiredBridgeConfigForTicket(ticket, context)
+    if (!config) throw new Error(BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE)
+    return config
+}
+
+function registerTicketPlatformProvider() {
+    const runtimeApi = api.getTicketPlatformRuntimeApi()
+    if (!runtimeApi) return
+    runtimeApi.registerIntegrationProvider({
+        id: BRIDGE_PROVIDER_ID,
+        pluginId: "ot-eotfs-bridge",
+        capabilities: ["eligibility","status","action","enrichment"],
+        secretSettingKeys: ["sharedSecret"],
+        validateProfileSettings({settings, referencedByOptionIds}) {
+            if (Object.prototype.hasOwnProperty.call(settings,"eligibleOptionIds")) {
+                throw new Error("Whitelist bridge integration profiles bind ticket options through integrationProfileId, not settings.eligibleOptionIds.")
+            }
+            const config = bridgeConfigFromSettings(settings, referencedByOptionIds)
+            if (!config.endpointBaseUrl) throw new Error("Whitelist bridge integration profile requires endpointBaseUrl.")
+            if (!config.sharedSecret) throw new Error("Whitelist bridge integration profile requires sharedSecret.")
+            if (!config.formId) throw new Error("Whitelist bridge integration profile requires formId.")
+            if (!config.targetGroupKey) throw new Error("Whitelist bridge integration profile requires targetGroupKey.")
+        },
+        async eligibility({settings, option, user}) {
+            const optionId = (option as api.ODTicketOption | null)?.id?.value ?? ""
+            const applicantDiscordUserId = (user as discord.User | null)?.id ?? ""
+            if (!optionId || !applicantDiscordUserId) return {allow:false, reason:"Whitelist bridge eligibility context is incomplete.", degradedReason:null}
+
+            const config = bridgeConfigFromSettings(settings, [optionId])
+            const openTickets: BridgeOpenTicketSnapshot[] = opendiscord.tickets.getFiltered((ticket) => {
+                if (ticket.get("opendiscord:closed").value) return false
+                return isEligibleOptionId(config.eligibleOptionIds, ticket.option.id.value)
+            }).map((ticket) => ({
+                ticketChannelId: ticket.id.value,
+                optionId: ticket.option.id.value,
+                creatorDiscordUserId: getLiveTicketCreatorDiscordUserId(ticket),
+                closed: ticket.get("opendiscord:closed").value === true
+            }))
+
+            let eligibility: BridgeEligibilityResponse | null = null
+            let degradedReason: string | null = null
+            const outageKey = buildOutageKey(optionId, applicantDiscordUserId)
+            try {
+                eligibility = await fetchBridgeEligibility(config, applicantDiscordUserId)
+                createEligibilityOutageMap.delete(outageKey)
+            } catch (error) {
+                degradedReason = error instanceof Error ? error.message : "Whitelist bridge eligibility is unavailable."
+                createEligibilityOutageMap.set(outageKey, degradedReason)
+                opendiscord.log("Whitelist bridge provider eligibility check failed open during ticket creation.", "plugin", [
+                    { key: "option", value: optionId },
+                    { key: "userid", value: applicantDiscordUserId, hidden: true },
+                    { key: "error", value: degradedReason }
+                ])
+            }
+
+            const decision = evaluateCreateTicketDecision(
+                optionId,
+                config.eligibleOptionIds,
+                applicantDiscordUserId,
+                openTickets,
+                eligibility,
+                degradedReason
+            )
+            return {
+                allow: decision.allow,
+                reason: decision.reason ?? null,
+                degradedReason
+            }
+        },
+        async status({ticket}) {
+            const runtimeTicket = ticket as api.ODTicket | null
+            if (!runtimeTicket) return {state:"unavailable", summary:"Whitelist bridge ticket context is missing.", lockedTicketActions:[...api.TICKET_PLATFORM_STOCK_ACTION_IDS], degradedReason:"Whitelist bridge ticket context is missing."}
+            const state = bridgeTicketStateStore.get(runtimeTicket.id.value)
+            if (!state || !state.bridgeCaseId) {
+                return {state:"ready", summary:"Whitelist bridge intake is ready.", lockedTicketActions:[], degradedReason:null}
+            }
+            const lifecycleState = resolveBridgeApplicantLifecycleState(runtimeTicket.id.value)
+            const lockedActions: BridgeDashboardLockedAction[] = lifecycleState == "submitted" || lifecycleState == "locked"
+                ? ["escalate","move","transfer","close","reopen","delete","request-close","cancel-close-request","approve-close-request","dismiss-close-request","set-awaiting-user","clear-awaiting-user"]
+                : []
+            return {
+                state: lockedActions.length > 0 ? "locked" : state.degradedReason ? "degraded" : "ready",
+                summary: "Whitelist bridge lifecycle controls this ticket.",
+                lockedTicketActions: lockedActions,
+                degradedReason: state.degradedReason ?? null
+            }
+        },
+        async action({actionId}) {
+            return {ok:false, message:`Whitelist bridge does not expose generic action "${actionId}".`, degradedReason:null}
+        },
+        async enrichment({ticket}) {
+            const runtimeTicket = ticket as api.ODTicket | null
+            const state = runtimeTicket ? bridgeTicketStateStore.get(runtimeTicket.id.value) : null
+            const details: Record<string,string> = state ? {
+                lifecycle: resolveBridgeApplicantLifecycleState(state.ticketChannelId),
+                sourceTicketRef: state.sourceTicketRef
+            } : {}
+            return {
+                summary: state?.lastStatus?.status ?? null,
+                details
+            }
+        }
+    })
+}
+
+registerTicketPlatformProvider()
 
 function buildOutageKey(optionId: string, applicantDiscordUserId: string): string {
     return `${optionId}:${applicantDiscordUserId}`
@@ -248,7 +530,7 @@ async function findApplicantStartFormMessage(
     return null
 }
 
-function buildControlMessage(state: BridgeHandoffState): Pick<discord.MessageCreateOptions, "content" | "embeds" | "components"> {
+function buildControlMessage(state: BridgeHandoffState): discord.MessageCreateOptions {
     const descriptor = buildBridgeControlDescriptor(state)
     const presentation = buildBridgeControlEmbedPresentation(state)
     const row = new discord.ActionRowBuilder<discord.ButtonBuilder>()
@@ -270,11 +552,16 @@ function buildControlMessage(state: BridgeHandoffState): Pick<discord.MessageCre
         embed.addFields(...presentation.fields)
     }
 
-    return {
+    const legacyPayload: Pick<discord.MessageCreateOptions, "content" | "embeds" | "components"> = {
         content: "",
         embeds: [embed],
         components: descriptor.buttons.length > 0 ? [row] : []
     }
+    return api.buildRicherMessagePayload({
+        surfaceId: "ot-eotfs-bridge:whitelist-staff-review",
+        embeds: [embed],
+        actionRows: descriptor.buttons.length > 0 ? [row] : []
+    }) ?? legacyPayload
 }
 
 function buildRetryModal(ticketChannelId: string, retryWarning: string | null): discord.ModalBuilder {
@@ -332,7 +619,18 @@ function getAcceptedWhitelistRulesPasswords(): string[] {
 async function restoreBridgeState() {
     const globalDatabase = opendiscord.databases.get("opendiscord:global")
     const storedEntries = await globalDatabase.getCategory(BRIDGE_STATE_CATEGORY) ?? []
-    bridgeTicketStateStore.restore(storedEntries.map((entry) => entry.value as BridgeHandoffState))
+    const restoredStates: BridgeHandoffState[] = []
+    for (const entry of storedEntries) {
+        const state = normalizeBridgeState(entry.value as BridgeHandoffState)
+        const ticket = opendiscord.tickets.get(state.ticketChannelId)
+        if (!ticket) {
+            warnMissingCanonicalBridgeProfile(null, "restore-bridge-state")
+            continue
+        }
+        if (!resolveRequiredBridgeConfigForTicket(ticket, "restore-bridge-state")) continue
+        restoredStates.push(state)
+    }
+    bridgeTicketStateStore.restore(restoredStates)
 }
 
 async function persistBridgeState(state: BridgeHandoffState): Promise<BridgeHandoffState> {
@@ -862,7 +1160,15 @@ async function syncTicketPresentationInternal(
     state: BridgeHandoffState,
     currentMessage: discord.Message | null = null
 ): Promise<BridgeHandoffState> {
-    const config = getBridgeConfig()
+    const config = resolveRequiredBridgeConfigForTicket(ticket, "sync-ticket-presentation")
+    if (!config) {
+        const now = new Date().toISOString()
+        return await persistBridgeState(markBridgeDegraded(
+            updateTicketCreatorSnapshot(state, getLiveTicketCreatorDiscordUserId(ticket), now),
+            BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE,
+            now
+        ))
+    }
     const formsService = getTicketFormsService()
     let nextState = updateTicketCreatorSnapshot(state, getLiveTicketCreatorDiscordUserId(ticket), new Date().toISOString())
     const needsPlacementRepair = nextState.presentationStackVersion < WHITELIST_PRESENTATION_STACK_VERSION
@@ -931,11 +1237,13 @@ async function syncTicketPresentation(ticketChannelId: string): Promise<void> {
 
     const channel = await opendiscord.tickets.getTicketChannel(ticket)
     if (!channel) return
+    const config = resolveRequiredBridgeConfigForTicket(ticket, "sync-ticket-presentation")
+    if (!config) return
 
     const existingState = bridgeTicketStateStore.get(ticketChannelId)
         ?? createInitialBridgeState(
             channel.id,
-            getBridgeConfig().targetGroupKey,
+            config.targetGroupKey,
             getLiveTicketCreatorDiscordUserId(ticket) ?? "unknown",
             getLiveTicketCreatorDiscordUserId(ticket),
             new Date().toISOString()
@@ -954,7 +1262,7 @@ async function submitApplicantReview(ticketChannelId: string, applicantDiscordUs
         throw new Error("This whitelist application is no longer attached to an active ticket channel.")
     }
 
-    const config = getBridgeConfig()
+    const config = requireBridgeConfigForTicket(ticket, "submit-applicant-review")
     const formsService = getTicketFormsService()
     const ticketContext = getTicketContext(ticket, channel)
     const submittedAt = new Date().toISOString()
@@ -1146,13 +1454,13 @@ async function ensureControlMessage(
 ): Promise<discord.Message> {
     const messagePayload = buildControlMessage(state)
     if (currentMessage && currentMessage.editable) {
-        await currentMessage.edit(messagePayload)
+        await currentMessage.edit(api.toRicherMessageEditPayload(messagePayload))
         return currentMessage
     }
     if (state.controlMessageId) {
         const existingMessage = await channel.messages.fetch(state.controlMessageId).catch(() => null)
         if (existingMessage && existingMessage.editable) {
-            await existingMessage.edit(messagePayload)
+            await existingMessage.edit(api.toRicherMessageEditPayload(messagePayload))
             return existingMessage
         }
     }
@@ -1193,9 +1501,12 @@ async function refreshBridgeStatusAndRender(
     state: BridgeHandoffState,
     currentMessage: discord.Message | null = null
 ): Promise<BridgeHandoffState> {
-    const config = getBridgeConfig()
+    const config = resolveRequiredBridgeConfigForTicket(ticket, "refresh-bridge-status")
     const now = new Date().toISOString()
     let nextState = updateTicketCreatorSnapshot(state, getLiveTicketCreatorDiscordUserId(ticket), now)
+    if (!config) {
+        return await persistBridgeState(markBridgeDegraded(nextState, BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE, now))
+    }
     try {
         const status = await fetchBridgeStatus(config, nextState.sourceTicketRef)
         nextState = applyBridgeStatus(nextState, status, now)
@@ -1219,9 +1530,12 @@ async function recoverUnstagedBridgeControl(
     channel: discord.GuildTextBasedChannel,
     state: BridgeHandoffState
 ): Promise<BridgeHandoffState> {
-    const config = getBridgeConfig()
+    const config = resolveRequiredBridgeConfigForTicket(ticket, "recover-unstaged-bridge-control")
     const now = new Date().toISOString()
     let nextState = updateTicketCreatorSnapshot(state, getLiveTicketCreatorDiscordUserId(ticket), now)
+    if (!config) {
+        return await persistBridgeState(markBridgeDegraded(nextState, BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE, now))
+    }
     try {
         await fetchBridgeEligibility(config, nextState.applicantDiscordUserId)
         nextState = stopBridgePolling(clearBridgeDegraded(nextState, now), now)
@@ -1336,7 +1650,7 @@ async function performBridgeAction(
     if (!currentState) {
         throw new Error("Whitelist bridge state is missing for this ticket.")
     }
-    const config = getBridgeConfig()
+    const config = requireBridgeConfigForTicket(ticket, "perform-bridge-action")
     const authorization = await getBridgeInteractionAuthorization(ticket, config, instance.guild, instance.user.id)
     if (!authorization.authorized) {
         throw new Error(getBridgeAuthorizationDeniedMessage())
@@ -1363,12 +1677,13 @@ async function performBridgeAction(
 }
 
 async function repairEligibleTicketControls(): Promise<void> {
-    const config = getBridgeConfig()
     const now = new Date().toISOString()
     for (const ticket of opendiscord.tickets.getFiltered((entry) => {
         if (entry.get("opendiscord:closed").value) return false
-        return isEligibleOptionId(config.eligibleOptionIds, entry.option.id.value)
+        return ticketHasCanonicalBridgeProfile(entry)
     })) {
+        const config = resolveRequiredBridgeConfigForTicket(ticket, "repair-eligible-ticket-controls")
+        if (!config) continue
         const channel = await opendiscord.tickets.getTicketChannel(ticket)
         if (!channel) continue
 
@@ -1409,6 +1724,7 @@ async function pollBridgeStates(): Promise<void> {
         if (!shouldPollBridgeState(state, now, BRIDGE_MAX_POLL_ATTEMPTS)) continue
         const ticket = opendiscord.tickets.get(state.ticketChannelId)
         if (!ticket || ticket.get("opendiscord:closed").value) continue
+        if (!resolveRequiredBridgeConfigForTicket(ticket, "poll-bridge-state")) continue
         const channel = await opendiscord.tickets.getTicketChannel(ticket)
         if (!channel) continue
         if (state.bridgeCaseId) {
@@ -1427,6 +1743,18 @@ function ensureBridgePollLoop() {
 }
 
 function logMisconfiguredEligibleOptions(config: BridgeConfigData) {
+    const canonicalOptionIds = new Set((opendiscord.options.getAll?.() ?? [])
+        .filter((option) => isBridgeIntegrationProfile(getOptionIntegrationProfileId(option)))
+        .map((option) => option.id.value))
+    const legacyOnly = config.eligibleOptionIds.filter((optionId) => !canonicalOptionIds.has(optionId))
+    if (legacyOnly.length > 0) {
+        opendiscord.log(
+            "Whitelist bridge warning: eligibleOptionIds no longer enable live ticket integration. Bind these ticket options through integrationProfileId.",
+            "plugin",
+            legacyOnly.map((optionId) => ({ key: "option", value: optionId }))
+        )
+    }
+
     const snapshots: BridgeOptionLimitSnapshot[] = config.eligibleOptionIds.map((optionId) => {
         const option = opendiscord.options.get(optionId)
         return {
@@ -1440,7 +1768,7 @@ function logMisconfiguredEligibleOptions(config: BridgeConfigData) {
     const misconfigured = findMisconfiguredEligibleOptionIds(snapshots)
     if (misconfigured.length < 1) return
     opendiscord.log(
-        "Whitelist bridge warning: eligible options should be configured with userMaximum=1. Fallback live-ticket enforcement remains active.",
+        "Whitelist bridge warning: bridge-bound options should be configured with userMaximum=1 before using the canonical integration profile.",
         "plugin",
         misconfigured.map((optionId) => ({ key: "option", value: optionId }))
     )
@@ -1570,51 +1898,7 @@ opendiscord.events.get("afterActionsLoaded").listen((actions) => {
     actions.get("opendiscord:create-ticket-permissions").workers.add([
         new api.ODWorker("ot-eotfs-bridge:create-ticket-eligibility", 6, async (instance, params, source, cancel) => {
             void source
-            const config = getBridgeConfig()
-            const optionId = params.option.id.value
-            const applicantDiscordUserId = params.user.id
-            if (!isEligibleOptionId(config.eligibleOptionIds, optionId)) return
-
-            const openTickets: BridgeOpenTicketSnapshot[] = opendiscord.tickets.getFiltered((ticket) => {
-                if (ticket.get("opendiscord:closed").value) return false
-                return isEligibleOptionId(config.eligibleOptionIds, ticket.option.id.value)
-            }).map((ticket) => ({
-                ticketChannelId: ticket.id.value,
-                optionId: ticket.option.id.value,
-                creatorDiscordUserId: getLiveTicketCreatorDiscordUserId(ticket),
-                closed: ticket.get("opendiscord:closed").value === true
-            }))
-
-            let eligibility: BridgeEligibilityResponse | null = null
-            let degradedReason: string | null = null
-            const outageKey = buildOutageKey(optionId, applicantDiscordUserId)
-            try {
-                eligibility = await fetchBridgeEligibility(config, applicantDiscordUserId)
-                createEligibilityOutageMap.delete(outageKey)
-            } catch (error) {
-                degradedReason = error instanceof Error ? error.message : "Whitelist bridge eligibility is unavailable."
-                createEligibilityOutageMap.set(outageKey, degradedReason)
-                opendiscord.log("Whitelist bridge eligibility check failed open during ticket creation.", "plugin", [
-                    { key: "option", value: optionId },
-                    { key: "userid", value: applicantDiscordUserId, hidden: true },
-                    { key: "error", value: degradedReason }
-                ])
-            }
-
-            const decision = evaluateCreateTicketDecision(
-                optionId,
-                config.eligibleOptionIds,
-                applicantDiscordUserId,
-                openTickets,
-                eligibility,
-                degradedReason
-            )
-            if (!decision.allow) {
-                instance.valid = false
-                instance.reason = "custom"
-                instance.customReason = decision.reason ?? "You cannot create this ticket right now."
-                return cancel()
-            }
+            if (opendiscord.plugins.classes.exists("opendiscord:ticket-integration-service")) return
         })
     ])
 })
@@ -1630,8 +1914,8 @@ opendiscord.events.get("afterCodeExecuted").listen(async () => {
 })
 
 opendiscord.events.get("afterTicketCreated").listen(async (ticket, creator, channel) => {
-    const config = getBridgeConfig()
-    if (!isEligibleOptionId(config.eligibleOptionIds, ticket.option.id.value)) return
+    const config = resolveBridgeConfigForTicket(ticket)
+    if (!config) return
 
     const now = new Date().toISOString()
     let state = createInitialBridgeState(channel.id, config.targetGroupKey, creator.id, creator.id, now)
@@ -1668,7 +1952,12 @@ opendiscord.events.get("onButtonResponderLoad").listen((buttons) => {
             return cancel()
         }
 
-        const config = getBridgeConfig()
+        const config = resolveRequiredBridgeConfigForTicket(ticket, "bridge-button")
+        if (!config) {
+            await replyInteraction(instance.interaction, BRIDGE_CANONICAL_PROFILE_REQUIRED_MESSAGE)
+            instance.didReply = true
+            return cancel()
+        }
         const authorization = await getBridgeInteractionAuthorization(ticket, config, instance.guild, instance.user.id)
         if (!authorization.authorized) {
             await replyInteraction(instance.interaction, getBridgeAuthorizationDeniedMessage())
@@ -1800,7 +2089,8 @@ opendiscord.events.get("onModalResponderLoad").listen((modals) => {
 opendiscord.events.get("afterTranscriptReady").listen(async (transcripts, ticket, channel, user) => {
     void transcripts
     void user
-    const config = getBridgeConfig()
+    const config = resolveRequiredBridgeConfigForTicket(ticket, "transcript-attached")
+    if (!config) return
     const existingState = bridgeTicketStateStore.get(channel.id)
     const transcriptUrl = await resolveTranscriptUrl(channel.id)
     const prepared = prepareTranscriptAttachedEvent(channel.id, transcriptUrl, existingState)

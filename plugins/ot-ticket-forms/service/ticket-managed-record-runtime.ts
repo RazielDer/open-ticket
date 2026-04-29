@@ -2,6 +2,7 @@ import * as discord from "discord.js"
 
 import type { OTFormsCapturedAnswer, OTFormsDraftState } from "../types/configDefaults"
 import type { OTFormsTicketDraftSnapshot } from "./forms-model"
+import { cloneOTFormsCapturedAnswers } from "./answer-runtime"
 
 const MAX_EMBED_SIZE = 6000
 const MAX_EMBED_FIELDS = 25
@@ -79,9 +80,6 @@ export function rebindManagedRecordSnapshot(
         updatedAt: options.updatedAt,
         completedAt: options.completedAt,
         managedRecordMessageId: options.managedRecordMessageId,
-        answers: options.answers.map((entry) => ({
-            question: { ...entry.question },
-            answer: entry.answer
-        }))
+        answers: cloneOTFormsCapturedAnswers(options.answers)
     }
 }

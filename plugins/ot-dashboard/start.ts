@@ -54,7 +54,21 @@ opendiscord.events.get("onReadyForUsage").listen(() => {
   refreshDashboardRuntimeSnapshot("onReadyForUsage")
 })
 
-const { app } = createDashboardApp({ projectRoot, pluginRoot, configOverride: config })
+const { app, context } = createDashboardApp({ projectRoot, pluginRoot, configOverride: config })
+installDashboardRuntimeApi(config, {
+  async recordAuditEvent(event) {
+    await context.authStore.recordAuditEvent({
+      sessionScope: event.sessionScope ?? null,
+      sessionId: event.sessionId ?? null,
+      actor: event.actor ?? null,
+      target: event.target ?? null,
+      outcome: event.outcome ?? null,
+      reason: event.reason ?? null,
+      details: event.details ?? {},
+      eventType: event.eventType
+    })
+  }
+})
 
 app.listen(config.port, config.host, () => {
   const basePath = config.basePath === "/" ? "/" : `${config.basePath}/`

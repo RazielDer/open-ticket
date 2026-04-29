@@ -92,3 +92,91 @@ test("transcript editor template and route model keep transcript copy locale-bac
     assert.equal(pageRouteSource.includes(routeSnippet), true, `expected transcript page route source to include: ${routeSnippet}`)
   }
 })
+
+test("ticket detail template and model keep extended operation copy locale-backed", () => {
+  const templateSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "public", "views", "sections", "ticket-detail.ejs"),
+    "utf8"
+  )
+  const modelSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "server", "ticket-workbench.ts"),
+    "utf8"
+  )
+  const runtimeBridgeSource = fs.readFileSync(
+    path.join(projectRoot, "plugins", "ot-dashboard", "server", "runtime-bridge.ts"),
+    "utf8"
+  )
+
+  for (const phrase of [
+    "<strong>Priority:</strong>",
+    "<strong>Topic:</strong>",
+    "Operator workflows",
+    "Current creator:",
+    "Original applicant:",
+    "Pin, unpin, and freeform rename remain Discord-only actions in this packet.",
+    "Original applicant authority remains with",
+    "This ticket route has no same-owner same-transport move targets. Use escalate for ownership-transfer routes.",
+    "Choose a same-owner same-transport move target before moving this ticket.",
+    "Choose a valid move target before moving this ticket.",
+    "Ticket moved.",
+    "Choose a different eligible creator before transferring this ticket.",
+    "Ticket creator transferred.",
+    "Choose a valid user participant before updating this ticket.",
+    "Selected user is already a participant.",
+    "Selected user is not a participant.",
+    "The current ticket creator cannot be removed as a participant.",
+    "Ticket participant added.",
+    "Ticket participant removed.",
+    "Choose a valid priority before updating this ticket.",
+    "Choose a configured Open Ticket priority before updating this ticket.",
+    "Ticket priority updated.",
+    "Enter a ticket topic before updating this ticket.",
+    "Ticket topic updated.",
+    "Pin this channel ticket through the Open Ticket runtime action.",
+    "Unpin this channel ticket through the Open Ticket runtime action.",
+    "Rename this ticket channel through the Open Ticket runtime action.",
+    "Enter a ticket channel name before renaming this ticket.",
+    "The Open Ticket rename action is unavailable in the current runtime."
+  ]) {
+    assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase) || runtimeBridgeSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
+  }
+
+  for (const localeCall of [
+    't("tickets.detail.operatorWorkflowsTitle")',
+    't("tickets.detail.facts.priority")',
+    't("tickets.detail.facts.topic")',
+    't("tickets.detail.facts.currentCreator")',
+    't("tickets.detail.facts.originalApplicant")',
+    't(`tickets.detail.actionCopy.${key}.title`)',
+    't("tickets.detail.actions.renameNameLabel")',
+    't("tickets.detail.actions.renameNamePlaceholder")',
+    '"tickets.detail.warnings.creatorTransfer"',
+    '"tickets.detail.availability.noSameOwnerMoveTargets"',
+    '"tickets.detail.availability.pinUnsupportedTransport"',
+    '"tickets.detail.availability.ticketAlreadyPinned"',
+    '"tickets.detail.availability.ticketNotPinned"',
+    '"tickets.detail.availability.renameUnavailable"',
+    '"tickets.detail.actionResults.moveMissingTarget"',
+    '"tickets.detail.actionResults.moveInvalidTarget"',
+    '"tickets.detail.actionResults.moveSuccess"',
+    '"tickets.detail.actionResults.transferMissingCreator"',
+    '"tickets.detail.actionResults.transferSuccess"',
+    '"tickets.detail.actionResults.participantInvalidUser"',
+    '"tickets.detail.actionResults.participantAlreadyPresent"',
+    '"tickets.detail.actionResults.participantNotPresent"',
+    '"tickets.detail.actionResults.participantCreatorRemoveDenied"',
+    '"tickets.detail.actionResults.participantAddSuccess"',
+    '"tickets.detail.actionResults.participantRemoveSuccess"',
+    '"tickets.detail.actionResults.priorityInvalid"',
+    '"tickets.detail.actionResults.priorityUnconfigured"',
+    '"tickets.detail.actionResults.prioritySuccess"',
+    '"tickets.detail.actionResults.topicMissing"',
+    '"tickets.detail.actionResults.topicSuccess"',
+    '"tickets.detail.actionResults.pinSuccess"',
+    '"tickets.detail.actionResults.unpinSuccess"',
+    '"tickets.detail.actionResults.renameMissingName"',
+    '"tickets.detail.actionResults.renameSuccess"'
+  ]) {
+    assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall) || runtimeBridgeSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
+  }
+})

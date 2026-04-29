@@ -1,5 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import path from "node:path"
 
 import {
     ODTICKET_PLATFORM_METADATA_IDS,
@@ -78,9 +80,9 @@ test("ticket metadata helper returns the exact transcript metadata keys in the l
                 [ODTICKET_PLATFORM_METADATA_IDS.assignmentStrategy]: "round_robin",
                 [ODTICKET_PLATFORM_METADATA_IDS.firstStaffResponseAt]: 123,
                 [ODTICKET_PLATFORM_METADATA_IDS.resolvedAt]: 456,
-                [ODTICKET_PLATFORM_METADATA_IDS.awaitingUserState]: "awaiting_user",
+                [ODTICKET_PLATFORM_METADATA_IDS.awaitingUserState]: "waiting",
                 [ODTICKET_PLATFORM_METADATA_IDS.awaitingUserSince]: 789,
-                [ODTICKET_PLATFORM_METADATA_IDS.closeRequestState]: "pending",
+                [ODTICKET_PLATFORM_METADATA_IDS.closeRequestState]: "requested",
                 [ODTICKET_PLATFORM_METADATA_IDS.closeRequestBy]: "staff-1",
                 [ODTICKET_PLATFORM_METADATA_IDS.closeRequestAt]: 999,
                 [ODTICKET_PLATFORM_METADATA_IDS.integrationProfileId]: "integration-1",
@@ -101,9 +103,9 @@ test("ticket metadata helper returns the exact transcript metadata keys in the l
         assignmentStrategy: "round_robin",
         firstStaffResponseAt: 123,
         resolvedAt: 456,
-        awaitingUserState: "awaiting_user",
+        awaitingUserState: "waiting",
         awaitingUserSince: 789,
-        closeRequestState: "pending",
+        closeRequestState: "requested",
         closeRequestBy: "staff-1",
         closeRequestAt: 999,
         integrationProfileId: "integration-1",
@@ -128,4 +130,16 @@ test("html transcript rendering accepts additive ticket.metadata without changin
     const html = renderTranscriptHtml(document)
     assert.match(html, /legacy-ticket/)
     assert.match(html, /hello/)
+})
+
+test("slice 008 transcript contracts accept guild text-based channel inputs and preserve transport metadata", () => {
+    const root = process.cwd()
+    const transcriptCore = fs.readFileSync(path.resolve(root, "src", "core", "api", "openticket", "transcript.ts"), "utf8")
+    const createTranscript = fs.readFileSync(path.resolve(root, "src", "actions", "createTranscript.ts"), "utf8")
+    const documentBuilder = fs.readFileSync(path.resolve(root, "plugins", "ot-html-transcripts", "build", "document-builder.ts"), "utf8")
+
+    assert.equal(transcriptCore.includes("channel:discord.GuildTextBasedChannel"), true)
+    assert.equal(createTranscript.includes("!channel.isTextBased() || channel.isDMBased()"), true)
+    assert.equal(documentBuilder.includes("channel: discord.GuildTextBasedChannel"), true)
+    assert.equal(documentBuilder.includes("metadata: api.readTicketPlatformMetadataFromTicket(ticket)"), true)
 })

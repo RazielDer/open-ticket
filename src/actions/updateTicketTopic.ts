@@ -12,7 +12,7 @@ export const registerActions = async () => {
     opendiscord.actions.get("opendiscord:update-ticket-topic").workers.add([
         new api.ODWorker("opendiscord:update-ticket-topic",2,async (instance,params,source,cancel) => {
             const {guild,channel,user,ticket,newTopic} = params
-            if (channel.isThread() || !(channel instanceof discord.TextChannel)) throw new api.ODSystemError("Unable to set topic of ticket! Open Ticket doesn't support threads!")
+            if (channel.isDMBased()) throw new api.ODSystemError("Unable to set topic of ticket outside a guild text channel!")
 
             const oldTopic = ticket.get("opendiscord:topic").value
             if (newTopic) await opendiscord.events.get("onTicketTopicChange").emit([ticket,user,channel,oldTopic,newTopic])
@@ -40,7 +40,9 @@ export const registerActions = async () => {
             if (generalConfig.data.system.channelTopic.showParticipants) channelTopics.push("**"+lang.getTranslation("params.uppercase.participants")+":** "+ticket.get("opendiscord:participants").value.map((p) => (p.type == "user") ? discord.userMention(p.id) : discord.roleMention(p.id)).join(", "))
 
             //update channel
-            channel.setTopic(channelTopics.join(" • "),"Topic Changed")
+            if (!channel.isThread() && channel instanceof discord.TextChannel){
+                channel.setTopic(channelTopics.join(" • "),"Topic Changed")
+            }
 
             //reply with new message
             if (params.sendMessage && newTopic) await channel.send((await opendiscord.builders.messages.getSafe("opendiscord:topic-set").build(source,{guild,channel,user,ticket,topic:newTopic})).message)

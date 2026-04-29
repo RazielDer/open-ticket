@@ -984,7 +984,7 @@ test("seeded owners can bootstrap admin access while non-mapped members cannot s
   assert.match(memberLocation, /returnTo=%2Fdash%2Fadmin/)
 })
 
-test("editors stay inside visual workspaces while reviewers stay off the admin host", async (t) => {
+test("editors get ticket queue home without admin setup while reviewers stay inside quality review", async (t) => {
   const runtime = await startTestServer()
   t.after(async () => {
     await stopTestServer(runtime)
@@ -998,8 +998,20 @@ test("editors stay inside visual workspaces while reviewers stay off the admin h
   await reviewerCompleted.response.arrayBuffer()
 
   assert.equal(reviewerCompleted.response.status, 302)
-  assert.match(decodeURIComponent(reviewerLocation), /Your Discord account does not currently have admin-host access\./)
-  assert.match(reviewerLocation, /returnTo=%2Fdash%2Fadmin/)
+  assert.equal(reviewerLocation, "/dash/admin/quality-review")
+  const reviewerReview = await fetch(`${runtime.baseUrl}/dash/admin/quality-review`, {
+    headers: { cookie: reviewerCompleted.cookie }
+  })
+  const reviewerReviewHtml = await reviewerReview.text()
+  assert.equal(reviewerReview.status, 200)
+  assert.match(reviewerReviewHtml, /Quality review workspace/)
+  const reviewerTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
+    headers: { cookie: reviewerCompleted.cookie },
+    redirect: "manual"
+  })
+  await reviewerTickets.arrayBuffer()
+  assert.equal(reviewerTickets.status, 302)
+  assert.equal(reviewerTickets.headers.get("location"), "/dash/admin/quality-review")
 
   const { cookie } = await login(runtime, "editor-user", "/dash/visual/options")
   const optionsResponse = await fetch(`${runtime.baseUrl}/dash/visual/options`, {
@@ -1025,8 +1037,16 @@ test("editors stay inside visual workspaces while reviewers stay off the admin h
   await questionsResponse.arrayBuffer()
   assert.equal(questionsResponse.status, 200)
 
+  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, {
+    headers: { cookie }
+  })
+  const editorHomeHtml = await editorHome.text()
+  assert.equal(editorHome.status, 200)
+  assert.match(editorHomeHtml, /Ticket Queue/)
+  assert.doesNotMatch(editorHomeHtml, /Setup areas/)
+  assert.doesNotMatch(editorHomeHtml, /Quality review/)
+
   const disallowedGetTargets = [
-    `${runtime.baseUrl}/dash/admin`,
     `${runtime.baseUrl}/dash/visual/general`,
     `${runtime.baseUrl}/dash/visual/transcripts`,
     `${runtime.baseUrl}/dash/config/general`,
@@ -1034,7 +1054,8 @@ test("editors stay inside visual workspaces while reviewers stay off the admin h
     `${runtime.baseUrl}/dash/admin/plugins`,
     `${runtime.baseUrl}/dash/admin/evidence`,
     `${runtime.baseUrl}/dash/admin/security`,
-    `${runtime.baseUrl}/dash/admin/advanced`
+    `${runtime.baseUrl}/dash/admin/advanced`,
+    `${runtime.baseUrl}/dash/admin/quality-review`
   ]
 
   for (const target of disallowedGetTargets) {
@@ -1709,7 +1730,7 @@ test("authenticated admin home renders the beginner-first nav and keeps advanced
   assert.match(html, /aria-label="Primary navigation"/)
   assert.match(html, /href="\/dash\/admin"[^>]*>Home</)
   assert.doesNotMatch(html, /href="\/dash\/admin\/configs"[^>]*>Setup</)
-  assert.doesNotMatch(html, /href="\/dash\/admin\/tickets"[^>]*>/)
+  assert.match(html, /href="\/dash\/admin\/tickets"[^>]*>Tickets</)
   assert.match(html, /href="\/dash\/admin\/transcripts"[^>]*>Transcripts</)
   assert.match(html, /href="\/dash\/admin\/plugins"[^>]*>Add-ons</)
   assert.match(html, /href="\/dash\/admin\/advanced"[^>]*>Advanced</)
@@ -1729,15 +1750,15 @@ test("authenticated admin home renders the beginner-first nav and keeps advanced
   assert.doesNotMatch(html, /class="status-strip tone-/)
   assert.match(html, /\/dash\/admin\/configs/)
   assert.match(html, /\/dash\/admin\/plugins/)
-  assert.doesNotMatch(html, /\/dash\/admin\/tickets/)
+  assert.match(html, /\/dash\/admin\/tickets/)
 
-  const ticketsRedirectResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
-    headers: { cookie },
-    redirect: "manual"
+  const ticketsResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, {
+    headers: { cookie }
   })
-  await ticketsRedirectResponse.arrayBuffer()
-  assert.equal(ticketsRedirectResponse.status, 302)
-  assert.equal(ticketsRedirectResponse.headers.get("location"), "/dash/admin")
+  const ticketsHtml = await ticketsResponse.text()
+  assert.equal(ticketsResponse.status, 200)
+  assert.match(ticketsHtml, /Ticket workbench/)
+  assert.match(ticketsHtml, /Ticket inventory is unavailable/)
 
   const advancedResponse = await fetch(`${runtime.baseUrl}/dash/admin/advanced`, {
     headers: { cookie }

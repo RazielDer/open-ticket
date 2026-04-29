@@ -179,7 +179,7 @@ export interface ODTicketIds {
     "opendiscord:for-deletion":ODTicketData<boolean>,
 
     "opendiscord:category":ODTicketData<string|null>,
-    "opendiscord:category-mode":ODTicketData<null|"normal"|"closed"|"backup"|"claimed">,
+    "opendiscord:category-mode":ODTicketData<null|"normal"|"closed"|"backup"|"overflow"|"claimed">,
     
     "opendiscord:autoclose-enabled":ODTicketData<boolean>,
     "opendiscord:autoclose-hours":ODTicketData<number>,

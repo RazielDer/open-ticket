@@ -1,4 +1,7 @@
 import type { OTFormsCapturedAnswer, OTFormsDraftState, OTForms_Question } from "../types/configDefaults"
+import {
+    cloneOTFormsCapturedAnswer
+} from "./answer-runtime"
 
 export type OTFormsPostSaveAction = "auto_advance_question" | "continue_prompt" | "finalize"
 
@@ -9,17 +12,11 @@ export function mergeDraftAnswers(
     const merged = new Map<number, OTFormsCapturedAnswer>()
 
     for (const entry of existing) {
-        merged.set(entry.question.position, {
-            question: { ...entry.question },
-            answer: entry.answer
-        })
+        merged.set(entry.question.position, cloneOTFormsCapturedAnswer(entry))
     }
 
     for (const entry of incoming) {
-        merged.set(entry.question.position, {
-            question: { ...entry.question },
-            answer: entry.answer
-        })
+        merged.set(entry.question.position, cloneOTFormsCapturedAnswer(entry))
     }
 
     return [...merged.values()].sort((left, right) => left.question.position - right.question.position)
@@ -32,7 +29,11 @@ export function resolveDraftResumeQuestionIndex(
 ): number {
     if (draftState == "completed") return 0
 
-    const answeredPositions = new Set(answers.map((entry) => entry.question.position))
+    const answeredPositions = new Set(
+        answers
+            .filter((entry) => typeof entry.answer == "string" && entry.answer.trim().length > 0)
+            .map((entry) => entry.question.position)
+    )
     for (let index = 0; index < questions.length; index++) {
         if (!answeredPositions.has(questions[index].position)) {
             return index

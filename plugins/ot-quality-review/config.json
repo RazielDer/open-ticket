@@ -1,0 +1,12 @@
+{
+    "rawFeedbackRetentionDays":90,
+    "maxMirroredFileBytes":26214400,
+    "maxMirroredSessionBytes":262144000,
+    "notificationsEnabled":false,
+    "deliveryChannelIds":[],
+    "reminderCheckMinutes":60,
+    "overdueReminderCooldownHours":24,
+    "digestEnabled":false,
+    "digestHourUtc":14,
+    "digestMaxTickets":10
+}

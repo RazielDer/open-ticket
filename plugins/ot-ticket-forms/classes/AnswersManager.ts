@@ -18,12 +18,11 @@ import {
     rebindManagedRecordSnapshot,
     splitManagedRecordFields
 } from "../service/ticket-managed-record-runtime";
+import { cloneOTFormsCapturedAnswers } from "../service/answer-runtime";
+import { toRicherMessageEditPayload } from "../../../src/core/api/openticket/richer-message";
 
 function cloneAnswers(answers: readonly OTFormsCapturedAnswer[]): OTFormsCapturedAnswer[] {
-    return answers.map((entry) => ({
-        question: { ...entry.question },
-        answer: entry.answer
-    }));
+    return cloneOTFormsCapturedAnswers(answers);
 }
 
 function resolveDraftKey(
@@ -213,22 +212,19 @@ export class OTForms_AnswersManager {
         }
 
         if (!this._message) return;
-        await this._message.edit(
-            (
-                await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(
-                    this.source,
-                    {
-                        formId: this.formId,
-                        formInstanceId: this.formInstanceId,
-                        sessionId: this.sessionId,
-                        type: this._type,
-                        currentPageNumber: pageNumber,
-                        totalPages: this.pages.length,
-                        currentPage: this.pages[pageNumber - 1]
-                    }
-                )
-            ).message
+        const builtMessage = await opendiscord.builders.messages.getSafe("ot-ticket-forms:answers-message").build(
+            this.source,
+            {
+                formId: this.formId,
+                formInstanceId: this.formInstanceId,
+                sessionId: this.sessionId,
+                type: this._type,
+                currentPageNumber: pageNumber,
+                totalPages: this.pages.length,
+                currentPage: this.pages[pageNumber - 1]
+            }
         );
+        await this._message.edit(toRicherMessageEditPayload(builtMessage.message as discord.MessageCreateOptions));
         await this.save();
     }
 
@@ -375,7 +371,8 @@ export class OTForms_AnswersManager {
             answers: this._answers.map((entry) => ({
                 position: entry.question.position,
                 question: entry.question.question,
-                answer: entry.answer
+                answer: entry.answer,
+                answerData: entry.answerData ?? null
             }))
         });
     }

@@ -1,4 +1,4 @@
-export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "transcripts"
+export type ManagedConfigId = "general" | "options" | "panels" | "questions" | "support-teams" | "integration-profiles" | "ai-assist-profiles" | "knowledge-sources" | "transcripts"
 
 export interface ManagedConfigDefinition {
   id: ManagedConfigId
@@ -50,6 +50,46 @@ export const MANAGED_CONFIGS: ManagedConfigDefinition[] = [
     titleKey: "admin.cards.questions.title",
     descriptionKey: "admin.cards.questions.description",
     icon: "help",
+    kind: "array"
+  },
+  {
+    id: "support-teams",
+    fileName: "support-teams.json",
+    visualPath: "/visual/support-teams",
+    rawPath: "/config/support-teams",
+    titleKey: "admin.cards.supportTeams.title",
+    descriptionKey: "admin.cards.supportTeams.description",
+    icon: "users",
+    kind: "array"
+  },
+  {
+    id: "integration-profiles",
+    fileName: "integration-profiles.json",
+    visualPath: "/config/integration-profiles",
+    rawPath: "/config/integration-profiles",
+    titleKey: "admin.cards.integrationProfiles.title",
+    descriptionKey: "admin.cards.integrationProfiles.description",
+    icon: "plug",
+    kind: "array"
+  },
+  {
+    id: "ai-assist-profiles",
+    fileName: "ai-assist-profiles.json",
+    visualPath: "/config/ai-assist-profiles",
+    rawPath: "/config/ai-assist-profiles",
+    titleKey: "admin.cards.aiAssistProfiles.title",
+    descriptionKey: "admin.cards.aiAssistProfiles.description",
+    icon: "sparkles",
+    kind: "array"
+  },
+  {
+    id: "knowledge-sources",
+    fileName: "knowledge-sources.json",
+    visualPath: "/config/knowledge-sources",
+    rawPath: "/config/knowledge-sources",
+    titleKey: "admin.cards.knowledgeSources.title",
+    descriptionKey: "admin.cards.knowledgeSources.description",
+    icon: "book-open",
     kind: "array"
   },
   {
