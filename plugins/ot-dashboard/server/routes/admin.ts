@@ -163,6 +163,16 @@ function ticketWorkbenchReturnToViewId(href: string) {
   }
 }
 
+function redactTicketWorkbenchFreeTextReturnTo(href: string) {
+  try {
+    const url = new URL(`http://dashboard.local${href}`)
+    url.searchParams.delete("q")
+    return `${url.pathname}${url.search}`
+  } catch {
+    return href
+  }
+}
+
 async function sanitizeAuthorizedTicketWorkbenchReturnTo(
   basePath: string,
   runtimeBridge: DashboardRuntimeBridge,
@@ -1998,10 +2008,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const actor = access?.identity
     const actorUserId = actor?.userId || ""
     const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
     const format = parseDashboardExportFormat(req.body?.format)
     if (access?.tier !== "admin") return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
     if (!format) {
-      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
+      return res.redirect(appendAlertQuery(releaseReturnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
     }
     try {
       const model = await buildTicketWorkbenchWorkspaceModel(
@@ -2036,7 +2047,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           ...getFullTicketWorkbenchExportAuditDetails(model, format)
         }
       })
-      return res.redirect(redirectWithPreparedExport(returnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
+      return res.redirect(redirectWithPreparedExport(releaseReturnTo, "success", i18n.t("routeMessages.preparedExportCreated"), record.exportId))
     } catch {
       await recordAdminAuditEvent(context, req, actor, {
         eventType: "prepared-export-created",
@@ -2045,7 +2056,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         reason: "ticket-workbench-export",
         details: { format }
       })
-      return res.redirect(appendAlertQuery(returnTo, "danger", i18n.t("routeMessages.exportFailed")))
+      return res.redirect(appendAlertQuery(releaseReturnTo, "danger", i18n.t("routeMessages.exportFailed")))
     }
   })
 
@@ -2238,9 +2249,10 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const actor = access?.identity
     const actorUserId = actor?.userId || ""
     const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const releaseReturnTo = redactTicketWorkbenchFreeTextReturnTo(returnTo)
     const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(req.params.ticketId)}`)
     const redirectToDetail = (status: string, message: string, exportId?: string | null) => {
-      const params = new URLSearchParams({ returnTo })
+      const params = new URLSearchParams({ returnTo: releaseReturnTo })
       const target = `${detailHref}?${params.toString()}`
       return redirectWithPreparedExport(target, status, message, exportId)
     }

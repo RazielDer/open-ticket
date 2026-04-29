@@ -2823,9 +2823,20 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
   await prepared.arrayBuffer()
   assert.equal(prepared.status, 302)
   const location = String(prepared.headers.get("location"))
-  const exportId = new URL(`http://local${location}`).searchParams.get("exportId")
+  const locationUrl = new URL(`http://local${location}`)
+  const exportId = locationUrl.searchParams.get("exportId")
   assert.match(location, /^\/dash\/admin\/tickets\?/)
+  assert.equal(locationUrl.searchParams.get("q"), null)
+  assert.doesNotMatch(location, new RegExp(`q=${search}`))
   assert.ok(exportId?.startsWith("dexp_"))
+  const releaseAffordance = await fetch(`${runtime.baseUrl}${location}`, {
+    headers: { cookie: admin.cookie }
+  })
+  const releaseAffordanceHtml = await releaseAffordance.text()
+  assert.equal(releaseAffordance.status, 200)
+  assert.match(releaseAffordanceHtml, /Download prepared export/)
+  assert.doesNotMatch(releaseAffordanceHtml, new RegExp(`name="q" value="${search}"`))
+  assert.doesNotMatch(releaseAffordanceHtml, new RegExp(`<strong>Search:<\\/strong>\\s*${search}`))
 
   const release = await fetch(`${runtime.baseUrl}/dash/admin/exports/${exportId}`, {
     headers: { cookie: admin.cookie }
@@ -3740,12 +3751,16 @@ test("prepared analytics and ticket-detail exports release once with privacy-saf
     body: new URLSearchParams({
       csrfToken: detailCsrf,
       format: "json",
-      returnTo: "/dash/admin/tickets"
+      returnTo: "/dash/admin/tickets?q=secret-detail-query"
     })
   })
   await preparedDetail.arrayBuffer()
   assert.equal(preparedDetail.status, 302)
-  const detailExportId = new URL(`http://local${preparedDetail.headers.get("location")}`).searchParams.get("exportId")
+  const detailLocation = String(preparedDetail.headers.get("location"))
+  const detailLocationUrl = new URL(`http://local${detailLocation}`)
+  const detailExportId = detailLocationUrl.searchParams.get("exportId")
+  assert.doesNotMatch(detailLocation, /secret-detail-query/)
+  assert.equal(detailLocationUrl.searchParams.get("returnTo"), "/dash/admin/tickets")
   assert.ok(detailExportId?.startsWith("dexp_"))
   const detailRelease = await fetch(`${runtime.baseUrl}/dash/admin/exports/${detailExportId}`, {
     headers: { cookie: admin.cookie }
