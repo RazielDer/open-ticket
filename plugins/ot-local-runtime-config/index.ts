@@ -150,7 +150,7 @@ const createWhitelistOption = (): api.ODJsonConfig_DefaultOptionTicketType => ({
         cooldownMinutes:10
     },
     limits:{
-        enabled:false,
+        enabled:true,
         globalMaximum:20,
         userMaximum:1
     },

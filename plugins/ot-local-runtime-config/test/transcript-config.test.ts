@@ -21,3 +21,10 @@ test("local runtime bridge sanitizer wires canonical staff guild separately from
     assert.match(source, /bridge\.canonicalStaffGuildId/)
     assert.match(source, /trimEnv\("STAFF_GUILD_ID"\)/)
 })
+
+test("local runtime whitelist option keeps the bridge-required single active ticket limit", () => {
+    const sourcePath = path.resolve(process.cwd(), "plugins", "ot-local-runtime-config", "index.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+
+    assert.match(source, /limits:\{\s*enabled:true,\s*globalMaximum:20,\s*userMaximum:1\s*\}/s)
+})
