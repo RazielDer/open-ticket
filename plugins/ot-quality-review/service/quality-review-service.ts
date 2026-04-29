@@ -11,17 +11,21 @@ import {
 
 export const QUALITY_REVIEW_CASES_CATEGORY = "opendiscord:quality-review:cases"
 export const QUALITY_REVIEW_NOTES_CATEGORY = "opendiscord:quality-review:notes"
+export const QUALITY_REVIEW_NOTE_ADJUSTMENTS_CATEGORY = "opendiscord:quality-review:note-adjustments"
 export const QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY = "opendiscord:quality-review:raw-feedback"
 export const QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY = "opendiscord:quality-review:notification-state"
 
 export const QUALITY_REVIEW_STATES = ["unreviewed", "in_review", "resolved"] as const
-export const QUALITY_REVIEW_ACTIONS = ["set-state", "assign-owner", "clear-owner", "add-note"] as const
+export const QUALITY_REVIEW_RESOLUTION_OUTCOMES = ["action_taken", "coaching_needed", "dismissed", "no_action_needed"] as const
+export const QUALITY_REVIEW_ACTIONS = ["set-state", "assign-owner", "clear-owner", "add-note", "resolve-with-outcome", "correct-note", "redact-note"] as const
 
 export type OTQualityReviewState = (typeof QUALITY_REVIEW_STATES)[number]
+export type OTQualityReviewResolutionOutcome = (typeof QUALITY_REVIEW_RESOLUTION_OUTCOMES)[number]
 export type OTQualityReviewAction = (typeof QUALITY_REVIEW_ACTIONS)[number]
 export type OTQualityReviewRawFeedbackStorageStatus = "available" | "partial" | "expired"
 export type OTQualityReviewRawFeedbackListStatus = OTQualityReviewRawFeedbackStorageStatus | "none"
 export type OTQualityReviewRawAssetCaptureStatus = "mirrored" | "failed" | "expired"
+export type OTQualityReviewNoteAdjustmentMode = "corrected" | "redacted"
 
 export interface OTQualityReviewConfig {
     rawFeedbackRetentionDays: number
@@ -129,6 +133,8 @@ export interface OTQualityReviewCaseRecord {
     createdAt: number
     updatedAt: number
     resolvedAt: number | null
+    resolutionOutcome: OTQualityReviewResolutionOutcome | null
+    resolvedByUserId: string | null
     lastSignalAt: number
 }
 
@@ -139,6 +145,20 @@ export interface OTQualityReviewNoteRecord {
     authorLabel: string
     createdAt: number
     body: string
+    latestAdjustment?: OTQualityReviewNoteAdjustmentRecord | null
+    adjustmentHistory?: OTQualityReviewNoteAdjustmentRecord[]
+}
+
+export interface OTQualityReviewNoteAdjustmentRecord {
+    adjustmentId: string
+    noteId: string
+    ticketId: string
+    mode: OTQualityReviewNoteAdjustmentMode
+    actorUserId: string
+    actorLabel: string
+    createdAt: number
+    reason: string
+    replacementBody: string | null
 }
 
 export interface OTQualityReviewRawAssetRecord {
@@ -188,8 +208,11 @@ export interface OTQualityReviewCaseSummary {
     createdAt: number
     updatedAt: number
     resolvedAt: number | null
+    resolutionOutcome: OTQualityReviewResolutionOutcome | null
+    resolvedByUserId: string | null
     lastSignalAt: number
     noteCount: number
+    noteAdjustmentCount: number
     rawFeedbackStatus: OTQualityReviewRawFeedbackListStatus
     latestRawFeedbackSessionId: string | null
 }
@@ -207,6 +230,10 @@ export interface OTQualityReviewActionRequest {
     state?: OTQualityReviewState | string | null
     ownerUserId?: string | null
     note?: string | null
+    resolutionOutcome?: OTQualityReviewResolutionOutcome | string | null
+    noteId?: string | null
+    reason?: string | null
+    replacementBody?: string | null
     firstKnownAt?: number | null
     lastSignalAt?: number | null
 }
@@ -315,10 +342,12 @@ export class OTQualityReviewService {
     async restore() {
         const cases = await this.readCases()
         const notes = await this.readNotes()
+        const noteAdjustments = await this.readNoteAdjustments()
         const rawFeedback = await this.readRawFeedback()
         return {
             cases: cases.length,
             notes: notes.length,
+            noteAdjustments: noteAdjustments.length,
             rawFeedback: rawFeedback.length
         }
     }
@@ -569,17 +598,34 @@ export class OTQualityReviewService {
         return record
     }
 
-    async listDashboardQualityReviewCases(query: { tickets?: OTQualityReviewCaseSignal[] | null } = {}) {
+    async listDashboardQualityReviewCases(query: { tickets?: OTQualityReviewCaseSignal[] | null; includeStored?: boolean } = {}) {
         await this.sweepExpiredRawFeedback()
-        const casesByTicket = new Map((await this.readCases()).map((record) => [record.ticketId, record]))
+        const storedCases = await this.readCases()
+        const casesByTicket = new Map(storedCases.map((record) => [record.ticketId, record]))
         const notes = await this.readNotes()
+        const adjustments = await this.readNoteAdjustments()
         const rawFeedback = await this.readRawFeedback()
         const noteCounts = countNotesByTicket(notes)
+        const adjustmentCounts = countNoteAdjustmentsByTicket(adjustments)
         const rawBySession = new Map(rawFeedback.map((record) => [record.sessionId, record]))
         const signals = Array.isArray(query.tickets) ? query.tickets : []
+        const signalByTicket = new Map(signals.map((signal) => [normalizeString(signal.ticketId), signal]))
+        const sourceSignals = query.includeStored === true
+            ? [
+                ...signals,
+                ...storedCases
+                    .filter((record) => !signalByTicket.has(record.ticketId))
+                    .map((record) => ({
+                        ticketId: record.ticketId,
+                        firstKnownAt: record.createdAt,
+                        lastSignalAt: record.lastSignalAt,
+                        latestCompletedAnsweredSessionId: null
+                    }))
+            ]
+            : signals
 
         return {
-            cases: signals.map((signal) => {
+            cases: sourceSignals.map((signal) => {
                 const ticketId = normalizeString(signal.ticketId)
                 const latestSessionId = stringOrNull(signal.latestCompletedAnsweredSessionId)
                 const raw = latestSessionId ? rawBySession.get(latestSessionId) || null : null
@@ -587,6 +633,7 @@ export class OTQualityReviewService {
                     signal: { ...signal, ticketId },
                     stored: casesByTicket.get(ticketId) || null,
                     noteCount: noteCounts.get(ticketId) || 0,
+                    noteAdjustmentCount: adjustmentCounts.get(ticketId) || 0,
                     rawFeedbackStatus: latestSessionId ? raw?.storageStatus || "none" : "none",
                     latestRawFeedbackSessionId: raw?.sessionId || null
                 })
@@ -602,8 +649,12 @@ export class OTQualityReviewService {
         if (!normalizedTicketId) return null
         await this.sweepExpiredRawFeedback()
         const stored = await this.readCase(normalizedTicketId)
+        const adjustments = (await this.readNoteAdjustments())
+            .filter((record) => record.ticketId === normalizedTicketId)
+            .sort((left, right) => right.createdAt - left.createdAt || right.adjustmentId.localeCompare(left.adjustmentId))
         const notes = (await this.readNotes())
             .filter((record) => record.ticketId === normalizedTicketId)
+            .map((record) => projectNoteAdjustments(record, adjustments))
             .sort((left, right) => right.createdAt - left.createdAt || left.noteId.localeCompare(right.noteId))
         const rawFeedback = (await this.readRawFeedback())
             .filter((record) => record.ticketId === normalizedTicketId)
@@ -614,6 +665,7 @@ export class OTQualityReviewService {
             signal: { ...signal, ticketId: normalizedTicketId },
             stored,
             noteCount: notes.length,
+            noteAdjustmentCount: adjustments.length,
             rawFeedbackStatus: latestSessionId ? rawForLatest?.storageStatus || "none" : rawFeedback[0]?.storageStatus || "none",
             latestRawFeedbackSessionId: rawForLatest?.sessionId || rawFeedback[0]?.sessionId || null
         })
@@ -641,6 +693,7 @@ export class OTQualityReviewService {
             signal,
             stored: previous,
             noteCount: 0,
+            noteAdjustmentCount: 0,
             rawFeedbackStatus: "none",
             latestRawFeedbackSessionId: null
         })
@@ -651,20 +704,40 @@ export class OTQualityReviewService {
             createdAt: previous?.createdAt || effective.createdAt || now,
             updatedAt: now,
             resolvedAt: effective.resolvedAt,
+            resolutionOutcome: effective.resolutionOutcome,
+            resolvedByUserId: effective.resolvedByUserId,
             lastSignalAt: effective.lastSignalAt
         }
 
         if (input.action === "set-state") {
             const state = normalizeString(input.state)
             if (!isQualityReviewState(state)) return actionWarning("Unsupported quality review state.")
+            if (state === "resolved") return actionWarning("Resolved quality review cases require a resolution outcome.")
             const next: OTQualityReviewCaseRecord = {
                 ...base,
                 state,
-                resolvedAt: state === "resolved" ? now : null,
+                resolvedAt: null,
+                resolutionOutcome: null,
+                resolvedByUserId: null,
                 updatedAt: now
             }
             await this.database.set(QUALITY_REVIEW_CASES_CATEGORY, ticketId, next)
             return actionSuccess("Quality review state updated.")
+        }
+
+        if (input.action === "resolve-with-outcome") {
+            const resolutionOutcome = normalizeResolutionOutcome(input.resolutionOutcome)
+            if (!resolutionOutcome) return actionWarning("Resolution outcome is required.")
+            const next: OTQualityReviewCaseRecord = {
+                ...base,
+                state: "resolved",
+                resolvedAt: now,
+                resolutionOutcome,
+                resolvedByUserId: normalizeString(input.actorUserId) || "unknown",
+                updatedAt: now
+            }
+            await this.database.set(QUALITY_REVIEW_CASES_CATEGORY, ticketId, next)
+            return actionSuccess("Quality review resolved with outcome.")
         }
 
         if (input.action === "assign-owner") {
@@ -687,6 +760,33 @@ export class OTQualityReviewService {
             }
             await this.database.set(QUALITY_REVIEW_CASES_CATEGORY, ticketId, next)
             return actionSuccess("Quality review owner cleared.")
+        }
+
+        if (input.action === "correct-note" || input.action === "redact-note") {
+            const noteId = normalizeString(input.noteId)
+            const note = noteId ? await this.readNote(noteId) : null
+            if (!note || note.ticketId !== ticketId) return actionWarning("Quality review note is unavailable for this ticket.")
+            const reason = normalizeString(input.reason)
+            if (!reason) return actionWarning("Quality review note adjustment reason is required.")
+            const replacementBody = input.action === "correct-note" ? normalizeString(input.replacementBody) : ""
+            if (input.action === "correct-note") {
+                if (!replacementBody) return actionWarning("Corrected quality review note body is required.")
+                if (replacementBody.length > NOTE_MAX_LENGTH) return actionWarning(`Corrected quality review notes must be ${NOTE_MAX_LENGTH} characters or fewer.`)
+            }
+            const adjustment: OTQualityReviewNoteAdjustmentRecord = {
+                adjustmentId: this.randomId(),
+                noteId,
+                ticketId,
+                mode: input.action === "correct-note" ? "corrected" : "redacted",
+                actorUserId: normalizeString(input.actorUserId) || "unknown",
+                actorLabel: normalizeString(input.actorLabel) || normalizeString(input.actorUserId) || "Unknown actor",
+                createdAt: now,
+                reason,
+                replacementBody: input.action === "correct-note" ? replacementBody : null
+            }
+            await this.database.set(QUALITY_REVIEW_CASES_CATEGORY, ticketId, { ...base, updatedAt: now })
+            await this.database.set(QUALITY_REVIEW_NOTE_ADJUSTMENTS_CATEGORY, adjustment.adjustmentId, adjustment)
+            return actionSuccess(input.action === "correct-note" ? "Quality review note corrected." : "Quality review note redacted.")
         }
 
         const noteBody = normalizeString(input.note)
@@ -1064,6 +1164,7 @@ export class OTQualityReviewService {
         signal: OTQualityReviewCaseSignal
         stored: OTQualityReviewCaseRecord | null
         noteCount: number
+        noteAdjustmentCount: number
         rawFeedbackStatus: OTQualityReviewRawFeedbackListStatus
         latestRawFeedbackSessionId: string | null
     }): OTQualityReviewCaseSummary {
@@ -1083,8 +1184,11 @@ export class OTQualityReviewService {
             createdAt,
             updatedAt: input.stored?.updatedAt || createdAt,
             resolvedAt: resetResolvedCase ? null : storedResolvedAt,
+            resolutionOutcome: resetResolvedCase || input.stored?.state !== "resolved" ? null : normalizeResolutionOutcome(input.stored?.resolutionOutcome),
+            resolvedByUserId: resetResolvedCase || input.stored?.state !== "resolved" ? null : stringOrNull(input.stored?.resolvedByUserId),
             lastSignalAt,
             noteCount: input.noteCount,
+            noteAdjustmentCount: input.noteAdjustmentCount,
             rawFeedbackStatus: input.rawFeedbackStatus,
             latestRawFeedbackSessionId: input.latestRawFeedbackSessionId
         }
@@ -1164,6 +1268,13 @@ export class OTQualityReviewService {
         return isCaseRecord(value) ? value : null
     }
 
+    private async readNote(noteId: string) {
+        const value = typeof this.database.get === "function"
+            ? await this.database.get(QUALITY_REVIEW_NOTES_CATEGORY, noteId)
+            : (await this.readNotes()).find((record) => record.noteId === noteId) || null
+        return isNoteRecord(value) ? value : null
+    }
+
     private async readRawFeedbackRecord(sessionId: string) {
         const value = typeof this.database.get === "function"
             ? await this.database.get(QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY, sessionId)
@@ -1191,6 +1302,10 @@ export class OTQualityReviewService {
 
     private async readNotes() {
         return (await this.readCategory(QUALITY_REVIEW_NOTES_CATEGORY)).filter(isNoteRecord)
+    }
+
+    private async readNoteAdjustments() {
+        return (await this.readCategory(QUALITY_REVIEW_NOTE_ADJUSTMENTS_CATEGORY)).filter(isNoteAdjustmentRecord)
     }
 
     private async readRawFeedback() {
@@ -1412,6 +1527,15 @@ function isQualityReviewState(value: unknown): value is OTQualityReviewState {
     return (QUALITY_REVIEW_STATES as readonly string[]).includes(normalizeString(value))
 }
 
+function isQualityReviewResolutionOutcome(value: unknown): value is OTQualityReviewResolutionOutcome {
+    return (QUALITY_REVIEW_RESOLUTION_OUTCOMES as readonly string[]).includes(normalizeString(value))
+}
+
+function normalizeResolutionOutcome(value: unknown): OTQualityReviewResolutionOutcome | null {
+    const normalized = normalizeString(value)
+    return isQualityReviewResolutionOutcome(normalized) ? normalized : null
+}
+
 function stringOrNull(value: unknown) {
     const normalized = normalizeString(value)
     return normalized || null
@@ -1467,6 +1591,37 @@ function countNotesByTicket(notes: OTQualityReviewNoteRecord[]) {
     return counts
 }
 
+function countNoteAdjustmentsByTicket(adjustments: OTQualityReviewNoteAdjustmentRecord[]) {
+    const counts = new Map<string, number>()
+    for (const adjustment of adjustments) {
+        counts.set(adjustment.ticketId, (counts.get(adjustment.ticketId) || 0) + 1)
+    }
+    return counts
+}
+
+function projectNoteAdjustments(note: OTQualityReviewNoteRecord, adjustments: OTQualityReviewNoteAdjustmentRecord[]): OTQualityReviewNoteRecord {
+    const history = adjustments
+        .filter((adjustment) => adjustment.noteId === note.noteId && adjustment.ticketId === note.ticketId)
+        .sort((left, right) => right.createdAt - left.createdAt || right.adjustmentId.localeCompare(left.adjustmentId))
+    const latest = history[0] || null
+    if (!latest) {
+        return {
+            ...note,
+            latestAdjustment: null,
+            adjustmentHistory: []
+        }
+    }
+
+    return {
+        ...note,
+        body: latest.mode === "redacted"
+            ? "[Redacted quality review note]"
+            : latest.replacementBody || "",
+        latestAdjustment: latest,
+        adjustmentHistory: history
+    }
+}
+
 function safeMirrorFailureReason(error: unknown) {
     if (!(error instanceof Error)) return "Attachment mirror failed."
     if (error.message.includes("File byte limit")) return "File byte limit exceeded."
@@ -1504,6 +1659,8 @@ function isCaseRecord(value: unknown): value is OTQualityReviewCaseRecord {
         && typeof record.createdAt === "number"
         && typeof record.updatedAt === "number"
         && (typeof record.resolvedAt === "number" || record.resolvedAt === null)
+        && (record.resolutionOutcome === undefined || record.resolutionOutcome === null || isQualityReviewResolutionOutcome(record.resolutionOutcome))
+        && (record.resolvedByUserId === undefined || typeof record.resolvedByUserId === "string" || record.resolvedByUserId === null)
         && typeof record.lastSignalAt === "number"
     )
 }
@@ -1519,6 +1676,23 @@ function isNoteRecord(value: unknown): value is OTQualityReviewNoteRecord {
         && typeof record.authorLabel === "string"
         && typeof record.createdAt === "number"
         && typeof record.body === "string"
+    )
+}
+
+function isNoteAdjustmentRecord(value: unknown): value is OTQualityReviewNoteAdjustmentRecord {
+    const record = value as OTQualityReviewNoteAdjustmentRecord
+    return Boolean(
+        record
+        && typeof record === "object"
+        && typeof record.adjustmentId === "string"
+        && typeof record.noteId === "string"
+        && typeof record.ticketId === "string"
+        && (record.mode === "corrected" || record.mode === "redacted")
+        && typeof record.actorUserId === "string"
+        && typeof record.actorLabel === "string"
+        && typeof record.createdAt === "number"
+        && typeof record.reason === "string"
+        && (typeof record.replacementBody === "string" || record.replacementBody === null)
     )
 }
 

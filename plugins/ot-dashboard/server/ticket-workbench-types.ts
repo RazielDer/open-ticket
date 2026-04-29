@@ -4,6 +4,9 @@ export type DashboardTicketFeedbackStoredStatus = Exclude<DashboardTicketFeedbac
 export type DashboardTicketQueueState = "waiting_staff" | "owned" | "awaiting_user" | "close_requested" | "resolved"
 export type DashboardTicketQueueAttention = "first-response" | "unassigned" | "stale-owner" | "close-request" | "awaiting-user"
 export type DashboardQualityReviewState = "unreviewed" | "in_review" | "resolved"
+export type DashboardQualityReviewResolutionOutcome = "action_taken" | "coaching_needed" | "dismissed" | "no_action_needed"
+export type DashboardQualityReviewOutcomeFilter = "all" | "legacy-unclassified" | DashboardQualityReviewResolutionOutcome
+export type DashboardQualityReviewSupervisionStateFilter = "all" | "active" | DashboardQualityReviewState
 export type DashboardQualityReviewRawFeedbackStatus = "available" | "partial" | "expired" | "none"
 export type DashboardQualityReviewOwnerBucket = "mine" | "unassigned" | "other" | "resolved"
 export type DashboardQualityReviewOverdueKind = "unreviewed" | "in_review" | null
@@ -296,6 +299,7 @@ export interface DashboardQualityReviewCaseSignal {
 
 export interface DashboardQualityReviewCaseQuery {
   tickets: DashboardQualityReviewCaseSignal[]
+  includeStored?: boolean
 }
 
 export interface DashboardQualityReviewCaseSummary {
@@ -307,8 +311,11 @@ export interface DashboardQualityReviewCaseSummary {
   createdAt: number
   updatedAt: number
   resolvedAt: number | null
+  resolutionOutcome: DashboardQualityReviewResolutionOutcome | null
+  resolvedByUserId: string | null
   lastSignalAt: number
   noteCount: number
+  noteAdjustmentCount: number
   rawFeedbackStatus: DashboardQualityReviewRawFeedbackStatus
   latestRawFeedbackSessionId: string | null
   ownerBucket: DashboardQualityReviewOwnerBucket
@@ -325,6 +332,20 @@ export interface DashboardQualityReviewNoteRecord {
   authorLabel: string
   createdAt: number
   body: string
+  latestAdjustment?: DashboardQualityReviewNoteAdjustmentRecord | null
+  adjustmentHistory?: DashboardQualityReviewNoteAdjustmentRecord[]
+}
+
+export interface DashboardQualityReviewNoteAdjustmentRecord {
+  adjustmentId: string
+  noteId: string
+  ticketId: string
+  mode: "corrected" | "redacted"
+  actorUserId: string
+  actorLabel: string
+  createdAt: number
+  reason: string
+  replacementBody: string | null
 }
 
 export interface DashboardQualityReviewRawAssetRecord {
@@ -369,7 +390,7 @@ export interface DashboardQualityReviewCaseListResult {
   warnings: string[]
 }
 
-export type DashboardQualityReviewActionId = "set-state" | "assign-owner" | "clear-owner" | "add-note"
+export type DashboardQualityReviewActionId = "set-state" | "assign-owner" | "clear-owner" | "add-note" | "resolve-with-outcome" | "correct-note" | "redact-note"
 
 export interface DashboardQualityReviewActionRequest {
   ticketId: string
@@ -378,6 +399,10 @@ export interface DashboardQualityReviewActionRequest {
   state?: DashboardQualityReviewState | string | null
   ownerUserId?: string | null
   note?: string | null
+  resolutionOutcome?: DashboardQualityReviewResolutionOutcome | string | null
+  noteId?: string | null
+  reason?: string | null
+  replacementBody?: string | null
 }
 
 export interface DashboardQualityReviewActionResult {

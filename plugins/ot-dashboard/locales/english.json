@@ -1205,6 +1205,20 @@
         "actor": "Actor",
         "type": "Type"
       }
+    },
+    "supervision": {
+      "eyebrow": "Quality review supervision",
+      "headline": "Quality review supervision",
+      "subtitle": "Review outcome coverage and audited note adjustments inside the quality-review route family.",
+      "entryAction": "Supervision",
+      "queueAction": "Back to queue",
+      "workspaceTitle": "Supervision",
+      "workspaceBody": "Review resolved outcome coverage, ownership, and audited note adjustments without exposing raw feedback.",
+      "filtersTitle": "Supervision filters",
+      "filtersBody": "Filter by outcome, owner, and review state.",
+      "inventoryTitle": "Supervision cases",
+      "emptyTitle": "No supervision cases to show",
+      "emptyBody": "Try clearing filters or resolve cases with explicit outcomes."
     }
   },
   "tickets": {

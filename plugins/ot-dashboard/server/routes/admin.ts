@@ -88,6 +88,7 @@ import {
 import {
   buildDashboardQualityReviewDetailModel,
   buildDashboardQualityReviewListModel,
+  buildDashboardQualityReviewSupervisionModel,
   buildQualityReviewQueueHref,
   sanitizeQualityReviewReturnTo
 } from "../quality-review"
@@ -197,7 +198,13 @@ async function sanitizeAuthorizedTicketWorkbenchReturnTo(
 }
 
 function parseQualityReviewActionId(value: string): DashboardQualityReviewActionId | null {
-  return value === "set-state" || value === "assign-owner" || value === "clear-owner" || value === "add-note"
+  return value === "set-state"
+    || value === "assign-owner"
+    || value === "clear-owner"
+    || value === "add-note"
+    || value === "resolve-with-outcome"
+    || value === "correct-note"
+    || value === "redact-note"
     ? value
     : null
 }
@@ -1561,6 +1568,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   app.get(joinBasePath(basePath, "admin/quality-review"), adminGuard.page("quality.review"), async (req, res, next) => {
     try {
       const access = adminGuard.getAccess(res)
+      const canManage = Boolean(access && hasDashboardCapability(access, "quality.review.manage"))
       const model = await buildDashboardQualityReviewListModel({
         basePath,
         projectRoot: context.projectRoot,
@@ -1568,7 +1576,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         query: req.query as Record<string, unknown>,
         configService,
         runtimeBridge: qualityReviewRuntimeBridge,
-        actorUserId: access?.identity?.userId || ""
+        actorUserId: access?.identity?.userId || "",
+        canManage
       })
 
       renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
@@ -1582,6 +1591,37 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         pageClass: "page-quality-review",
         contentView: "sections/quality-review",
         qualityReview: model
+      }))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get(joinBasePath(basePath, "admin/quality-review/supervision"), adminGuard.page("quality.review.manage"), async (req, res, next) => {
+    try {
+      const access = adminGuard.getAccess(res)
+      const model = await buildDashboardQualityReviewSupervisionModel({
+        basePath,
+        currentHref: req.originalUrl || joinBasePath(basePath, "admin/quality-review/supervision"),
+        query: req.query as Record<string, unknown>,
+        runtimeBridge: qualityReviewRuntimeBridge,
+        actorUserId: access?.identity?.userId || ""
+      })
+
+      renderPage(res, "admin-shell", buildAdminShell(context, "quality-review", {
+        pageTitle: `Quality Review Supervision | ${brand.title}`,
+        pageEyebrow: i18n.t("qualityReview.supervision.eyebrow"),
+        pageHeadline: i18n.t("qualityReview.supervision.headline"),
+        pageSubtitle: i18n.t("qualityReview.supervision.subtitle"),
+        pageAlert: getAlert(req),
+        summaryCards: model.summaryCards,
+        heroActions: [
+          { href: model.queueHref, label: i18n.t("qualityReview.supervision.queueAction"), variant: "secondary" }
+        ],
+        hidePageIntro: true,
+        pageClass: "page-quality-review-supervision",
+        contentView: "sections/quality-review-supervision",
+        qualityReviewSupervision: model
       }))
     } catch (error) {
       next(error)
@@ -1668,6 +1708,17 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       }
     }
 
+    if (action === "set-state" && req.body?.state === "resolved") {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "quality-review-action",
+        target: req.params.ticketId,
+        outcome: "failure",
+        reason: "resolution-outcome-required",
+        details: { action, actorUserId }
+      })
+      return res.redirect(redirectToDetail("warning", "Resolved quality review cases require a resolution outcome."))
+    }
+
     const result = typeof runtimeBridge.runQualityReviewAction === "function"
       ? await runtimeBridge.runQualityReviewAction({
           ticketId: req.params.ticketId,
@@ -1675,7 +1726,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           actorUserId,
           state: typeof req.body?.state === "string" ? req.body.state : undefined,
           ownerUserId: typeof req.body?.ownerUserId === "string" ? req.body.ownerUserId : undefined,
-          note: typeof req.body?.note === "string" ? req.body.note : undefined
+          note: typeof req.body?.note === "string" ? req.body.note : undefined,
+          resolutionOutcome: typeof req.body?.resolutionOutcome === "string" ? req.body.resolutionOutcome : undefined,
+          noteId: typeof req.body?.noteId === "string" ? req.body.noteId : undefined,
+          reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+          replacementBody: typeof req.body?.replacementBody === "string" ? req.body.replacementBody : undefined
         })
       : { ok: false, status: "warning" as const, message: "Quality review service is unavailable." }
 
@@ -1687,6 +1742,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       details: {
         action,
         actorUserId,
+        resolutionOutcome: typeof req.body?.resolutionOutcome === "string" ? req.body.resolutionOutcome : undefined,
+        noteId: typeof req.body?.noteId === "string" ? req.body.noteId : undefined,
         status: result.status,
         warnings: result.warnings || []
       }

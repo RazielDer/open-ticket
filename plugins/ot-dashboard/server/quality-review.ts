@@ -21,8 +21,11 @@ import type {
   DashboardQualityReviewRawFeedbackStatus,
   DashboardQualityReviewOwnerBucket,
   DashboardQualityReviewNotificationStatus,
+  DashboardQualityReviewOutcomeFilter,
   DashboardQualityReviewQueueSummary,
+  DashboardQualityReviewResolutionOutcome,
   DashboardQualityReviewState,
+  DashboardQualityReviewSupervisionStateFilter,
   DashboardQualityReviewOverdueKind,
   DashboardTicketTelemetrySignals,
   DashboardTicketTelemetrySnapshot,
@@ -36,6 +39,8 @@ export const QUALITY_REVIEW_REOPENED_FILTERS = ["all", "ever", "never"] as const
 export const QUALITY_REVIEW_STATUS_FILTERS = ["all", "open", "closed"] as const
 export const QUALITY_REVIEW_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
 export const QUALITY_REVIEW_STATE_FILTERS = ["active", "unreviewed", "in_review", "resolved", "all"] as const
+export const QUALITY_REVIEW_OUTCOME_FILTERS = ["all", "legacy-unclassified", "action_taken", "coaching_needed", "dismissed", "no_action_needed"] as const
+export const QUALITY_REVIEW_SUPERVISION_STATE_FILTERS = ["all", "active", "unreviewed", "in_review", "resolved"] as const
 export const QUALITY_REVIEW_RAW_FEEDBACK_FILTERS = ["all", "available", "partial", "expired", "none"] as const
 export const QUALITY_REVIEW_ATTENTION_FILTERS = ["all", "overdue"] as const
 export const QUALITY_REVIEW_SORTS = ["queue-priority", "signal-desc", "signal-asc", "opened-desc", "opened-asc"] as const
@@ -48,6 +53,8 @@ export type DashboardQualityReviewReopenedFilter = (typeof QUALITY_REVIEW_REOPEN
 export type DashboardQualityReviewStatusFilter = (typeof QUALITY_REVIEW_STATUS_FILTERS)[number]
 export type DashboardQualityReviewTransportFilter = (typeof QUALITY_REVIEW_TRANSPORT_FILTERS)[number]
 export type DashboardQualityReviewStateFilter = (typeof QUALITY_REVIEW_STATE_FILTERS)[number]
+export type DashboardQualityReviewOutcomeFilterValue = (typeof QUALITY_REVIEW_OUTCOME_FILTERS)[number]
+export type DashboardQualityReviewSupervisionStateFilterValue = (typeof QUALITY_REVIEW_SUPERVISION_STATE_FILTERS)[number]
 export type DashboardQualityReviewRawFeedbackFilter = (typeof QUALITY_REVIEW_RAW_FEEDBACK_FILTERS)[number]
 export type DashboardQualityReviewAttentionFilter = (typeof QUALITY_REVIEW_ATTENTION_FILTERS)[number]
 export type DashboardQualityReviewSort = (typeof QUALITY_REVIEW_SORTS)[number]
@@ -67,6 +74,7 @@ export interface DashboardQualityReviewQuery {
   assigneeId: string
   transport: DashboardQualityReviewTransportFilter
   reviewState: DashboardQualityReviewStateFilter
+  outcome: DashboardQualityReviewOutcomeFilter
   ownerId: string
   rawFeedback: DashboardQualityReviewRawFeedbackFilter
   attention: DashboardQualityReviewAttentionFilter
@@ -81,6 +89,7 @@ export interface DashboardQualityReviewQuery {
   statusOptions: Array<{ value: DashboardQualityReviewStatusFilter; label: string }>
   transportOptions: Array<{ value: DashboardQualityReviewTransportFilter; label: string }>
   reviewStateOptions: Array<{ value: DashboardQualityReviewStateFilter; label: string }>
+  outcomeOptions: Array<{ value: DashboardQualityReviewOutcomeFilter; label: string }>
   ownerOptions: Array<{ value: string; label: string }>
   rawFeedbackOptions: Array<{ value: DashboardQualityReviewRawFeedbackFilter; label: string }>
   attentionOptions: Array<{ value: DashboardQualityReviewAttentionFilter; label: string }>
@@ -141,6 +150,7 @@ export interface DashboardQualityReviewListItem {
   feedbackBadge: { label: string; tone: DashboardTone }
   reviewStateBadge: { label: string; tone: DashboardTone }
   rawFeedbackBadge: { label: string; tone: DashboardTone }
+  resolutionOutcomeBadge: { label: string; tone: DashboardTone }
   ownerBucketBadge: { label: string; tone: DashboardTone }
   overdueBadge: { label: string; tone: DashboardTone } | null
   reopenBadge: { label: string; tone: DashboardTone } | null
@@ -159,6 +169,8 @@ export interface DashboardQualityReviewListModel {
   warningMessage: string
   telemetryWarningMessage: string
   filterAction: string
+  supervisionHref: string
+  canManage: boolean
   clearFiltersHref: string
   currentHref: string
   request: DashboardQualityReviewQuery
@@ -178,6 +190,42 @@ export interface DashboardQualityReviewListModel {
   items: DashboardQualityReviewListItem[]
 }
 
+export interface DashboardQualityReviewSupervisionQuery {
+  outcome: DashboardQualityReviewOutcomeFilter
+  ownerId: string
+  state: DashboardQualityReviewSupervisionStateFilter
+  outcomeOptions: Array<{ value: DashboardQualityReviewOutcomeFilter; label: string }>
+  ownerOptions: Array<{ value: string; label: string }>
+  stateOptions: Array<{ value: DashboardQualityReviewSupervisionStateFilter; label: string }>
+  activeFilters: Array<{ label: string; value: string }>
+}
+
+export interface DashboardQualityReviewSupervisionRow {
+  ticketId: string
+  detailHref: string
+  stateBadge: { label: string; tone: DashboardTone }
+  outcomeBadge: { label: string; tone: DashboardTone }
+  ownerLabel: string
+  resolvedByLabel: string
+  updatedLabel: string
+  resolvedLabel: string
+  noteCount: number
+  noteAdjustmentCount: number
+}
+
+export interface DashboardQualityReviewSupervisionModel {
+  available: boolean
+  warningMessage: string
+  filterAction: string
+  clearFiltersHref: string
+  currentHref: string
+  queueHref: string
+  request: DashboardQualityReviewSupervisionQuery
+  summaryCards: DashboardSummaryCardInput[]
+  total: number
+  rows: DashboardQualityReviewSupervisionRow[]
+}
+
 export interface DashboardQualityReviewDetailModel {
   available: boolean
   warningMessage: string
@@ -193,11 +241,16 @@ export interface DashboardQualityReviewDetailModel {
   governanceFacts: Array<{ label: string; value: string }>
   notificationFacts: Array<{ label: string; value: string }>
   canManage: boolean
+  supervisionHref: string
   stateActionHref: string
+  resolveOutcomeActionHref: string
   assignOwnerActionHref: string
   clearOwnerActionHref: string
   addNoteActionHref: string
+  correctNoteActionHref: string
+  redactNoteActionHref: string
   ownerChoices: Array<{ value: string; label: string }>
+  resolutionOutcomeOptions: Array<{ value: DashboardQualityReviewResolutionOutcome; label: string }>
   rawFeedbackSessions: DashboardQualityReviewRawFeedbackSessionModel[]
   feedbackRows: Array<{ id: string; status: string; triggeredAt: string; completedAt: string; matched: boolean }>
   reopenRows: Array<{ id: string; occurredAt: string; actor: string; matched: boolean }>
@@ -425,6 +478,42 @@ function reviewStateBadge(state: DashboardQualityReviewState) {
   }
 }
 
+function resolutionOutcomeLabel(value: DashboardQualityReviewOutcomeFilter | DashboardQualityReviewResolutionOutcome | null) {
+  switch (value) {
+    case "action_taken": return "Action taken"
+    case "coaching_needed": return "Coaching needed"
+    case "dismissed": return "Dismissed"
+    case "no_action_needed": return "No action needed"
+    case "legacy-unclassified": return "Legacy unclassified"
+    default: return "All outcomes"
+  }
+}
+
+function resolutionOutcomeBadge(reviewCase: DashboardQualityReviewCaseSummary) {
+  if (reviewCase.state !== "resolved") {
+    return { label: "Unresolved", tone: "muted" as DashboardTone }
+  }
+  switch (reviewCase.resolutionOutcome) {
+    case "action_taken":
+      return { label: "Action taken", tone: "success" as DashboardTone }
+    case "coaching_needed":
+      return { label: "Coaching needed", tone: "warning" as DashboardTone }
+    case "dismissed":
+      return { label: "Dismissed", tone: "muted" as DashboardTone }
+    case "no_action_needed":
+      return { label: "No action needed", tone: "success" as DashboardTone }
+    default:
+      return { label: "Legacy unclassified", tone: "warning" as DashboardTone }
+  }
+}
+
+function resolutionOutcomeOptions(): Array<{ value: DashboardQualityReviewResolutionOutcome; label: string }> {
+  return ["action_taken", "coaching_needed", "dismissed", "no_action_needed"].map((value) => ({
+    value: value as DashboardQualityReviewResolutionOutcome,
+    label: resolutionOutcomeLabel(value as DashboardQualityReviewResolutionOutcome)
+  }))
+}
+
 function rawFeedbackLabel(value: DashboardQualityReviewRawFeedbackFilter | DashboardQualityReviewRawFeedbackStatus) {
   switch (value) {
     case "available": return "Raw feedback available"
@@ -509,6 +598,7 @@ function buildActiveFilters(query: Omit<DashboardQualityReviewQuery, "activeFilt
   if (query.status !== "all") filters.push({ label: "Status", value: statusLabel(query.status) })
   if (query.transport !== "all") filters.push({ label: "Transport", value: transportLabel(query.transport) })
   if (query.reviewState !== "active") filters.push({ label: "Review state", value: reviewStateLabel(query.reviewState) })
+  if (query.outcome !== "all") filters.push({ label: "Outcome", value: resolutionOutcomeLabel(query.outcome) })
   if (query.ownerId) filters.push({ label: "Owner", value: query.ownerId === "me" ? "Me" : query.ownerId === "unassigned" ? "Unassigned" : query.ownerId })
   if (query.rawFeedback !== "all") filters.push({ label: "Raw feedback", value: rawFeedbackLabel(query.rawFeedback) })
   if (query.attention !== "all") filters.push({ label: "Attention", value: attentionLabel(query.attention) })
@@ -543,6 +633,7 @@ export function parseDashboardQualityReviewQuery(
     assigneeId: normalizeString(query.assigneeId),
     transport: enumOrDefault(query.transport, QUALITY_REVIEW_TRANSPORT_FILTERS, "all"),
     reviewState: enumOrDefault(query.reviewState, QUALITY_REVIEW_STATE_FILTERS, "active"),
+    outcome: enumOrDefault(query.outcome, QUALITY_REVIEW_OUTCOME_FILTERS, "all"),
     ownerId: normalizeString(query.ownerId),
     rawFeedback: enumOrDefault(query.rawFeedback, QUALITY_REVIEW_RAW_FEEDBACK_FILTERS, "all"),
     attention: enumOrDefault(query.attention, QUALITY_REVIEW_ATTENTION_FILTERS, "all"),
@@ -557,6 +648,7 @@ export function parseDashboardQualityReviewQuery(
     statusOptions: QUALITY_REVIEW_STATUS_FILTERS.map((value) => ({ value, label: statusLabel(value) })),
     transportOptions: QUALITY_REVIEW_TRANSPORT_FILTERS.map((value) => ({ value, label: transportLabel(value) })),
     reviewStateOptions: QUALITY_REVIEW_STATE_FILTERS.map((value) => ({ value, label: reviewStateLabel(value) })),
+    outcomeOptions: QUALITY_REVIEW_OUTCOME_FILTERS.map((value) => ({ value, label: resolutionOutcomeLabel(value) })),
     ownerOptions: [
       { value: "", label: "Any owner" },
       { value: "me", label: "Assigned to me" },
@@ -584,6 +676,7 @@ function appendQualityReviewQuery(href: string, request: DashboardQualityReviewQ
     status: request.status,
     transport: request.transport,
     reviewState: request.reviewState,
+    outcome: request.outcome,
     rawFeedback: request.rawFeedback,
     attention: request.attention,
     sort: request.sort,
@@ -619,6 +712,7 @@ export function buildQualityReviewQueueHref(
     feedback: "all",
     reopened: "all",
     reviewState: "active",
+    outcome: "all",
     ownerId: overrides.ownerId || "",
     rawFeedback: "all",
     attention: overrides.attention || "all",
@@ -819,8 +913,11 @@ function syntheticReviewCase(input: {
     createdAt: input.firstKnownAt || input.lastSignalAt,
     updatedAt: input.firstKnownAt || input.lastSignalAt,
     resolvedAt: null,
+    resolutionOutcome: null,
+    resolvedByUserId: null,
     lastSignalAt: input.lastSignalAt,
     noteCount: 0,
+    noteAdjustmentCount: 0,
     rawFeedbackStatus: "none",
     latestRawFeedbackSessionId: null
   })
@@ -906,6 +1003,8 @@ function recordSearchText(record: DashboardQualityReviewRecord) {
     record.transportMode || "",
     record.currentStatus,
     record.reviewCase.state,
+    record.reviewCase.resolutionOutcome || "legacy-unclassified",
+    record.reviewCase.resolvedByUserId || "",
     record.reviewCase.ownerUserId || "",
     record.reviewCase.ownerLabel,
     record.reviewCase.rawFeedbackStatus,
@@ -919,6 +1018,8 @@ function matchesFilters(record: DashboardQualityReviewRecord, request: Dashboard
   if (request.transport !== "all" && record.transportMode !== request.transport) return false
   if (request.reviewState === "active" && record.reviewCase.state === "resolved") return false
   if (request.reviewState !== "active" && request.reviewState !== "all" && record.reviewCase.state !== request.reviewState) return false
+  if (request.outcome === "legacy-unclassified" && (record.reviewCase.state !== "resolved" || record.reviewCase.resolutionOutcome !== null)) return false
+  if (request.outcome !== "all" && request.outcome !== "legacy-unclassified" && record.reviewCase.resolutionOutcome !== request.outcome) return false
   if (request.ownerId === "me" && (!actorUserId || record.reviewCase.ownerUserId !== actorUserId)) return false
   if (request.ownerId === "unassigned" && record.reviewCase.ownerUserId) return false
   if (request.ownerId && request.ownerId !== "me" && request.ownerId !== "unassigned" && record.reviewCase.ownerUserId !== request.ownerId) return false
@@ -1127,6 +1228,8 @@ function unavailableListModel(basePath: string, query: DashboardQualityReviewQue
     warningMessage,
     telemetryWarningMessage: "",
     filterAction: joinBasePath(basePath, "admin/quality-review"),
+    supervisionHref: joinBasePath(basePath, "admin/quality-review/supervision"),
+    canManage: false,
     clearFiltersHref: joinBasePath(basePath, "admin/quality-review"),
     currentHref,
     request: query,
@@ -1217,6 +1320,7 @@ export async function buildDashboardQualityReviewListModel(input: {
   configService: DashboardConfigService
   runtimeBridge: DashboardRuntimeBridge
   actorUserId?: string
+  canManage?: boolean
   now?: number
 }): Promise<DashboardQualityReviewListModel> {
   const request = parseDashboardQualityReviewQuery(input.query, { now: input.now })
@@ -1347,6 +1451,8 @@ export async function buildDashboardQualityReviewListModel(input: {
     warningMessage: "",
     telemetryWarningMessage: telemetryWarnings[0] || "",
     filterAction: joinBasePath(input.basePath, "admin/quality-review"),
+    supervisionHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
+    canManage: Boolean(input.canManage),
     clearFiltersHref: joinBasePath(input.basePath, "admin/quality-review"),
     currentHref,
     request: { ...request, page },
@@ -1378,6 +1484,7 @@ export async function buildDashboardQualityReviewListModel(input: {
         feedbackBadge: feedbackBadge(record.latestFeedbackStatus),
         reviewStateBadge: reviewStateBadge(record.reviewCase.state),
         rawFeedbackBadge: rawFeedbackBadge(record.reviewCase.rawFeedbackStatus),
+        resolutionOutcomeBadge: resolutionOutcomeBadge(record.reviewCase),
         ownerBucketBadge: ownerBucketBadge(record.reviewCase.ownerBucket),
         overdueBadge: record.reviewCase.overdue
           ? { label: "Overdue", tone: "warning" as DashboardTone }
@@ -1395,6 +1502,166 @@ export async function buildDashboardQualityReviewListModel(input: {
         searchText: recordSearchText(record)
       }
     })
+  }
+}
+
+function supervisionStateLabel(value: DashboardQualityReviewSupervisionStateFilter) {
+  switch (value) {
+    case "active": return "Active review"
+    case "unreviewed": return "Unreviewed"
+    case "in_review": return "In review"
+    case "resolved": return "Resolved"
+    default: return "All states"
+  }
+}
+
+function buildSupervisionOwnerOptions(cases: DashboardQualityReviewCaseSummary[], selectedOwnerId: string) {
+  const options = [
+    { value: "", label: "Any owner" },
+    { value: "me", label: "Assigned to me" },
+    { value: "unassigned", label: "Unassigned" }
+  ]
+  const seen = new Set(options.map((option) => option.value))
+  for (const reviewCase of cases) {
+    if (!reviewCase.ownerUserId || seen.has(reviewCase.ownerUserId)) continue
+    seen.add(reviewCase.ownerUserId)
+    options.push({ value: reviewCase.ownerUserId, label: reviewCase.ownerLabel })
+  }
+  if (selectedOwnerId && !seen.has(selectedOwnerId) && selectedOwnerId !== "me" && selectedOwnerId !== "unassigned") {
+    options.push({ value: selectedOwnerId, label: selectedOwnerId })
+  }
+  return options
+}
+
+function buildSupervisionActiveFilters(query: Omit<DashboardQualityReviewSupervisionQuery, "activeFilters">) {
+  const filters: Array<{ label: string; value: string }> = []
+  if (query.outcome !== "all") filters.push({ label: "Outcome", value: resolutionOutcomeLabel(query.outcome) })
+  if (query.ownerId) filters.push({ label: "Owner", value: query.ownerId === "me" ? "Me" : query.ownerId === "unassigned" ? "Unassigned" : query.ownerId })
+  if (query.state !== "all") filters.push({ label: "State", value: supervisionStateLabel(query.state) })
+  return filters
+}
+
+export function parseDashboardQualityReviewSupervisionQuery(
+  query: Record<string, unknown>,
+  ownerOptions: Array<{ value: string; label: string }> = [
+    { value: "", label: "Any owner" },
+    { value: "me", label: "Assigned to me" },
+    { value: "unassigned", label: "Unassigned" }
+  ]
+): DashboardQualityReviewSupervisionQuery {
+  const parsed = {
+    outcome: enumOrDefault(query.outcome, QUALITY_REVIEW_OUTCOME_FILTERS, "all"),
+    ownerId: normalizeString(query.ownerId),
+    state: enumOrDefault(query.state, QUALITY_REVIEW_SUPERVISION_STATE_FILTERS, "all"),
+    outcomeOptions: QUALITY_REVIEW_OUTCOME_FILTERS.map((value) => ({ value, label: resolutionOutcomeLabel(value) })),
+    ownerOptions,
+    stateOptions: QUALITY_REVIEW_SUPERVISION_STATE_FILTERS.map((value) => ({ value, label: supervisionStateLabel(value) }))
+  }
+  return {
+    ...parsed,
+    activeFilters: buildSupervisionActiveFilters(parsed)
+  }
+}
+
+function matchesSupervisionFilters(reviewCase: DashboardQualityReviewCaseSummary, request: DashboardQualityReviewSupervisionQuery, actorUserId: string) {
+  if (request.state === "active" && reviewCase.state === "resolved") return false
+  if (request.state !== "all" && request.state !== "active" && reviewCase.state !== request.state) return false
+  if (request.outcome === "legacy-unclassified" && (reviewCase.state !== "resolved" || reviewCase.resolutionOutcome !== null)) return false
+  if (request.outcome !== "all" && request.outcome !== "legacy-unclassified" && reviewCase.resolutionOutcome !== request.outcome) return false
+  if (request.ownerId === "me" && (!actorUserId || reviewCase.ownerUserId !== actorUserId)) return false
+  if (request.ownerId === "unassigned" && reviewCase.ownerUserId) return false
+  if (request.ownerId && request.ownerId !== "me" && request.ownerId !== "unassigned" && reviewCase.ownerUserId !== request.ownerId) return false
+  return true
+}
+
+function buildSupervisionSummaryCards(cases: DashboardQualityReviewCaseSummary[]): DashboardSummaryCardInput[] {
+  const unresolved = cases.filter((reviewCase) => reviewCase.state !== "resolved").length
+  const resolved = cases.filter((reviewCase) => reviewCase.state === "resolved").length
+  const legacy = cases.filter((reviewCase) => reviewCase.state === "resolved" && reviewCase.resolutionOutcome === null).length
+  const adjustments = cases.reduce((sum, reviewCase) => sum + reviewCase.noteAdjustmentCount, 0)
+  return [
+    { label: "Unresolved", value: String(unresolved), detail: "Cases still active in review", tone: unresolved > 0 ? "warning" : "muted" },
+    { label: "Resolved", value: String(resolved), detail: "Cases with resolved state", tone: resolved > 0 ? "success" : "muted" },
+    { label: "Legacy Unclassified", value: String(legacy), detail: "Resolved cases without outcome depth", tone: legacy > 0 ? "warning" : "muted" },
+    { label: "Note Adjustments", value: String(adjustments), detail: "Audited corrections and redactions", tone: adjustments > 0 ? "warning" : "muted" }
+  ]
+}
+
+function supervisionDetailHref(basePath: string, ticketId: string, returnTo: string) {
+  return `${joinBasePath(basePath, `admin/quality-review/${encodeURIComponent(ticketId)}`)}?returnTo=${encodeURIComponent(returnTo)}`
+}
+
+function resolvedByLabel(reviewCase: DashboardQualityReviewCaseSummary, actorUserId: string) {
+  if (!reviewCase.resolvedByUserId) return "Unrecorded"
+  if (reviewCase.resolvedByUserId === actorUserId) return "Me"
+  return reviewCase.resolvedByUserId
+}
+
+export async function buildDashboardQualityReviewSupervisionModel(input: {
+  basePath: string
+  currentHref: string
+  query: Record<string, unknown>
+  runtimeBridge: DashboardRuntimeBridge
+  actorUserId?: string
+  now?: number
+}): Promise<DashboardQualityReviewSupervisionModel> {
+  const actorUserId = normalizeString(input.actorUserId)
+  const currentHref = input.currentHref || joinBasePath(input.basePath, "admin/quality-review/supervision")
+  if (typeof input.runtimeBridge.listQualityReviewCases !== "function") {
+    const request = parseDashboardQualityReviewSupervisionQuery(input.query)
+    return {
+      available: false,
+      warningMessage: "Quality review service is unavailable.",
+      filterAction: joinBasePath(input.basePath, "admin/quality-review/supervision"),
+      clearFiltersHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
+      currentHref,
+      queueHref: joinBasePath(input.basePath, "admin/quality-review"),
+      request,
+      summaryCards: buildSupervisionSummaryCards([]),
+      total: 0,
+      rows: []
+    }
+  }
+
+  const result = await input.runtimeBridge.listQualityReviewCases({ tickets: [], includeStored: true }, actorUserId).catch(() => ({
+    cases: [] as DashboardQualityReviewCaseSummary[],
+    warnings: ["Quality review supervision cases could not be read."]
+  }))
+  const cases = result.cases.map((reviewCase) => projectQualityReviewQueueFields(reviewCase, { actorUserId, now: input.now }))
+  const initialRequest = parseDashboardQualityReviewSupervisionQuery(input.query)
+  const request = parseDashboardQualityReviewSupervisionQuery(input.query, buildSupervisionOwnerOptions(cases, initialRequest.ownerId))
+  const rows = cases
+    .filter((reviewCase) => matchesSupervisionFilters(reviewCase, request, actorUserId))
+    .sort((left, right) => {
+      if (left.state !== right.state) {
+        const rank = { unreviewed: 0, in_review: 1, resolved: 2 }
+        return rank[left.state] - rank[right.state]
+      }
+      return right.updatedAt - left.updatedAt || left.ticketId.localeCompare(right.ticketId)
+    })
+
+  return {
+    available: result.warnings.length < 1,
+    warningMessage: result.warnings[0] || "",
+    filterAction: joinBasePath(input.basePath, "admin/quality-review/supervision"),
+    clearFiltersHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
+    currentHref,
+    queueHref: joinBasePath(input.basePath, "admin/quality-review"),
+    request,
+    summaryCards: buildSupervisionSummaryCards(cases),
+    total: rows.length,
+    rows: rows.map((reviewCase) => ({
+      ticketId: reviewCase.ticketId,
+      detailHref: supervisionDetailHref(input.basePath, reviewCase.ticketId, currentHref),
+      stateBadge: reviewStateBadge(reviewCase.state),
+      outcomeBadge: resolutionOutcomeBadge(reviewCase),
+      ownerLabel: reviewCase.ownerLabel,
+      resolvedByLabel: resolvedByLabel(reviewCase, actorUserId),
+      updatedLabel: formatDate(reviewCase.updatedAt),
+      resolvedLabel: formatDate(reviewCase.resolvedAt),
+      noteCount: reviewCase.noteCount,
+      noteAdjustmentCount: reviewCase.noteAdjustmentCount
+    }))
   }
 }
 
@@ -1600,11 +1867,16 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     governanceFacts: [] as Array<{ label: string; value: string }>,
     notificationFacts: [] as Array<{ label: string; value: string }>,
     canManage: Boolean(input.canManage),
+    supervisionHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
     stateActionHref: actionHref("set-state"),
+    resolveOutcomeActionHref: actionHref("resolve-with-outcome"),
     assignOwnerActionHref: actionHref("assign-owner"),
     clearOwnerActionHref: actionHref("clear-owner"),
     addNoteActionHref: actionHref("add-note"),
+    correctNoteActionHref: actionHref("correct-note"),
+    redactNoteActionHref: actionHref("redact-note"),
     ownerChoices: input.ownerChoices || [],
+    resolutionOutcomeOptions: resolutionOutcomeOptions(),
     rawFeedbackSessions: [] as DashboardQualityReviewRawFeedbackSessionModel[]
   }
   if (!supportsTicketTelemetryReads(input.runtimeBridge)) {
@@ -1760,6 +2032,9 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     { label: "Review state", value: reviewStateLabel(reviewCase.state) },
     { label: "Owner", value: reviewCase.ownerLabel },
     { label: "Notes", value: String(reviewCase.noteCount) },
+    { label: "Note adjustments", value: String(reviewCase.noteAdjustmentCount) },
+    { label: "Resolution outcome", value: resolutionOutcomeBadge(reviewCase).label },
+    { label: "Resolved by", value: reviewCase.resolvedByUserId || "Unrecorded" },
     { label: "Raw feedback", value: rawFeedbackLabel(reviewCase.rawFeedbackStatus) },
     { label: "Last signal", value: formatDate(reviewCase.lastSignalAt) },
     { label: "Resolved", value: formatDate(reviewCase.resolvedAt) }
@@ -1803,11 +2078,16 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     governanceFacts,
     notificationFacts,
     canManage: Boolean(input.canManage),
+    supervisionHref: joinBasePath(input.basePath, "admin/quality-review/supervision"),
     stateActionHref: actionHref("set-state"),
+    resolveOutcomeActionHref: actionHref("resolve-with-outcome"),
     assignOwnerActionHref: actionHref("assign-owner"),
     clearOwnerActionHref: actionHref("clear-owner"),
     addNoteActionHref: actionHref("add-note"),
+    correctNoteActionHref: actionHref("correct-note"),
+    redactNoteActionHref: actionHref("redact-note"),
     ownerChoices: input.ownerChoices || [],
+    resolutionOutcomeOptions: resolutionOutcomeOptions(),
     rawFeedbackSessions: buildRawFeedbackSessionModels({
       basePath: input.basePath,
       ticketId: input.ticketId,

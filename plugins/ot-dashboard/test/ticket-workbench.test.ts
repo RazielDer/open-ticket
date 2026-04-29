@@ -230,8 +230,11 @@ function qualityReviewCase(overrides: Partial<DashboardQualityReviewCaseSummary>
     createdAt: 1710000000000,
     updatedAt: 1710000010000,
     resolvedAt: null,
+    resolutionOutcome: null,
+    resolvedByUserId: null,
     lastSignalAt: 1710000010000,
     noteCount: 1,
+    noteAdjustmentCount: 0,
     rawFeedbackStatus: "available",
     latestRawFeedbackSessionId: "feedback-1",
     ownerBucket: "other",
@@ -768,7 +771,10 @@ async function startServer(options: {
     },
     async listQualityReviewCases(query) {
       const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
-      const cases = await Promise.all(query.tickets.map(async (signal) => {
+      const signals = query.includeStored
+        ? (options.qualityReviewCases || []).map((record) => ({ ticketId: record.ticketId }))
+        : query.tickets || []
+      const cases = await Promise.all(signals.map(async (signal) => {
         const record = caseByTicket.get(signal.ticketId)
         return record
           ? { ...record, ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId) }
@@ -2347,7 +2353,7 @@ test("quality review action and asset routes are admin-only and audit successful
   const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/ticket-1")
   const detail = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: admin.cookie } })
   const csrfToken = csrfFrom(await detail.text())
-  const actionResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/set-state`, {
+  const legacyResolvedResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/set-state`, {
     method: "POST",
     headers: {
       cookie: admin.cookie,
@@ -2360,10 +2366,27 @@ test("quality review action and asset routes are admin-only and audit successful
     }),
     redirect: "manual"
   })
+  await legacyResolvedResponse.arrayBuffer()
+  assert.equal(legacyResolvedResponse.status, 302)
+  assert.equal(runtime.qualityReviewActionRequests.length, 0)
+
+  const actionResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/resolve-with-outcome`, {
+    method: "POST",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      resolutionOutcome: "dismissed",
+      returnTo: "/dash/admin/quality-review/ticket-1"
+    }),
+    redirect: "manual"
+  })
   await actionResponse.arrayBuffer()
   assert.equal(actionResponse.status, 302)
-  assert.equal(runtime.qualityReviewActionRequests[0].action, "set-state")
-  assert.equal(runtime.qualityReviewActionRequests[0].state, "resolved")
+  assert.equal(runtime.qualityReviewActionRequests[0].action, "resolve-with-outcome")
+  assert.equal(runtime.qualityReviewActionRequests[0].resolutionOutcome, "dismissed")
 
   const assetResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/feedback/feedback-1/assets/asset-1`, {
     headers: { cookie: admin.cookie }
@@ -2387,6 +2410,112 @@ test("quality review action and asset routes are admin-only and audit successful
   await denied.arrayBuffer()
   assert.equal(denied.status, 403)
   assert.equal(runtime.qualityReviewActionRequests.length, 1)
+})
+
+test("quality review supervision is admin-only, route-ordered, outcome-filtered, and privacy-safe", async (t) => {
+  const runtime = await startServer({
+    feedbackTelemetry: [],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [
+      qualityReviewCase({
+        ticketId: "ticket-action",
+        state: "resolved",
+        resolvedAt: 1710000100000,
+        resolutionOutcome: "action_taken",
+        resolvedByUserId: "admin-user",
+        noteAdjustmentCount: 1,
+        rawFeedbackStatus: "available"
+      }),
+      qualityReviewCase({
+        ticketId: "ticket-legacy",
+        state: "resolved",
+        resolvedAt: 1710000200000,
+        resolutionOutcome: null,
+        resolvedByUserId: null,
+        noteAdjustmentCount: 0,
+        rawFeedbackStatus: "available"
+      }),
+      qualityReviewCase({
+        ticketId: "ticket-active",
+        state: "in_review",
+        ownerUserId: null,
+        rawFeedbackStatus: "available"
+      })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/supervision")
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision`, { headers: { cookie: admin.cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.match(html, /Quality Review Supervision|Supervision cases/)
+  assert.match(html, /ticket-action/)
+  assert.match(html, /ticket-legacy/)
+  assert.match(html, /Action taken/)
+  assert.match(html, /Legacy unclassified/)
+  assert.doesNotMatch(html, /raw private comment|cdn\.discordapp|discord\.com\/channels|feedback-1\/assets/i)
+
+  const legacyOnly = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision?outcome=legacy-unclassified`, { headers: { cookie: admin.cookie } })
+  const legacyHtml = await legacyOnly.text()
+  assert.equal(legacyOnly.status, 200)
+  assert.match(legacyHtml, /ticket-legacy/)
+  assert.doesNotMatch(legacyHtml, /ticket-action/)
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review")
+  const denied = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/supervision`, { headers: { cookie: reviewer.cookie }, redirect: "manual" })
+  await denied.arrayBuffer()
+  assert.equal(denied.status, 302)
+  assert.equal(denied.headers.get("location"), "/dash/admin/quality-review")
+})
+
+test("quality review note adjustment actions use the shared route and keep audit metadata body-free", async (t) => {
+  const detailCase: DashboardQualityReviewCaseDetailRecord = {
+    ...qualityReviewCase({ ticketId: "ticket-1", state: "in_review", noteCount: 1 }),
+    notes: [
+      { noteId: "note-1", ticketId: "ticket-1", authorUserId: "admin-user", authorLabel: "admin-user", createdAt: 1710000000000, body: "Original private note" }
+    ],
+    rawFeedback: []
+  }
+  const runtime = await startServer({
+    feedbackTelemetry: [feedbackTelemetry({ ticketId: "ticket-1" })],
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [detailCase],
+    qualityReviewDetail: detailCase
+  })
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/quality-review/ticket-1")
+  const detail = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1`, { headers: { cookie: admin.cookie } })
+  const csrfToken = csrfFrom(await detail.text())
+  const replacementBody = "Corrected private note body"
+  const actionResponse = await fetch(`${runtime.baseUrl}/dash/admin/quality-review/ticket-1/actions/correct-note`, {
+    method: "POST",
+    headers: {
+      cookie: admin.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      noteId: "note-1",
+      reason: "Tone fix",
+      replacementBody,
+      returnTo: "/dash/admin/quality-review/supervision"
+    }),
+    redirect: "manual"
+  })
+  await actionResponse.arrayBuffer()
+  assert.equal(actionResponse.status, 302)
+  assert.equal(runtime.qualityReviewActionRequests[0].action, "correct-note")
+  assert.equal(runtime.qualityReviewActionRequests[0].noteId, "note-1")
+  assert.equal(runtime.qualityReviewActionRequests[0].replacementBody, replacementBody)
+
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "quality-review-action" })
+  const serialized = JSON.stringify(audits)
+  assert.match(serialized, /correct-note/)
+  assert.doesNotMatch(serialized, /Corrected private note body|Original private note|Tone fix/)
 })
 
 test("ticket detail shows provider locks, safe back links, and form-post runtime actions", async (t) => {
@@ -4376,8 +4505,13 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(routesSource, /eventType: "prepared-export-released"/)
   assert.match(routesSource, /admin"\), adminGuard\.page\("viewer\.portal"\)/)
   assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
+  assert.match(routesSource, /admin\/quality-review\/supervision"\), adminGuard\.page\("quality\.review\.manage"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId\/actions\/:actionId"\), adminGuard\.form\("quality\.review\.manage"\)/)
+  assert.ok(routesSource.indexOf("admin/quality-review/supervision") < routesSource.indexOf("admin/quality-review/:ticketId"))
+  assert.match(routesSource, /resolve-with-outcome/)
+  assert.match(routesSource, /correct-note/)
+  assert.match(routesSource, /redact-note/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId\/feedback\/:sessionId\/assets\/:assetId"\), adminGuard\.page\("quality\.review\.manage"\)/)
   assert.match(routesSource, /admin\/tickets\/bulk\/:actionId"\), adminGuard\.form\("ticket\.workbench"\)/)
   assert.match(routesSource, /const runtimeAction = action === "claim-self" \? "claim" : action/)

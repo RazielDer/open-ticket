@@ -7,6 +7,7 @@ import path from "node:path"
 import {
   OTQualityReviewService,
   QUALITY_REVIEW_CASES_CATEGORY,
+  QUALITY_REVIEW_NOTE_ADJUSTMENTS_CATEGORY,
   QUALITY_REVIEW_NOTES_CATEGORY,
   QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY,
   QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY,
@@ -214,7 +215,24 @@ test("case actions create durable state and resolved cases reset when newer sign
     ticketId: "ticket-1",
     action: "set-state",
     actorUserId: "admin-1",
+    state: "in_review",
+    firstKnownAt: 100,
+    lastSignalAt: 200
+  })
+  const bareResolved = await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-1",
+    action: "set-state",
+    actorUserId: "admin-1",
     state: "resolved",
+    firstKnownAt: 100,
+    lastSignalAt: 200
+  })
+  assert.equal(bareResolved.ok, false)
+  await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-1",
+    action: "resolve-with-outcome",
+    actorUserId: "admin-1",
+    resolutionOutcome: "action_taken",
     firstKnownAt: 100,
     lastSignalAt: 200
   })
@@ -223,13 +241,74 @@ test("case actions create durable state and resolved cases reset when newer sign
     tickets: [{ ticketId: "ticket-1", firstKnownAt: 100, lastSignalAt: 200, latestCompletedAnsweredSessionId: null }]
   })
   assert.equal(current.cases[0].state, "resolved")
+  assert.equal(current.cases[0].resolutionOutcome, "action_taken")
+  assert.equal(current.cases[0].resolvedByUserId, "admin-1")
   assert.equal(current.cases[0].ownerUserId, "admin-2")
 
   const reset = await service.listDashboardQualityReviewCases({
     tickets: [{ ticketId: "ticket-1", firstKnownAt: 100, lastSignalAt: 1710000001000, latestCompletedAnsweredSessionId: null }]
   })
   assert.equal(reset.cases[0].state, "unreviewed")
+  assert.equal(reset.cases[0].resolutionOutcome, null)
+  assert.equal(reset.cases[0].resolvedByUserId, null)
   assert.equal(reset.cases[0].ownerUserId, null)
+})
+
+test("note adjustments append audited correction and redaction records without mutating original notes", async (t) => {
+  const { root, database, service } = createService()
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-1",
+    action: "add-note",
+    actorUserId: "admin-1",
+    actorLabel: "Admin One",
+    note: "Original private note",
+    lastSignalAt: 100
+  })
+  const note = database.getCategory(QUALITY_REVIEW_NOTES_CATEGORY)[0].value
+  const wrongTicket = await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-2",
+    action: "correct-note",
+    actorUserId: "admin-1",
+    actorLabel: "Admin One",
+    noteId: note.noteId,
+    reason: "Wrong case",
+    replacementBody: "Should not land"
+  })
+  assert.equal(wrongTicket.ok, false)
+
+  const corrected = await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-1",
+    action: "correct-note",
+    actorUserId: "admin-1",
+    actorLabel: "Admin One",
+    noteId: note.noteId,
+    reason: "Tone correction",
+    replacementBody: "Corrected note"
+  })
+  assert.equal(corrected.ok, true)
+  let detail = await service.getDashboardQualityReviewCase("ticket-1", { lastSignalAt: 100 })
+  assert.equal(detail?.notes[0].body, "Corrected note")
+  assert.equal(detail?.notes[0].latestAdjustment?.mode, "corrected")
+  assert.equal(database.get(QUALITY_REVIEW_NOTES_CATEGORY, note.noteId).body, "Original private note")
+
+  const redacted = await service.runDashboardQualityReviewAction({
+    ticketId: "ticket-1",
+    action: "redact-note",
+    actorUserId: "admin-1",
+    actorLabel: "Admin One",
+    noteId: note.noteId,
+    reason: "Contains private data"
+  })
+  assert.equal(redacted.ok, true)
+  detail = await service.getDashboardQualityReviewCase("ticket-1", { lastSignalAt: 100 })
+  assert.equal(detail?.notes[0].body, "[Redacted quality review note]")
+  assert.equal(detail?.notes[0].latestAdjustment?.mode, "redacted")
+  assert.equal(detail?.notes[0].adjustmentHistory?.length, 2)
+  assert.equal(detail?.noteAdjustmentCount, 2)
+  assert.equal(database.getCategory(QUALITY_REVIEW_NOTE_ADJUSTMENTS_CATEGORY).length, 2)
+  assert.equal(database.get(QUALITY_REVIEW_NOTES_CATEGORY, note.noteId).body, "Original private note")
 })
 
 test("asset resolution rejects traversal paths even when storage is tampered", async (t) => {

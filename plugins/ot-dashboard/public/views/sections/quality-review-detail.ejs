@@ -21,6 +21,9 @@
         <p class="item-copy"><%= detail.historicalSummary.live ? t("qualityReview.detail.liveBody") : t("qualityReview.detail.historicalOnlyBody") %></p>
       </div>
       <div class="card-actions">
+        <% if (qualityReviewDetail.canManage) { %>
+          <a class="btn secondary" href="<%= qualityReviewDetail.supervisionHref %>"><%= t("qualityReview.supervision.entryAction") %></a>
+        <% } %>
         <% if (qualityReviewDetail.ticketWorkbenchHref) { %>
           <a class="btn secondary" href="<%= qualityReviewDetail.ticketWorkbenchHref %>"><%= t("qualityReview.detail.ticketWorkbenchAction") %></a>
         <% } %>
@@ -98,10 +101,23 @@
             <select class="select-input" name="state">
               <option value="unreviewed" <%= detail.reviewCase.state === 'unreviewed' ? 'selected' : '' %>>Unreviewed</option>
               <option value="in_review" <%= detail.reviewCase.state === 'in_review' ? 'selected' : '' %>>In review</option>
-              <option value="resolved" <%= detail.reviewCase.state === 'resolved' ? 'selected' : '' %>>Resolved</option>
             </select>
           </label>
           <button class="btn primary" type="submit">Set state</button>
+        </form>
+
+        <form method="post" action="<%= qualityReviewDetail.resolveOutcomeActionHref %>" class="stack-form">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+          <label>
+            <span class="field-label">Resolution outcome</span>
+            <select class="select-input" name="resolutionOutcome" required>
+              <% qualityReviewDetail.resolutionOutcomeOptions.forEach((option) => { %>
+                <option value="<%= option.value %>" <%= detail.reviewCase.resolutionOutcome === option.value ? 'selected' : '' %>><%= option.label %></option>
+              <% }) %>
+            </select>
+          </label>
+          <button class="btn primary" type="submit">Resolve with outcome</button>
         </form>
 
         <form method="post" action="<%= qualityReviewDetail.assignOwnerActionHref %>" class="stack-form">
@@ -144,9 +160,52 @@
       <div class="entry-stack">
         <% detail.reviewCase.notes.forEach((note) => { %>
           <article class="inline-panel">
-            <strong><%= note.authorLabel %></strong>
+            <div class="section-heading">
+              <strong><%= note.authorLabel %></strong>
+              <% if (note.latestAdjustment) { %>
+                <span class="status-pill tone-<%= note.latestAdjustment.mode === 'redacted' ? 'danger' : 'warning' %>"><%= note.latestAdjustment.mode === 'redacted' ? 'Redacted' : 'Corrected' %></span>
+              <% } %>
+            </div>
             <div class="field-help"><%= new Date(note.createdAt).toLocaleString() %></div>
             <p><%= note.body %></p>
+            <% if (note.latestAdjustment) { %>
+              <div class="field-help">Adjusted by <%= note.latestAdjustment.actorLabel %> on <%= new Date(note.latestAdjustment.createdAt).toLocaleString() %>: <%= note.latestAdjustment.reason %></div>
+            <% } %>
+            <% if (qualityReviewDetail.canManage) { %>
+              <details class="editor-disclosure">
+                <summary class="transcript-filter-advanced-summary">
+                  <div>
+                    <h4>Adjust note</h4>
+                  </div>
+                </summary>
+                <div class="editor-disclosure-body">
+                  <form method="post" action="<%= qualityReviewDetail.correctNoteActionHref %>" class="stack-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+                    <input type="hidden" name="noteId" value="<%= note.noteId %>">
+                    <label>
+                      <span class="field-label">Correction reason</span>
+                      <input class="text-input" type="text" name="reason" maxlength="500" required>
+                    </label>
+                    <label>
+                      <span class="field-label">Replacement note</span>
+                      <textarea class="text-input" name="replacementBody" maxlength="4000" rows="3" required></textarea>
+                    </label>
+                    <button class="btn secondary" type="submit">Correct note</button>
+                  </form>
+                  <form method="post" action="<%= qualityReviewDetail.redactNoteActionHref %>" class="stack-form">
+                    <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+                    <input type="hidden" name="returnTo" value="<%= qualityReviewDetail.currentHref %>">
+                    <input type="hidden" name="noteId" value="<%= note.noteId %>">
+                    <label>
+                      <span class="field-label">Redaction reason</span>
+                      <input class="text-input" type="text" name="reason" maxlength="500" required>
+                    </label>
+                    <button class="btn secondary" type="submit">Redact note</button>
+                  </form>
+                </div>
+              </details>
+            <% } %>
           </article>
         <% }) %>
       </div>

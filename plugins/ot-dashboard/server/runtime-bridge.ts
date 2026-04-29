@@ -56,9 +56,11 @@ import {
   type DashboardQualityReviewCaseSignal,
   type DashboardQualityReviewCaseSummary,
   type DashboardQualityReviewNotificationStatus,
+  type DashboardQualityReviewNoteAdjustmentRecord,
   type DashboardQualityReviewQueueSummary,
   type DashboardQualityReviewRawFeedbackRecord,
   type DashboardQualityReviewRawFeedbackStatus,
+  type DashboardQualityReviewResolutionOutcome,
   type DashboardQualityReviewState
 } from "./ticket-workbench-types"
 import {
@@ -1514,6 +1516,12 @@ function normalizeQualityReviewState(value: unknown): DashboardQualityReviewStat
   return value === "in_review" || value === "resolved" ? value : "unreviewed"
 }
 
+function normalizeQualityReviewResolutionOutcome(value: unknown): DashboardQualityReviewResolutionOutcome | null {
+  return value === "action_taken" || value === "coaching_needed" || value === "dismissed" || value === "no_action_needed"
+    ? value
+    : null
+}
+
 function normalizeRawFeedbackStatus(value: unknown): DashboardQualityReviewRawFeedbackStatus {
   return value === "available" || value === "partial" || value === "expired" ? value : "none"
 }
@@ -1530,6 +1538,26 @@ async function resolveRuntimeUserLabel(runtimeBridge: DashboardRuntimeBridge, us
     ? await runtimeBridge.resolveGuildMember(normalizedUserId).catch(() => null)
     : null
   return member ? runtimeMemberLabel(member, normalizedUserId) : `Unknown owner (${normalizedUserId})`
+}
+
+function normalizeQualityReviewNoteAdjustment(value: any): DashboardQualityReviewNoteAdjustmentRecord | null {
+  if (!value || typeof value !== "object") return null
+  const mode = value.mode === "corrected" || value.mode === "redacted" ? value.mode : null
+  const adjustmentId = normalizeString(value.adjustmentId)
+  const noteId = normalizeString(value.noteId)
+  const ticketId = normalizeString(value.ticketId)
+  if (!mode || !adjustmentId || !noteId || !ticketId) return null
+  return {
+    adjustmentId,
+    noteId,
+    ticketId,
+    mode,
+    actorUserId: normalizeString(value.actorUserId) || "unknown",
+    actorLabel: normalizeString(value.actorLabel) || normalizeString(value.actorUserId) || "Unknown actor",
+    createdAt: numberOrNull(value.createdAt) || 0,
+    reason: normalizeString(value.reason),
+    replacementBody: mode === "corrected" ? stringOrNull(value.replacementBody) : null
+  }
 }
 
 function normalizeQualityReviewRawFeedback(value: any): DashboardQualityReviewRawFeedbackRecord | null {
@@ -1582,8 +1610,11 @@ async function normalizeQualityReviewCaseSummary(
     createdAt: numberOrNull(value?.createdAt) || 0,
     updatedAt: numberOrNull(value?.updatedAt) || 0,
     resolvedAt: numberOrNull(value?.resolvedAt),
+    resolutionOutcome: normalizeQualityReviewState(value?.state) === "resolved" ? normalizeQualityReviewResolutionOutcome(value?.resolutionOutcome) : null,
+    resolvedByUserId: normalizeQualityReviewState(value?.state) === "resolved" ? stringOrNull(value?.resolvedByUserId) : null,
     lastSignalAt: numberOrNull(value?.lastSignalAt) || 0,
     noteCount: numberOrNull(value?.noteCount) || 0,
+    noteAdjustmentCount: numberOrNull(value?.noteAdjustmentCount) || 0,
     rawFeedbackStatus: normalizeRawFeedbackStatus(value?.rawFeedbackStatus),
     latestRawFeedbackSessionId: stringOrNull(value?.latestRawFeedbackSessionId)
   }, options)
@@ -1604,7 +1635,11 @@ async function normalizeQualityReviewCaseDetail(
       authorUserId: normalizeString(note?.authorUserId),
       authorLabel: normalizeString(note?.authorLabel) || normalizeString(note?.authorUserId) || "Unknown author",
       createdAt: numberOrNull(note?.createdAt) || 0,
-      body: normalizeString(note?.body)
+      body: normalizeString(note?.body),
+      latestAdjustment: normalizeQualityReviewNoteAdjustment(note?.latestAdjustment),
+      adjustmentHistory: Array.isArray(note?.adjustmentHistory)
+        ? note.adjustmentHistory.map(normalizeQualityReviewNoteAdjustment).filter((record: DashboardQualityReviewNoteAdjustmentRecord | null): record is DashboardQualityReviewNoteAdjustmentRecord => Boolean(record))
+        : []
     })).filter((note: any) => note.noteId && note.ticketId) : [],
     rawFeedback: Array.isArray(value?.rawFeedback)
       ? value.rawFeedback.map(normalizeQualityReviewRawFeedback).filter((record: DashboardQualityReviewRawFeedbackRecord | null): record is DashboardQualityReviewRawFeedbackRecord => Boolean(record))
@@ -1773,7 +1808,11 @@ async function runRuntimeQualityReviewAction(
       ...input,
       actorLabel,
       firstKnownAt: signal.firstKnownAt,
-      lastSignalAt: signal.lastSignalAt
+      lastSignalAt: signal.lastSignalAt,
+      resolutionOutcome: normalizeQualityReviewResolutionOutcome(input.resolutionOutcome),
+      noteId: stringOrNull(input.noteId),
+      reason: stringOrNull(input.reason),
+      replacementBody: input.action === "correct-note" ? stringOrNull(input.replacementBody) : null
     })
     return {
       ok: result?.ok === true,
