@@ -20,6 +20,7 @@ import type {
   DashboardQualityReviewRawFeedbackRecord,
   DashboardQualityReviewRawFeedbackStatus,
   DashboardQualityReviewOwnerBucket,
+  DashboardQualityReviewNotificationStatus,
   DashboardQualityReviewQueueSummary,
   DashboardQualityReviewState,
   DashboardQualityReviewOverdueKind,
@@ -163,6 +164,9 @@ export interface DashboardQualityReviewListModel {
   request: DashboardQualityReviewQuery
   summary: DashboardQualityReviewSummary
   queueSummary: DashboardQualityReviewQueueSummary
+  notificationStatus: DashboardQualityReviewNotificationStatus | null
+  notificationFacts: Array<{ label: string; value: string }>
+  notificationStatusMessage: string
   summaryCards: DashboardSummaryCardInput[]
   total: number
   pageStart: number
@@ -187,6 +191,7 @@ export interface DashboardQualityReviewDetailModel {
   ratingRows: Array<{ label: string; value: string; answered: boolean }>
   adjudicationFacts: Array<{ label: string; value: string }>
   governanceFacts: Array<{ label: string; value: string }>
+  notificationFacts: Array<{ label: string; value: string }>
   canManage: boolean
   stateActionHref: string
   assignOwnerActionHref: string
@@ -1089,6 +1094,31 @@ function buildQueueSummaryCards(summary: DashboardQualityReviewQueueSummary): Da
   ]
 }
 
+function qualityReviewDigestStatusLabel(status: DashboardQualityReviewNotificationStatus | null) {
+  return status?.notificationsEnabled && status.digestEnabled ? "Enabled" : "Disabled"
+}
+
+function buildQualityReviewNotificationFacts(status: DashboardQualityReviewNotificationStatus | null) {
+  if (!status) return []
+  const targetCount = status.configuredTargetCount === null
+    ? `${status.deliveryChannelCount} configured`
+    : `${status.validTargetCount ?? 0} of ${status.configuredTargetCount} valid`
+  return [
+    { label: "Last Digest", value: status.lastDigestAt ? formatDate(status.lastDigestAt) : "Not delivered" },
+    { label: "Reminders Sent Today", value: String(status.remindersSentToday) },
+    { label: "Delivery Targets", value: targetCount },
+    { label: "Digest Delivery Enabled", value: qualityReviewDigestStatusLabel(status) }
+  ]
+}
+
+function buildQualityReviewDetailNotificationFacts(status: DashboardQualityReviewNotificationStatus | null) {
+  return [
+    { label: "Last Reminder", value: status?.ticketReminder?.lastReminderAt ? formatDate(status.ticketReminder.lastReminderAt) : "Not sent" },
+    { label: "Reminder Cooldown", value: status?.ticketReminderCooldownUntil ? `Until ${formatDate(status.ticketReminderCooldownUntil)}` : "Ready when overdue" },
+    { label: "Digest Delivery Enabled", value: qualityReviewDigestStatusLabel(status) }
+  ]
+}
+
 function unavailableListModel(basePath: string, query: DashboardQualityReviewQuery, currentHref: string, configService: DashboardConfigService, warningMessage: string): DashboardQualityReviewListModel {
   const summary = buildSummary([])
   const queueSummary = buildQualityReviewQueueSummary([], { unavailableReason: warningMessage })
@@ -1102,6 +1132,9 @@ function unavailableListModel(basePath: string, query: DashboardQualityReviewQue
     request: query,
     summary,
     queueSummary,
+    notificationStatus: null,
+    notificationFacts: [],
+    notificationStatusMessage: "",
     summaryCards: buildQueueSummaryCards(queueSummary),
     total: 0,
     pageStart: 0,
@@ -1300,6 +1333,9 @@ export async function buildDashboardQualityReviewListModel(input: {
     actorUserId: input.actorUserId,
     now: input.now
   })
+  const notificationStatus = typeof input.runtimeBridge.getQualityReviewNotificationStatus === "function"
+    ? await input.runtimeBridge.getQualityReviewNotificationStatus({ now: input.now }).catch(() => null)
+    : null
   const telemetryWarnings = uniqueWarnings(feedback.warnings, lifecycle.warnings)
   telemetryWarnings.push(...uniqueWarnings(qualityReviewWarnings))
   if (feedback.truncated || lifecycle.truncated) {
@@ -1316,6 +1352,9 @@ export async function buildDashboardQualityReviewListModel(input: {
     request: { ...request, page },
     summary,
     queueSummary,
+    notificationStatus,
+    notificationFacts: buildQualityReviewNotificationFacts(notificationStatus),
+    notificationStatusMessage: notificationStatus?.unavailableReason || "",
     summaryCards: buildQueueSummaryCards(queueSummary),
     total: records.length,
     pageStart: records.length > 0 ? startIndex + 1 : 0,
@@ -1559,6 +1598,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
   const baseEmpty = {
     adjudicationFacts: [] as Array<{ label: string; value: string }>,
     governanceFacts: [] as Array<{ label: string; value: string }>,
+    notificationFacts: [] as Array<{ label: string; value: string }>,
     canManage: Boolean(input.canManage),
     stateActionHref: actionHref("set-state"),
     assignOwnerActionHref: actionHref("assign-owner"),
@@ -1672,6 +1712,9 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     actorUserId: input.actorUserId,
     now: input.now
   })
+  const notificationStatus = typeof input.runtimeBridge.getQualityReviewNotificationStatus === "function"
+    ? await input.runtimeBridge.getQualityReviewNotificationStatus({ ticketId: input.ticketId, now: input.now }).catch(() => null)
+    : null
   historicalSummary = {
     ...historicalSummary,
     reviewCase
@@ -1729,6 +1772,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     { label: "Overdue reason", value: overdueReasonLabel(reviewCase.overdueKind) },
     { label: "Overdue since", value: formatDate(reviewCase.overdueSince) }
   ]
+  const notificationFacts = buildQualityReviewDetailNotificationFacts(notificationStatus)
 
   return {
     available: true,
@@ -1757,6 +1801,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
       })),
     adjudicationFacts,
     governanceFacts,
+    notificationFacts,
     canManage: Boolean(input.canManage),
     stateActionHref: actionHref("set-state"),
     assignOwnerActionHref: actionHref("assign-owner"),

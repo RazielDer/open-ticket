@@ -30,6 +30,7 @@ import {
   type DashboardQualityReviewAssetResult,
   type DashboardQualityReviewCaseDetailRecord,
   type DashboardQualityReviewCaseSummary,
+  type DashboardQualityReviewNotificationStatus,
   type DashboardTicketDetailRecord,
   type DashboardTicketFeedbackTelemetryRecord,
   type DashboardTicketLifecycleTelemetryRecord,
@@ -501,6 +502,7 @@ async function startServer(options: {
   qualityReviewDetail?: DashboardQualityReviewCaseDetailRecord | null
   qualityReviewAsset?: DashboardQualityReviewAssetResult
   qualityReviewQueueSummaryError?: string
+  qualityReviewNotificationStatus?: DashboardQualityReviewNotificationStatus | null
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
@@ -709,6 +711,9 @@ async function startServer(options: {
         ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId)
       })))
       return buildQualityReviewQueueSummary(cases, input)
+    },
+    async getQualityReviewNotificationStatus() {
+      return options.qualityReviewNotificationStatus ?? null
     },
     async runQualityReviewAction(input) {
       qualityReviewActionRequests.push(input)
@@ -1334,6 +1339,89 @@ test("quality review detail reads the newest bounded feedback and lifecycle tele
   assert.equal(model.lifecycleRows[0].id, "lifecycle-104")
   assert.equal(model.lifecycleRows[99].id, "lifecycle-5")
   assert.equal(model.detailRecord?.telemetryWarning, "History truncated at review workspace limit")
+})
+
+test("quality review models expose reminder and digest status without mutation controls", async (t) => {
+  const now = Date.parse("2026-04-28T14:00:00.000Z")
+  const reviewCase = qualityReviewCase({
+    ticketId: "ticket-1",
+    state: "unreviewed",
+    ownerUserId: null,
+    lastSignalAt: now - 73 * 60 * 60 * 1000,
+    updatedAt: now - 73 * 60 * 60 * 1000
+  })
+  const notificationStatus: DashboardQualityReviewNotificationStatus = {
+    notificationsEnabled: true,
+    digestEnabled: true,
+    deliveryChannelCount: 1,
+    configuredTargetCount: 1,
+    validTargetCount: 1,
+    lastDeliveryError: null,
+    unavailableReason: null,
+    remindersSentToday: 2,
+    lastDigestAt: now - 60 * 60 * 1000,
+    lastDigestDate: "2026-04-28",
+    lastDigestCount: 4,
+    digestDeliveredToday: true,
+    ticketReminder: {
+      ticketId: "ticket-1",
+      lastReminderAt: now - 2 * 60 * 60 * 1000,
+      lastReminderCaseUpdatedAt: now - 3 * 60 * 60 * 1000,
+      lastReminderOverdueKind: "unreviewed"
+    },
+    ticketReminderCooldownUntil: now + 22 * 60 * 60 * 1000
+  }
+  const runtime = await startServer({
+    feedbackTelemetry: [
+      feedbackTelemetry({
+        sessionId: "feedback-1",
+        ticketId: "ticket-1",
+        status: "completed",
+        triggeredAt: now - 10_000,
+        completedAt: now - 5_000
+      })
+    ],
+    lifecycleTelemetry: [],
+    qualityReviewCases: [reviewCase],
+    qualityReviewDetail: { ...reviewCase, notes: [], rawFeedback: [] },
+    qualityReviewNotificationStatus: notificationStatus
+  })
+  t.after(() => stopServer(runtime))
+
+  const listModel = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+  assert.equal(listModel.notificationStatus?.remindersSentToday, 2)
+  assert.ok(listModel.notificationFacts.some((fact) => fact.label === "Last Digest"))
+  assert.ok(listModel.notificationFacts.some((fact) => fact.label === "Reminders Sent Today" && fact.value === "2"))
+  assert.equal(listModel.notificationStatusMessage, "")
+
+  const detailModel = await buildDashboardQualityReviewDetailModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    ticketId: "ticket-1",
+    actorUserId: "admin-user",
+    currentHref: "/dash/admin/quality-review/ticket-1",
+    returnTo: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    ticketWorkbenchAccessible: false,
+    now
+  })
+  assert.ok(detailModel.notificationFacts.some((fact) => fact.label === "Last Reminder"))
+  assert.ok(detailModel.notificationFacts.some((fact) => fact.label === "Reminder Cooldown" && fact.value.includes("Until")))
+  assert.ok(detailModel.notificationFacts.some((fact) => fact.label === "Digest Delivery Enabled" && fact.value === "Enabled"))
+
+  const detailSource = fs.readFileSync(path.join(process.cwd(), "plugins", "ot-dashboard", "public", "views", "sections", "quality-review-detail.ejs"), "utf8")
+  assert.doesNotMatch(detailSource, /send reminder|send digest|manual send/i)
 })
 
 test("quality review model preserves filter semantics and unavailable telemetry state", async (t) => {
@@ -3364,8 +3452,8 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.match(routesSource, /eventType: "ticket-bulk-action"/)
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
   assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
-  assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review/i)
-  assert.doesNotMatch(qualityReviewSource, /setInterval|setTimeout|cron\.schedule|node-cron|digest|reminder/i)
+  assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review|admin\/quality-review\/[^"']*(digest|reminder)/i)
+  assert.doesNotMatch(qualityReviewSource, /setInterval|setTimeout|cron\.schedule|node-cron/i)
   assert.doesNotMatch(controlCenterSource, /admin\/quality-review/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)

@@ -7,6 +7,7 @@ import { test } from "node:test"
 
 import { createDashboardApp } from "../server/create-app"
 import type { DashboardConfig } from "../server/dashboard-config"
+import { buildHomeQualityReviewBlock } from "../server/home-setup-models"
 import type { DashboardRuntimeBridge } from "../server/runtime-bridge"
 import { evaluateSetupState } from "../server/setup-state"
 
@@ -498,6 +499,56 @@ test("setup-state evaluation follows the locked beginner-first rules", () => {
     transcripts: { general: { enabled: true, mode: "html" } }
   }, { state: "ready", htmlMode: true })
   assert.equal(result.nextStep.id, "operations")
+})
+
+test("home quality-review block carries reminder and digest facts without setup warnings", () => {
+  const block = buildHomeQualityReviewBlock({
+    basePath: "/dash",
+    i18n: {
+      t(key: string) {
+        const labels: Record<string, string> = {
+          "home.qualityReview.title": "Quality review",
+          "home.summary.qualityReview": "Quality Review",
+          "home.summary.qualityReviewDetail": "Active {active}, Unassigned {unassigned}",
+          "home.qualityReview.lastDigest": "Last Digest",
+          "home.qualityReview.remindersSentToday": "Reminders Sent Today",
+          "home.qualityReview.notDelivered": "Not delivered"
+        }
+        return labels[key] || key
+      }
+    }
+  } as any, {
+    activeCount: 4,
+    myQueueCount: 1,
+    unassignedCount: 2,
+    overdueCount: 3,
+    overdueUnreviewedCount: 2,
+    overdueInReviewCount: 1,
+    unavailableReason: null
+  }, {
+    notificationsEnabled: false,
+    digestEnabled: false,
+    deliveryChannelCount: 0,
+    configuredTargetCount: null,
+    validTargetCount: null,
+    lastDeliveryError: null,
+    unavailableReason: "Quality-review notifications are disabled.",
+    remindersSentToday: 2,
+    lastDigestAt: null,
+    lastDigestDate: null,
+    lastDigestCount: 0,
+    digestDeliveredToday: false,
+    ticketReminder: null,
+    ticketReminderCooldownUntil: null
+  })
+
+  assert.ok(block)
+  assert.equal(block?.notificationFacts[0].label, "Last Digest")
+  assert.equal(block?.notificationFacts[0].value, "Not delivered")
+  assert.equal(block?.notificationFacts[1].label, "Reminders Sent Today")
+  assert.equal(block?.notificationFacts[1].value, "2")
+  assert.equal(block?.notificationStatusCopy, "Quality-review notifications are disabled.")
+  assert.equal(block?.unavailable, false)
 })
 
 test("root redirect, login, home, advanced, and transcript warning routes render the guided beginner-first flow", async (t) => {

@@ -16,6 +16,28 @@ export interface DashboardQualityReviewQueueSummary {
   unavailableReason: string | null
 }
 
+export interface DashboardQualityReviewNotificationStatus {
+  notificationsEnabled: boolean
+  digestEnabled: boolean
+  deliveryChannelCount: number
+  configuredTargetCount: number | null
+  validTargetCount: number | null
+  lastDeliveryError: string | null
+  unavailableReason: string | null
+  remindersSentToday: number
+  lastDigestAt: number | null
+  lastDigestDate: string | null
+  lastDigestCount: number
+  digestDeliveredToday: boolean
+  ticketReminder: {
+    ticketId: string
+    lastReminderAt: number | null
+    lastReminderCaseUpdatedAt: number | null
+    lastReminderOverdueKind: Exclude<DashboardQualityReviewOverdueKind, null> | null
+  } | null
+  ticketReminderCooldownUntil: number | null
+}
+
 export interface DashboardTicketTelemetrySnapshot {
   creatorUserId: string | null
   optionId: string | null

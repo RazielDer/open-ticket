@@ -3,7 +3,7 @@ import type { DashboardAppContext } from "./create-app"
 import { joinBasePath } from "./dashboard-config"
 import { buildQualityReviewQueueHref } from "./quality-review"
 import { evaluateSetupState, type SetupNextStep, type SetupState, type SetupStatusItem } from "./setup-state"
-import type { DashboardQualityReviewQueueSummary } from "./ticket-workbench-types"
+import type { DashboardQualityReviewNotificationStatus, DashboardQualityReviewQueueSummary } from "./ticket-workbench-types"
 import type { DashboardTranscriptIntegration } from "./transcript-service-bridge"
 
 const WORKSPACE_FIRST_SETUP_IDS = new Set(["general", "options", "panels", "questions"])
@@ -133,11 +133,31 @@ function buildQualityReviewHomeLinks(basePath: string) {
   }
 }
 
+function formatNotificationDate(value: number | null | undefined, fallback: string) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${new Date(value).toISOString().slice(0, 16).replace("T", " ")} UTC`
+    : fallback
+}
+
 export function buildHomeQualityReviewBlock(
   context: DashboardAppContext,
-  summary: DashboardQualityReviewQueueSummary | null
+  summary: DashboardQualityReviewQueueSummary | null,
+  notificationStatus: DashboardQualityReviewNotificationStatus | null = null
 ) {
   if (!summary) return null
+  const notificationUnavailable = notificationStatus?.unavailableReason || null
+  const notificationFacts = notificationStatus
+    ? [
+        {
+          label: context.i18n.t("home.qualityReview.lastDigest"),
+          value: formatNotificationDate(notificationStatus.lastDigestAt, context.i18n.t("home.qualityReview.notDelivered"))
+        },
+        {
+          label: context.i18n.t("home.qualityReview.remindersSentToday"),
+          value: String(notificationStatus.remindersSentToday)
+        }
+      ]
+    : []
   return {
     title: context.i18n.t("home.qualityReview.title"),
     summary,
@@ -150,6 +170,9 @@ export function buildHomeQualityReviewBlock(
       }),
       tone: summary.overdueCount > 0 || summary.unassignedCount > 0 ? "warning" as const : "muted" as const
     },
+    notificationStatus,
+    notificationFacts,
+    notificationStatusCopy: notificationUnavailable,
     links: buildQualityReviewHomeLinks(context.basePath),
     unavailable: Boolean(summary.unavailableReason),
     zeroState: summary.activeCount === 0 && summary.unassignedCount === 0 && summary.overdueCount === 0

@@ -10,7 +10,7 @@ export type DashboardQualityReviewQueueFields = Pick<
   "ownerBucket" | "queueAnchorAt" | "overdue" | "overdueKind" | "overdueSince"
 >
 export type DashboardQualityReviewQueueProjectableCase =
-  Omit<DashboardQualityReviewCaseSummary, keyof DashboardQualityReviewQueueFields>
+  Pick<DashboardQualityReviewCaseSummary, "state" | "ownerUserId" | "lastSignalAt" | "updatedAt">
   & Partial<DashboardQualityReviewQueueFields>
 
 const HOUR_MS = 60 * 60 * 1000
@@ -21,7 +21,7 @@ function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function activeQueueState(state: DashboardQualityReviewCaseSummary["state"]) {
+export function activeQualityReviewQueueState(state: DashboardQualityReviewCaseSummary["state"]) {
   return state === "unreviewed" || state === "in_review"
 }
 
@@ -29,7 +29,7 @@ function ownerBucketForCase(
   reviewCase: Pick<DashboardQualityReviewCaseSummary, "state" | "ownerUserId">,
   actorUserId: string
 ): DashboardQualityReviewOwnerBucket {
-  if (!activeQueueState(reviewCase.state)) return "resolved"
+  if (!activeQualityReviewQueueState(reviewCase.state)) return "resolved"
   if (!reviewCase.ownerUserId) return "unassigned"
   return reviewCase.ownerUserId === actorUserId ? "mine" : "other"
 }
@@ -83,7 +83,7 @@ export function buildQualityReviewQueueSummary(
   input: { actorUserId?: string | null; now?: number; unavailableReason?: string | null } = {}
 ): DashboardQualityReviewQueueSummary {
   const projected = cases.map((reviewCase) => projectQualityReviewQueueFields(reviewCase, input))
-  const active = projected.filter((reviewCase) => activeQueueState(reviewCase.state))
+  const active = projected.filter((reviewCase) => activeQualityReviewQueueState(reviewCase.state))
   return {
     activeCount: active.length,
     myQueueCount: active.filter((reviewCase) => reviewCase.ownerBucket === "mine").length,
@@ -93,4 +93,26 @@ export function buildQualityReviewQueueSummary(
     overdueInReviewCount: active.filter((reviewCase) => reviewCase.overdueKind === "in_review").length,
     unavailableReason: normalizeString(input.unavailableReason) || null
   }
+}
+
+export function compareQualityReviewQueuePriority(
+  left: DashboardQualityReviewQueueProjectableCase & DashboardQualityReviewQueueFields,
+  right: DashboardQualityReviewQueueProjectableCase & DashboardQualityReviewQueueFields
+) {
+  if (left.overdue !== right.overdue) return left.overdue ? -1 : 1
+  const leftOverdueAt = typeof left.overdueSince === "number" ? left.overdueSince : Number.POSITIVE_INFINITY
+  const rightOverdueAt = typeof right.overdueSince === "number" ? right.overdueSince : Number.POSITIVE_INFINITY
+  if (leftOverdueAt !== rightOverdueAt) return leftOverdueAt - rightOverdueAt
+  const ownerRank: Record<DashboardQualityReviewOwnerBucket, number> = {
+    unassigned: 0,
+    mine: 1,
+    other: 2,
+    resolved: 3
+  }
+  if (ownerRank[left.ownerBucket] !== ownerRank[right.ownerBucket]) {
+    return ownerRank[left.ownerBucket] - ownerRank[right.ownerBucket]
+  }
+  const leftAnchor = typeof left.queueAnchorAt === "number" ? left.queueAnchorAt : Number.POSITIVE_INFINITY
+  const rightAnchor = typeof right.queueAnchorAt === "number" ? right.queueAnchorAt : Number.POSITIVE_INFINITY
+  return leftAnchor - rightAnchor
 }

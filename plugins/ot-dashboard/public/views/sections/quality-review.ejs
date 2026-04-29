@@ -23,6 +23,20 @@
       <p class="item-copy"><%= qualityReview.telemetryWarningMessage %></p>
     </div>
   <% } %>
+
+  <% if (qualityReview.notificationFacts && qualityReview.notificationFacts.length) { %>
+    <div class="facts-grid">
+      <% qualityReview.notificationFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+    <% if (qualityReview.notificationStatusMessage) { %>
+      <p class="field-help"><%= qualityReview.notificationStatusMessage %></p>
+    <% } %>
+  <% } %>
 </section>
 
 <details class="section-card editor-disclosure transcript-filter-shell quality-review-filter-shell" data-responsive-disclosure="quality-review-filters" open>

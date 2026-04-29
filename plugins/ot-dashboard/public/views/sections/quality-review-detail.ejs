@@ -76,6 +76,18 @@
       <% }) %>
     </div>
 
+    <div class="section-heading">
+      <h3>Notifications</h3>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.notificationFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
     <% if (qualityReviewDetail.canManage) { %>
       <div class="stack-form">
         <form method="post" action="<%= qualityReviewDetail.stateActionHref %>" class="stack-form">

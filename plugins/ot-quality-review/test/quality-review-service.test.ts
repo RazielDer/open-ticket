@@ -8,7 +8,9 @@ import {
   OTQualityReviewService,
   QUALITY_REVIEW_CASES_CATEGORY,
   QUALITY_REVIEW_NOTES_CATEGORY,
-  QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY
+  QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY,
+  QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY,
+  type OTQualityReviewConfig
 } from "../service/quality-review-service.js"
 
 class MemoryDatabase {
@@ -38,7 +40,7 @@ class MemoryDatabase {
 function createService(options: {
   now?: () => number
   fetchAsset?: (url: string) => Promise<Response>
-  config?: Partial<{ rawFeedbackRetentionDays: number; maxMirroredFileBytes: number; maxMirroredSessionBytes: number }>
+  config?: Partial<OTQualityReviewConfig>
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ot-quality-review-"))
   let nextId = 1
@@ -57,6 +59,42 @@ function createService(options: {
     config: options.config
   })
   return { root, database, service }
+}
+
+function qualityReviewCase(overrides: Record<string, unknown> = {}) {
+  return {
+    ticketId: "ticket-1",
+    stored: true,
+    state: "unreviewed",
+    ownerUserId: null,
+    createdAt: 0,
+    updatedAt: 0,
+    resolvedAt: null,
+    lastSignalAt: 0,
+    noteCount: 0,
+    rawFeedbackStatus: "none",
+    latestRawFeedbackSessionId: null,
+    ...overrides
+  } as any
+}
+
+function notificationDelivery(messages: Array<{ targetId: string; content: string; allowedMentions: unknown }>, targetOverrides: Record<string, unknown> = {}) {
+  return {
+    expectedGuildId: "guild-1",
+    async resolveTarget(channelId: string) {
+      return {
+        id: channelId,
+        guildId: "guild-1",
+        kind: "text",
+        canView: true,
+        canSend: true,
+        send: async (payload: { content: string; allowedMentions: unknown }) => {
+          messages.push({ targetId: channelId, content: payload.content, allowedMentions: payload.allowedMentions })
+        },
+        ...targetOverrides
+      } as any
+    }
+  }
 }
 
 function payload(overrides: Record<string, unknown> = {}) {
@@ -236,4 +274,176 @@ test("asset resolution rejects symlink escapes even when storage is tampered", a
 
   const result = await service.resolveQualityReviewAsset("ticket-1", "session-1", "uuid-1")
   assert.equal(result.status, "missing")
+})
+
+test("notification cycle is disabled by default and does not create reminder state", async (t) => {
+  const { root, database, service } = createService()
+  const messages: Array<{ targetId: string; content: string; allowedMentions: unknown }> = []
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const result = await service.runNotificationCycle({
+    now: Date.parse("2026-04-28T14:00:00.000Z"),
+    cases: [qualityReviewCase({ lastSignalAt: Date.parse("2026-04-20T14:00:00.000Z") })],
+    delivery: notificationDelivery(messages)
+  })
+
+  assert.equal(result.sentReminderCount, 0)
+  assert.equal(result.digestDelivered, false)
+  assert.equal(result.digestSkippedReason, "notifications_disabled")
+  assert.equal(messages.length, 0)
+  assert.equal(database.getCategory(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY).length, 0)
+})
+
+test("reminder scan sends summary-only overdue reminders and honors cooldown", async (t) => {
+  const now = Date.parse("2026-04-28T14:00:00.000Z")
+  const { root, database, service } = createService({
+    config: {
+      notificationsEnabled: true,
+      deliveryChannelIds: ["123456789012345678"],
+      overdueReminderCooldownHours: 24
+    }
+  })
+  const messages: Array<{ targetId: string; content: string; allowedMentions: unknown }> = []
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const result = await service.runReminderScan({
+    now,
+    queueHref: "https://dashboard.invalid/dash/admin/quality-review",
+    cases: [
+      qualityReviewCase({
+        ticketId: "ticket-overdue",
+        ownerUserId: "owner-1",
+        lastSignalAt: now - 73 * 60 * 60 * 1000,
+        updatedAt: now - 73 * 60 * 60 * 1000
+      }),
+      qualityReviewCase({
+        ticketId: "ticket-fresh",
+        lastSignalAt: now - 60 * 60 * 1000,
+        updatedAt: now - 60 * 60 * 1000
+      }),
+      qualityReviewCase({
+        ticketId: "ticket-resolved",
+        state: "resolved",
+        resolvedAt: now - 60 * 60 * 1000,
+        lastSignalAt: now - 100 * 60 * 60 * 1000,
+        updatedAt: now - 100 * 60 * 60 * 1000
+      })
+    ],
+    delivery: notificationDelivery(messages)
+  })
+
+  assert.equal(result.sentReminderCount, 1)
+  assert.equal(messages.length, 1)
+  assert.match(messages[0].content, /Quality review reminder/)
+  assert.match(messages[0].content, /Ticket: ticket-overdue/)
+  assert.match(messages[0].content, /Queue: https:\/\/dashboard\.invalid\/dash\/admin\/quality-review/)
+  assert.doesNotMatch(messages[0].content, /raw private comment|Investigating|cdn\.discordapp|@everyone|@here|<@/)
+  assert.deepEqual(messages[0].allowedMentions, { parse: [] })
+  const state = database.get(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, "ticket-overdue")
+  assert.equal(state.ticketId, "ticket-overdue")
+  assert.equal(state.lastReminderAt, now)
+  assert.equal(state.lastReminderOverdueKind, "unreviewed")
+
+  const second = await service.runReminderScan({
+    now: now + 60 * 60 * 1000,
+    cases: [qualityReviewCase({ ticketId: "ticket-overdue", lastSignalAt: now - 73 * 60 * 60 * 1000, updatedAt: now - 73 * 60 * 60 * 1000 })],
+    delivery: notificationDelivery(messages)
+  })
+  assert.equal(second.sentReminderCount, 0)
+  assert.equal(messages.length, 1)
+})
+
+test("invalid notification targets fail closed without advancing digest state", async (t) => {
+  const now = Date.parse("2026-04-28T14:00:00.000Z")
+  const { root, database, service } = createService({
+    config: {
+      notificationsEnabled: true,
+      deliveryChannelIds: ["123456789012345678"],
+      digestEnabled: true,
+      digestHourUtc: 14
+    }
+  })
+  const messages: Array<{ targetId: string; content: string; allowedMentions: unknown }> = []
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const result = await service.runNotificationCycle({
+    now,
+    cases: [qualityReviewCase({ ticketId: "ticket-overdue", lastSignalAt: now - 73 * 60 * 60 * 1000, updatedAt: now - 73 * 60 * 60 * 1000 })],
+    delivery: notificationDelivery(messages, { kind: "thread" })
+  })
+
+  assert.equal(result.validTargetCount, 0)
+  assert.equal(result.sentReminderCount, 0)
+  assert.equal(result.digestDelivered, false)
+  assert.equal(result.digestSkippedReason, "no_valid_delivery_targets")
+  assert.match(result.lastDeliveryError || "", /thread channels are not valid delivery targets/)
+  assert.equal(messages.length, 0)
+  assert.equal(database.get(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, "daily:2026-04-28"), undefined)
+})
+
+test("daily digest is global, deduped, bounded, and mention-inert", async (t) => {
+  const now = Date.parse("2026-04-28T14:05:00.000Z")
+  const { root, database, service } = createService({
+    config: {
+      notificationsEnabled: true,
+      deliveryChannelIds: ["123456789012345678"],
+      digestEnabled: true,
+      digestHourUtc: 14,
+      digestMaxTickets: 1
+    }
+  })
+  const messages: Array<{ targetId: string; content: string; allowedMentions: unknown }> = []
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const cases = [
+    qualityReviewCase({
+      ticketId: "ticket-oldest",
+      ownerLabel: "@everyone <@123>",
+      ownerUserId: "123",
+      lastSignalAt: now - 100 * 60 * 60 * 1000,
+      updatedAt: now - 100 * 60 * 60 * 1000
+    }),
+    qualityReviewCase({
+      ticketId: "ticket-newer",
+      state: "in_review",
+      ownerUserId: null,
+      lastSignalAt: now - 200 * 60 * 60 * 1000,
+      updatedAt: now - 169 * 60 * 60 * 1000
+    }),
+    qualityReviewCase({
+      ticketId: "ticket-fresh",
+      ownerUserId: null,
+      lastSignalAt: now - 60 * 60 * 1000,
+      updatedAt: now - 60 * 60 * 1000
+    })
+  ]
+
+  const result = await service.runDigestScan({
+    now,
+    queueHref: "https://dashboard.invalid/dash/admin/quality-review",
+    cases,
+    delivery: notificationDelivery(messages)
+  })
+
+  assert.equal(result.digestDelivered, true)
+  assert.equal(messages.length, 1)
+  assert.match(messages[0].content, /Quality review daily digest 2026-04-28/)
+  assert.match(messages[0].content, /Active: 3/)
+  assert.match(messages[0].content, /Unassigned: 2/)
+  assert.match(messages[0].content, /Overdue: 2/)
+  assert.match(messages[0].content, /Overdue unreviewed: 1/)
+  assert.match(messages[0].content, /Overdue in review: 1/)
+  assert.match(messages[0].content, /ticket-oldest/)
+  assert.doesNotMatch(messages[0].content, /ticket-newer|@everyone|@here|<@|raw private comment|cdn\.discordapp/)
+  assert.deepEqual(messages[0].allowedMentions, { parse: [] })
+  const digest = database.get(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, "daily:2026-04-28")
+  assert.equal(digest.deliveredCount, 3)
+
+  const second = await service.runDigestScan({
+    now: now + 5 * 60 * 1000,
+    cases,
+    delivery: notificationDelivery(messages)
+  })
+  assert.equal(second.digestDelivered, false)
+  assert.equal(second.digestSkippedReason, "already_delivered")
+  assert.equal(messages.length, 1)
 })

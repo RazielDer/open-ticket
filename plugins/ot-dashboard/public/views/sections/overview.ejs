@@ -112,6 +112,19 @@
         </div>
       </div>
     <% } %>
+    <% if (qualityReviewHome.notificationFacts && qualityReviewHome.notificationFacts.length) { %>
+      <div class="facts-grid">
+        <% qualityReviewHome.notificationFacts.forEach((fact) => { %>
+          <div class="fact-row">
+            <span class="fact-label"><%= fact.label %></span>
+            <strong><%= fact.value %></strong>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+    <% if (qualityReviewHome.notificationStatusCopy) { %>
+      <p class="field-help"><%= qualityReviewHome.notificationStatusCopy %></p>
+    <% } %>
     <div class="card-actions">
       <a class="btn secondary" href="<%= qualityReviewHome.links.active %>"><%= t("home.qualityReview.links.active") %></a>
       <a class="btn secondary" href="<%= qualityReviewHome.links.mine %>"><%= t("home.qualityReview.links.mine") %></a>

@@ -49,6 +49,7 @@ import {
   type DashboardQualityReviewCaseQuery,
   type DashboardQualityReviewCaseSignal,
   type DashboardQualityReviewCaseSummary,
+  type DashboardQualityReviewNotificationStatus,
   type DashboardQualityReviewQueueSummary,
   type DashboardQualityReviewRawFeedbackRecord,
   type DashboardQualityReviewRawFeedbackStatus,
@@ -83,6 +84,7 @@ export interface DashboardRuntimeBridge {
   listQualityReviewCases?: (query: DashboardQualityReviewCaseQuery, actorUserId: string) => Promise<DashboardQualityReviewCaseListResult>
   getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
   getQualityReviewQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardQualityReviewQueueSummary | null>
+  getQualityReviewNotificationStatus?: (input?: { ticketId?: string | null; now?: number }) => Promise<DashboardQualityReviewNotificationStatus | null>
   runQualityReviewAction?: (input: DashboardQualityReviewActionRequest) => Promise<DashboardQualityReviewActionResult>
   resolveQualityReviewAsset?: (ticketId: string, sessionId: string, assetId: string, actorUserId: string) => Promise<DashboardQualityReviewAssetResult>
   resolveQualityReviewOwnerLabel?: (userId: string) => Promise<string>
@@ -130,6 +132,9 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async getQualityReviewQueueSummary(input) {
     return await getRuntimeQualityReviewQueueSummary(defaultDashboardRuntimeBridge, input)
+  },
+  async getQualityReviewNotificationStatus(input) {
+    return await getRuntimeQualityReviewNotificationStatus(defaultDashboardRuntimeBridge, input)
   },
   async runQualityReviewAction(input) {
     return await runRuntimeQualityReviewAction(defaultDashboardRuntimeBridge, input)
@@ -1407,6 +1412,50 @@ async function getRuntimeQualityReviewQueueSummary(
     )
   } catch {
     return buildQualityReviewQueueSummary([], { unavailableReason: "Quality review queue summary could not be read." })
+  }
+}
+
+function normalizeQualityReviewNotificationStatus(value: any): DashboardQualityReviewNotificationStatus | null {
+  if (!value || typeof value !== "object") return null
+  const ticketReminder = value.ticketReminder && typeof value.ticketReminder === "object"
+    ? {
+        ticketId: normalizeString(value.ticketReminder.ticketId),
+        lastReminderAt: numberOrNull(value.ticketReminder.lastReminderAt),
+        lastReminderCaseUpdatedAt: numberOrNull(value.ticketReminder.lastReminderCaseUpdatedAt),
+        lastReminderOverdueKind: value.ticketReminder.lastReminderOverdueKind === "unreviewed" || value.ticketReminder.lastReminderOverdueKind === "in_review"
+          ? value.ticketReminder.lastReminderOverdueKind
+          : null
+      }
+    : null
+  return {
+    notificationsEnabled: value.notificationsEnabled === true,
+    digestEnabled: value.digestEnabled === true,
+    deliveryChannelCount: numberOrNull(value.deliveryChannelCount) || 0,
+    configuredTargetCount: numberOrNull(value.configuredTargetCount),
+    validTargetCount: numberOrNull(value.validTargetCount),
+    lastDeliveryError: stringOrNull(value.lastDeliveryError),
+    unavailableReason: stringOrNull(value.unavailableReason),
+    remindersSentToday: numberOrNull(value.remindersSentToday) || 0,
+    lastDigestAt: numberOrNull(value.lastDigestAt),
+    lastDigestDate: stringOrNull(value.lastDigestDate),
+    lastDigestCount: numberOrNull(value.lastDigestCount) || 0,
+    digestDeliveredToday: value.digestDeliveredToday === true,
+    ticketReminder: ticketReminder?.ticketId ? ticketReminder : null,
+    ticketReminderCooldownUntil: numberOrNull(value.ticketReminderCooldownUntil)
+  }
+}
+
+async function getRuntimeQualityReviewNotificationStatus(
+  runtimeBridge: DashboardRuntimeBridge,
+  input: { ticketId?: string | null; now?: number } = {}
+): Promise<DashboardQualityReviewNotificationStatus | null> {
+  const service = getRuntimeQualityReviewService(runtimeBridge)
+  if (!service || typeof service.getDashboardQualityReviewNotificationStatus !== "function") return null
+
+  try {
+    return normalizeQualityReviewNotificationStatus(await service.getDashboardQualityReviewNotificationStatus(input))
+  } catch {
+    return null
   }
 }
 

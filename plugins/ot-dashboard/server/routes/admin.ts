@@ -94,6 +94,7 @@ import {
 } from "../ticket-workbench"
 import type {
   DashboardQualityReviewActionId,
+  DashboardQualityReviewNotificationStatus,
   DashboardQualityReviewQueueSummary,
   DashboardTicketTelemetrySignals
 } from "../ticket-workbench-types"
@@ -564,6 +565,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       unavailableReason: "Quality review queue summary could not be read."
     })
     let queueSummary: DashboardQualityReviewQueueSummary | null = null
+    let notificationStatus: DashboardQualityReviewNotificationStatus | null = null
     if (canReadQualityReview) {
       queueSummary = access?.identity && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
         ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableQueueSummary())
@@ -571,10 +573,13 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       if (!queueSummary) {
         queueSummary = unavailableQueueSummary()
       }
+      notificationStatus = typeof qualityReviewRuntimeBridge.getQualityReviewNotificationStatus === "function"
+        ? await qualityReviewRuntimeBridge.getQualityReviewNotificationStatus({ now: Date.now() }).catch(() => null)
+        : null
     }
     const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration, {
       qualityReview: canReadQualityReview
-        ? buildHomeQualityReviewBlock(context, queueSummary)
+        ? buildHomeQualityReviewBlock(context, queueSummary, notificationStatus)
         : null
     })
     const setupNeedsAttention = homeModel.setupCounts.needsSetup + homeModel.setupCounts.needsAttention

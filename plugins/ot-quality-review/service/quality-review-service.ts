@@ -3,9 +3,16 @@ import fs from "node:fs"
 import path from "node:path"
 import { finished } from "node:stream/promises"
 
+import {
+    activeQualityReviewQueueState,
+    compareQualityReviewQueuePriority,
+    projectQualityReviewQueueFields
+} from "../../ot-dashboard/server/quality-review-queue.js"
+
 export const QUALITY_REVIEW_CASES_CATEGORY = "opendiscord:quality-review:cases"
 export const QUALITY_REVIEW_NOTES_CATEGORY = "opendiscord:quality-review:notes"
 export const QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY = "opendiscord:quality-review:raw-feedback"
+export const QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY = "opendiscord:quality-review:notification-state"
 
 export const QUALITY_REVIEW_STATES = ["unreviewed", "in_review", "resolved"] as const
 export const QUALITY_REVIEW_ACTIONS = ["set-state", "assign-owner", "clear-owner", "add-note"] as const
@@ -20,6 +27,99 @@ export interface OTQualityReviewConfig {
     rawFeedbackRetentionDays: number
     maxMirroredFileBytes: number
     maxMirroredSessionBytes: number
+    notificationsEnabled: boolean
+    deliveryChannelIds: string[]
+    reminderCheckMinutes: number
+    overdueReminderCooldownHours: number
+    digestEnabled: boolean
+    digestHourUtc: number
+    digestMaxTickets: number
+}
+
+export interface OTQualityReviewReminderStateRecord {
+    ticketId: string
+    lastReminderAt: number | null
+    lastReminderCaseUpdatedAt: number | null
+    lastReminderOverdueKind: "unreviewed" | "in_review" | null
+}
+
+export interface OTQualityReviewDigestStateRecord {
+    digestDate: string
+    lastDeliveredAt: number
+    deliveredCount: number
+}
+
+export type OTQualityReviewNotificationTargetKind =
+    | "text"
+    | "announcement"
+    | "thread"
+    | "forum"
+    | "media"
+    | "voice"
+    | "stage"
+    | "dm"
+    | "unknown"
+
+export interface OTQualityReviewNotificationMessagePayload {
+    content: string
+    allowedMentions: { parse: [] }
+}
+
+export interface OTQualityReviewNotificationTarget {
+    id: string
+    guildId: string | null
+    kind: OTQualityReviewNotificationTargetKind
+    canView: boolean
+    canSend: boolean
+    send: (payload: OTQualityReviewNotificationMessagePayload) => Promise<void>
+}
+
+export interface OTQualityReviewNotificationDelivery {
+    expectedGuildId?: string | null
+    resolveTarget: (channelId: string) => Promise<OTQualityReviewNotificationTarget | null>
+}
+
+export interface OTQualityReviewNotificationScanInput {
+    tickets?: OTQualityReviewCaseSignal[] | null
+    cases?: OTQualityReviewCaseSummary[] | null
+    now?: number
+    queueHref?: string | null
+    delivery?: OTQualityReviewNotificationDelivery | null
+}
+
+export interface OTQualityReviewNotificationRunSummary {
+    configuredTargetCount: number
+    validTargetCount: number
+    sentReminderCount: number
+    digestDelivered: boolean
+    digestSkippedReason: string | null
+    lastDeliveryError: string | null
+    warnings: string[]
+}
+
+export interface OTQualityReviewNotificationStatus {
+    notificationsEnabled: boolean
+    digestEnabled: boolean
+    deliveryChannelCount: number
+    configuredTargetCount: number | null
+    validTargetCount: number | null
+    lastDeliveryError: string | null
+    unavailableReason: string | null
+    remindersSentToday: number
+    lastDigestAt: number | null
+    lastDigestDate: string | null
+    lastDigestCount: number
+    digestDeliveredToday: boolean
+    ticketReminder: OTQualityReviewReminderStateRecord | null
+    ticketReminderCooldownUntil: number | null
+}
+
+type OTQualityReviewNotificationCase = OTQualityReviewCaseSummary & {
+    ownerBucket: "mine" | "unassigned" | "other" | "resolved"
+    queueAnchorAt: number | null
+    overdue: boolean
+    overdueKind: "unreviewed" | "in_review" | null
+    overdueSince: number | null
 }
 
 export interface OTQualityReviewCaseRecord {
@@ -174,11 +274,20 @@ type AttachmentLike = {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+const MINUTE_MS = 60 * 1000
 const NOTE_MAX_LENGTH = 4000
 const DEFAULT_CONFIG: OTQualityReviewConfig = {
     rawFeedbackRetentionDays: 90,
     maxMirroredFileBytes: 26214400,
-    maxMirroredSessionBytes: 262144000
+    maxMirroredSessionBytes: 262144000,
+    notificationsEnabled: false,
+    deliveryChannelIds: [],
+    reminderCheckMinutes: 60,
+    overdueReminderCooldownHours: 24,
+    digestEnabled: false,
+    digestHourUtc: 14,
+    digestMaxTickets: 10
 }
 
 export class OTQualityReviewService {
@@ -188,6 +297,7 @@ export class OTQualityReviewService {
     private readonly randomId: () => string
     private readonly fetchAsset: (url: string) => Promise<Response>
     private config: OTQualityReviewConfig
+    private lastNotificationRun: OTQualityReviewNotificationRunSummary | null = null
 
     constructor(dependencies: OTQualityReviewServiceDependencies) {
         this.database = dependencies.database
@@ -211,6 +321,183 @@ export class OTQualityReviewService {
             notes: notes.length,
             rawFeedback: rawFeedback.length
         }
+    }
+
+    async getDashboardQualityReviewNotificationStatus(input: {
+        ticketId?: string | null
+        now?: number
+    } = {}): Promise<OTQualityReviewNotificationStatus> {
+        const now = normalizeTimestamp(input.now, this.now())
+        const today = utcDateKey(now)
+        const reminders = await this.readReminderStates()
+        const digests = await this.readDigestStates()
+        const lastDigest = digests
+            .slice()
+            .sort((left, right) => right.lastDeliveredAt - left.lastDeliveredAt || right.digestDate.localeCompare(left.digestDate))[0] || null
+        const ticketId = stringOrNull(input.ticketId)
+        const ticketReminder = ticketId
+            ? reminders.find((record) => record.ticketId === ticketId) || null
+            : null
+        const remindersSentToday = reminders.filter((record) => record.lastReminderAt !== null && utcDateKey(record.lastReminderAt) === today).length
+        const unavailableReason = this.notificationUnavailableReason()
+
+        return {
+            notificationsEnabled: this.config.notificationsEnabled,
+            digestEnabled: this.config.digestEnabled,
+            deliveryChannelCount: this.config.deliveryChannelIds.length,
+            configuredTargetCount: this.lastNotificationRun?.configuredTargetCount ?? null,
+            validTargetCount: this.lastNotificationRun?.validTargetCount ?? null,
+            lastDeliveryError: this.lastNotificationRun?.lastDeliveryError ?? null,
+            unavailableReason,
+            remindersSentToday,
+            lastDigestAt: lastDigest?.lastDeliveredAt ?? null,
+            lastDigestDate: lastDigest?.digestDate ?? null,
+            lastDigestCount: lastDigest?.deliveredCount ?? 0,
+            digestDeliveredToday: digests.some((record) => record.digestDate === today),
+            ticketReminder,
+            ticketReminderCooldownUntil: ticketReminder?.lastReminderAt
+                ? ticketReminder.lastReminderAt + this.config.overdueReminderCooldownHours * HOUR_MS
+                : null
+        }
+    }
+
+    async runNotificationCycle(input: OTQualityReviewNotificationScanInput = {}): Promise<OTQualityReviewNotificationRunSummary> {
+        const now = normalizeTimestamp(input.now, this.now())
+        if (!this.config.notificationsEnabled) {
+            return this.recordNotificationRun({
+                configuredTargetCount: this.config.deliveryChannelIds.length,
+                validTargetCount: 0,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: "notifications_disabled",
+                lastDeliveryError: null,
+                warnings: []
+            })
+        }
+
+        const targets = await this.resolveNotificationTargets(input.delivery)
+        const base = {
+            configuredTargetCount: targets.configuredTargetCount,
+            validTargetCount: targets.validTargets.length
+        }
+        if (targets.validTargets.length < 1) {
+            return this.recordNotificationRun({
+                ...base,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: "no_valid_delivery_targets",
+                lastDeliveryError: targets.warnings[0] || "No operable quality-review notification targets are configured.",
+                warnings: targets.warnings
+            })
+        }
+
+        const cases = await this.buildNotificationCases(input, now)
+        const reminders = await this.runReminderScanWithTargets({
+            cases,
+            now,
+            queueHref: input.queueHref,
+            targets: targets.validTargets
+        })
+        const digest = await this.runDigestScanWithTargets({
+            cases,
+            now,
+            queueHref: input.queueHref,
+            targets: targets.validTargets
+        })
+        return this.recordNotificationRun({
+            ...base,
+            sentReminderCount: reminders.sentReminderCount,
+            digestDelivered: digest.digestDelivered,
+            digestSkippedReason: digest.digestSkippedReason,
+            lastDeliveryError: reminders.lastDeliveryError || digest.lastDeliveryError || targets.warnings[0] || null,
+            warnings: uniqueStrings([...targets.warnings, ...reminders.warnings, ...digest.warnings])
+        })
+    }
+
+    async runReminderScan(input: OTQualityReviewNotificationScanInput = {}): Promise<OTQualityReviewNotificationRunSummary> {
+        const now = normalizeTimestamp(input.now, this.now())
+        if (!this.config.notificationsEnabled) {
+            return this.recordNotificationRun({
+                configuredTargetCount: this.config.deliveryChannelIds.length,
+                validTargetCount: 0,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: "notifications_disabled",
+                lastDeliveryError: null,
+                warnings: []
+            })
+        }
+        const targets = await this.resolveNotificationTargets(input.delivery)
+        if (targets.validTargets.length < 1) {
+            return this.recordNotificationRun({
+                configuredTargetCount: targets.configuredTargetCount,
+                validTargetCount: 0,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: null,
+                lastDeliveryError: targets.warnings[0] || "No operable quality-review notification targets are configured.",
+                warnings: targets.warnings
+            })
+        }
+        const cases = await this.buildNotificationCases(input, now)
+        const result = await this.runReminderScanWithTargets({
+            cases,
+            now,
+            queueHref: input.queueHref,
+            targets: targets.validTargets
+        })
+        return this.recordNotificationRun({
+            configuredTargetCount: targets.configuredTargetCount,
+            validTargetCount: targets.validTargets.length,
+            sentReminderCount: result.sentReminderCount,
+            digestDelivered: false,
+            digestSkippedReason: null,
+            lastDeliveryError: result.lastDeliveryError || targets.warnings[0] || null,
+            warnings: uniqueStrings([...targets.warnings, ...result.warnings])
+        })
+    }
+
+    async runDigestScan(input: OTQualityReviewNotificationScanInput = {}): Promise<OTQualityReviewNotificationRunSummary> {
+        const now = normalizeTimestamp(input.now, this.now())
+        if (!this.config.notificationsEnabled || !this.config.digestEnabled) {
+            return this.recordNotificationRun({
+                configuredTargetCount: this.config.deliveryChannelIds.length,
+                validTargetCount: 0,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: this.config.notificationsEnabled ? "digest_disabled" : "notifications_disabled",
+                lastDeliveryError: null,
+                warnings: []
+            })
+        }
+        const targets = await this.resolveNotificationTargets(input.delivery)
+        if (targets.validTargets.length < 1) {
+            return this.recordNotificationRun({
+                configuredTargetCount: targets.configuredTargetCount,
+                validTargetCount: 0,
+                sentReminderCount: 0,
+                digestDelivered: false,
+                digestSkippedReason: "no_valid_delivery_targets",
+                lastDeliveryError: targets.warnings[0] || "No operable quality-review notification targets are configured.",
+                warnings: targets.warnings
+            })
+        }
+        const cases = await this.buildNotificationCases(input, now)
+        const result = await this.runDigestScanWithTargets({
+            cases,
+            now,
+            queueHref: input.queueHref,
+            targets: targets.validTargets
+        })
+        return this.recordNotificationRun({
+            configuredTargetCount: targets.configuredTargetCount,
+            validTargetCount: targets.validTargets.length,
+            sentReminderCount: 0,
+            digestDelivered: result.digestDelivered,
+            digestSkippedReason: result.digestSkippedReason,
+            lastDeliveryError: result.lastDeliveryError || targets.warnings[0] || null,
+            warnings: uniqueStrings([...targets.warnings, ...result.warnings])
+        })
     }
 
     async captureFeedbackPayload<Response extends FeedbackResponseLike>(
@@ -468,6 +755,189 @@ export class OTQualityReviewService {
         return expired
     }
 
+    private async buildNotificationCases(input: OTQualityReviewNotificationScanInput, now: number) {
+        const sourceCases = Array.isArray(input.cases)
+            ? input.cases
+            : (await this.listDashboardQualityReviewCases({ tickets: input.tickets || [] })).cases
+        return sourceCases
+            .filter((reviewCase) => normalizeString(reviewCase.ticketId))
+            .map((reviewCase) => projectQualityReviewQueueFields(reviewCase, { now }) as OTQualityReviewNotificationCase)
+    }
+
+    private async runReminderScanWithTargets(input: {
+        cases: OTQualityReviewNotificationCase[]
+        now: number
+        queueHref?: string | null
+        targets: OTQualityReviewNotificationTarget[]
+    }) {
+        const candidates = input.cases
+            .filter((reviewCase) => (
+                activeQualityReviewQueueState(reviewCase.state)
+                && reviewCase.overdue
+                && reviewCase.overdueKind !== null
+            ))
+            .sort(compareQualityReviewQueuePriority)
+        let sentReminderCount = 0
+        let lastDeliveryError: string | null = null
+        const warnings: string[] = []
+
+        for (const candidate of candidates) {
+            const previous = await this.readReminderState(candidate.ticketId)
+            if (!this.reminderCooldownElapsed(previous, input.now)) continue
+
+            const payload = buildReminderPayload(candidate, {
+                queueHref: input.queueHref,
+                now: input.now
+            })
+            const result = await sendToTargets(input.targets, payload)
+            warnings.push(...result.warnings)
+            if (result.lastDeliveryError) lastDeliveryError = result.lastDeliveryError
+            if (result.sentCount < 1) continue
+
+            const record: OTQualityReviewReminderStateRecord = {
+                ticketId: candidate.ticketId,
+                lastReminderAt: input.now,
+                lastReminderCaseUpdatedAt: notificationCaseUpdatedAt(candidate),
+                lastReminderOverdueKind: candidate.overdueKind
+            }
+            await this.database.set(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, candidate.ticketId, record)
+            sentReminderCount += 1
+        }
+
+        return {
+            sentReminderCount,
+            lastDeliveryError,
+            warnings
+        }
+    }
+
+    private async runDigestScanWithTargets(input: {
+        cases: OTQualityReviewNotificationCase[]
+        now: number
+        queueHref?: string | null
+        targets: OTQualityReviewNotificationTarget[]
+    }) {
+        if (!this.config.digestEnabled) {
+            return {
+                digestDelivered: false,
+                digestSkippedReason: "digest_disabled",
+                lastDeliveryError: null,
+                warnings: [] as string[]
+            }
+        }
+        const digestDate = utcDateKey(input.now)
+        if (new Date(input.now).getUTCHours() !== this.config.digestHourUtc) {
+            return {
+                digestDelivered: false,
+                digestSkippedReason: "outside_digest_hour",
+                lastDeliveryError: null,
+                warnings: [] as string[]
+            }
+        }
+        const existing = await this.readDigestState(digestDate)
+        if (existing) {
+            return {
+                digestDelivered: false,
+                digestSkippedReason: "already_delivered",
+                lastDeliveryError: null,
+                warnings: [] as string[]
+            }
+        }
+
+        const active = input.cases.filter((reviewCase) => activeQualityReviewQueueState(reviewCase.state))
+        const overdue = active
+            .filter((reviewCase) => reviewCase.overdue)
+            .sort(compareQualityReviewQueuePriority)
+        const payload = buildDigestPayload(active, overdue, {
+            queueHref: input.queueHref,
+            digestMaxTickets: this.config.digestMaxTickets,
+            now: input.now
+        })
+        const result = await sendToTargets(input.targets, payload)
+        if (result.sentCount < 1) {
+            return {
+                digestDelivered: false,
+                digestSkippedReason: "delivery_failed",
+                lastDeliveryError: result.lastDeliveryError,
+                warnings: result.warnings
+            }
+        }
+
+        await this.database.set(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, `daily:${digestDate}`, {
+            digestDate,
+            lastDeliveredAt: input.now,
+            deliveredCount: active.length
+        } satisfies OTQualityReviewDigestStateRecord)
+        return {
+            digestDelivered: true,
+            digestSkippedReason: null,
+            lastDeliveryError: result.lastDeliveryError,
+            warnings: result.warnings
+        }
+    }
+
+    private reminderCooldownElapsed(record: OTQualityReviewReminderStateRecord | null, now: number) {
+        if (!record?.lastReminderAt) return true
+        return now - record.lastReminderAt >= this.config.overdueReminderCooldownHours * HOUR_MS
+    }
+
+    private async resolveNotificationTargets(delivery: OTQualityReviewNotificationDelivery | null | undefined) {
+        const configuredTargetCount = this.config.deliveryChannelIds.length
+        const warnings: string[] = []
+        const validTargets: OTQualityReviewNotificationTarget[] = []
+        if (configuredTargetCount < 1) {
+            return {
+                configuredTargetCount,
+                validTargets,
+                warnings: ["Quality-review notifications have no delivery channels configured."]
+            }
+        }
+        if (!delivery) {
+            return {
+                configuredTargetCount,
+                validTargets,
+                warnings: ["Quality-review notification delivery is unavailable."]
+            }
+        }
+
+        for (const channelId of this.config.deliveryChannelIds) {
+            let target: OTQualityReviewNotificationTarget | null = null
+            try {
+                target = await delivery.resolveTarget(channelId)
+            } catch (error) {
+                warnings.push(`Delivery target ${channelId} could not be resolved: ${safeDeliveryFailureReason(error)}`)
+                continue
+            }
+            const validation = validateNotificationTarget(target, delivery.expectedGuildId)
+            if (!validation.ok) {
+                warnings.push(`Delivery target ${channelId} skipped: ${validation.reason}`)
+                continue
+            }
+            validTargets.push(validation.target)
+        }
+
+        return {
+            configuredTargetCount,
+            validTargets,
+            warnings: uniqueStrings(warnings)
+        }
+    }
+
+    private notificationUnavailableReason() {
+        if (!this.config.notificationsEnabled) return "Quality-review notifications are disabled."
+        if (this.config.deliveryChannelIds.length < 1) return "No quality-review delivery channels are configured."
+        if (this.lastNotificationRun?.lastDeliveryError) return this.lastNotificationRun.lastDeliveryError
+        return null
+    }
+
+    private recordNotificationRun(summary: OTQualityReviewNotificationRunSummary) {
+        this.lastNotificationRun = {
+            ...summary,
+            warnings: uniqueStrings(summary.warnings)
+        }
+        return this.lastNotificationRun
+    }
+
     private async mirrorAnswerAsset(input: {
         ticketId: string
         sessionId: string
@@ -701,6 +1171,20 @@ export class OTQualityReviewService {
         return isRawFeedbackRecord(value) ? value : null
     }
 
+    private async readReminderState(ticketId: string) {
+        const value = typeof this.database.get === "function"
+            ? await this.database.get(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, ticketId)
+            : (await this.readReminderStates()).find((record) => record.ticketId === ticketId) || null
+        return isReminderStateRecord(value) ? value : null
+    }
+
+    private async readDigestState(digestDate: string) {
+        const value = typeof this.database.get === "function"
+            ? await this.database.get(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY, `daily:${digestDate}`)
+            : (await this.readDigestStates()).find((record) => record.digestDate === digestDate) || null
+        return isDigestStateRecord(value) ? value : null
+    }
+
     private async readCases() {
         return (await this.readCategory(QUALITY_REVIEW_CASES_CATEGORY)).filter(isCaseRecord)
     }
@@ -713,6 +1197,14 @@ export class OTQualityReviewService {
         return (await this.readCategory(QUALITY_REVIEW_RAW_FEEDBACK_CATEGORY)).filter(isRawFeedbackRecord)
     }
 
+    private async readReminderStates() {
+        return (await this.readCategory(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY)).filter(isReminderStateRecord)
+    }
+
+    private async readDigestStates() {
+        return (await this.readCategory(QUALITY_REVIEW_NOTIFICATION_STATE_CATEGORY)).filter(isDigestStateRecord)
+    }
+
     private async readCategory(category: string) {
         return (await this.database.getCategory(category) ?? []).map((entry) => entry.value)
     }
@@ -722,8 +1214,145 @@ function normalizeConfig(config: Partial<OTQualityReviewConfig> | null | undefin
     return {
         rawFeedbackRetentionDays: boundedInteger(config?.rawFeedbackRetentionDays, 1, 365, DEFAULT_CONFIG.rawFeedbackRetentionDays),
         maxMirroredFileBytes: positiveInteger(config?.maxMirroredFileBytes, DEFAULT_CONFIG.maxMirroredFileBytes),
-        maxMirroredSessionBytes: positiveInteger(config?.maxMirroredSessionBytes, DEFAULT_CONFIG.maxMirroredSessionBytes)
+        maxMirroredSessionBytes: positiveInteger(config?.maxMirroredSessionBytes, DEFAULT_CONFIG.maxMirroredSessionBytes),
+        notificationsEnabled: config?.notificationsEnabled === true,
+        deliveryChannelIds: normalizeDiscordIds(config?.deliveryChannelIds),
+        reminderCheckMinutes: boundedInteger(config?.reminderCheckMinutes, 15, 1440, DEFAULT_CONFIG.reminderCheckMinutes),
+        overdueReminderCooldownHours: boundedInteger(config?.overdueReminderCooldownHours, 1, 168, DEFAULT_CONFIG.overdueReminderCooldownHours),
+        digestEnabled: config?.digestEnabled === true,
+        digestHourUtc: boundedInteger(config?.digestHourUtc, 0, 23, DEFAULT_CONFIG.digestHourUtc),
+        digestMaxTickets: boundedInteger(config?.digestMaxTickets, 1, 25, DEFAULT_CONFIG.digestMaxTickets)
     }
+}
+
+function normalizeDiscordIds(value: unknown) {
+    const raw = Array.isArray(value) ? value : []
+    return raw
+        .map((entry) => normalizeString(entry))
+        .filter((entry) => /^[0-9]{15,50}$/.test(entry))
+        .filter((entry, index, values) => values.indexOf(entry) === index)
+}
+
+function notificationCaseUpdatedAt(reviewCase: OTQualityReviewNotificationCase) {
+    return Math.max(
+        numberOrNull(reviewCase.updatedAt) ?? 0,
+        numberOrNull(reviewCase.queueAnchorAt) ?? 0,
+        numberOrNull(reviewCase.lastSignalAt) ?? 0
+    ) || null
+}
+
+function buildReminderPayload(
+    reviewCase: OTQualityReviewNotificationCase,
+    input: { queueHref?: string | null; now: number }
+): OTQualityReviewNotificationMessagePayload {
+    const owner = inertDiscordText(ownerLabelForNotification(reviewCase))
+    const state = reviewCase.state === "in_review" ? "in review" : "unreviewed"
+    const overdueKind = reviewCase.overdueKind === "in_review" ? "in-review" : "unreviewed"
+    const content = [
+        "Quality review reminder",
+        `Ticket: ${inertDiscordText(reviewCase.ticketId)}`,
+        `State: ${state}`,
+        `Owner: ${owner}`,
+        `Overdue: ${overdueKind}`,
+        `Queue: ${qualityReviewQueueHref(input.queueHref)}`
+    ].join("\n")
+    return notificationPayload(content)
+}
+
+function buildDigestPayload(
+    activeCases: OTQualityReviewNotificationCase[],
+    overdueCases: OTQualityReviewNotificationCase[],
+    input: { queueHref?: string | null; digestMaxTickets: number; now: number }
+): OTQualityReviewNotificationMessagePayload {
+    const unassignedCount = activeCases.filter((reviewCase) => !reviewCase.ownerUserId).length
+    const overdueUnreviewedCount = overdueCases.filter((reviewCase) => reviewCase.overdueKind === "unreviewed").length
+    const overdueInReviewCount = overdueCases.filter((reviewCase) => reviewCase.overdueKind === "in_review").length
+    const rows = overdueCases.slice(0, input.digestMaxTickets).map((reviewCase) => {
+        const state = reviewCase.state === "in_review" ? "in review" : "unreviewed"
+        return `- ${inertDiscordText(reviewCase.ticketId)} | ${state} | ${inertDiscordText(ownerLabelForNotification(reviewCase))}`
+    })
+    const content = [
+        `Quality review daily digest ${utcDateKey(input.now)}`,
+        `Active: ${activeCases.length}`,
+        `Unassigned: ${unassignedCount}`,
+        `Overdue: ${overdueCases.length}`,
+        `Overdue unreviewed: ${overdueUnreviewedCount}`,
+        `Overdue in review: ${overdueInReviewCount}`,
+        `Queue: ${qualityReviewQueueHref(input.queueHref)}`,
+        ...(rows.length ? ["Oldest overdue:", ...rows] : ["Oldest overdue: none"])
+    ].join("\n")
+    return notificationPayload(content)
+}
+
+function ownerLabelForNotification(reviewCase: OTQualityReviewNotificationCase) {
+    const ownerLabel = normalizeString((reviewCase as OTQualityReviewNotificationCase & { ownerLabel?: unknown }).ownerLabel)
+    return ownerLabel || normalizeString(reviewCase.ownerUserId) || "Unassigned"
+}
+
+function qualityReviewQueueHref(value: string | null | undefined) {
+    return normalizeString(value) || "/admin/quality-review"
+}
+
+function notificationPayload(content: string): OTQualityReviewNotificationMessagePayload {
+    return {
+        content,
+        allowedMentions: { parse: [] }
+    }
+}
+
+function inertDiscordText(value: string) {
+    return normalizeString(value)
+        .replace(/@/g, "at ")
+        .replace(/[<>]/g, "")
+}
+
+function validateNotificationTarget(
+    target: OTQualityReviewNotificationTarget | null,
+    expectedGuildId: string | null | undefined
+): { ok: true; target: OTQualityReviewNotificationTarget } | { ok: false; reason: string } {
+    if (!target) return { ok: false, reason: "channel could not be resolved" }
+    if (!target.guildId) return { ok: false, reason: "channel is not guild-scoped" }
+    const expected = stringOrNull(expectedGuildId)
+    if (expected && target.guildId !== expected) return { ok: false, reason: "channel is outside the configured guild" }
+    if (target.kind !== "text" && target.kind !== "announcement") {
+        return { ok: false, reason: `${target.kind} channels are not valid delivery targets` }
+    }
+    if (!target.canView) return { ok: false, reason: "bot lacks ViewChannel" }
+    if (!target.canSend) return { ok: false, reason: "bot lacks SendMessages" }
+    return { ok: true, target }
+}
+
+async function sendToTargets(
+    targets: OTQualityReviewNotificationTarget[],
+    payload: OTQualityReviewNotificationMessagePayload
+) {
+    let sentCount = 0
+    let lastDeliveryError: string | null = null
+    const warnings: string[] = []
+    for (const target of targets) {
+        try {
+            await target.send(payload)
+            sentCount += 1
+        } catch (error) {
+            lastDeliveryError = safeDeliveryFailureReason(error)
+            warnings.push(`Delivery target ${target.id} failed: ${lastDeliveryError}`)
+        }
+    }
+    return {
+        sentCount,
+        lastDeliveryError,
+        warnings
+    }
+}
+
+function safeDeliveryFailureReason(error: unknown) {
+    if (!(error instanceof Error)) return "Discord delivery failed."
+    const message = normalizeString(error.message).replace(/https?:\/\/\S+/g, "[redacted-url]")
+    return message.slice(0, 180) || "Discord delivery failed."
+}
+
+function utcDateKey(timestamp: number) {
+    return new Date(timestamp).toISOString().slice(0, 10)
 }
 
 function boundedInteger(value: unknown, min: number, max: number, fallback: number) {
@@ -905,5 +1534,29 @@ function isRawFeedbackRecord(value: unknown): value is OTQualityReviewRawFeedbac
         && (record.storageStatus === "available" || record.storageStatus === "partial" || record.storageStatus === "expired")
         && Array.isArray(record.warnings)
         && Array.isArray(record.answers)
+    )
+}
+
+function isReminderStateRecord(value: unknown): value is OTQualityReviewReminderStateRecord {
+    const record = value as OTQualityReviewReminderStateRecord
+    return Boolean(
+        record
+        && typeof record === "object"
+        && typeof record.ticketId === "string"
+        && (typeof record.lastReminderAt === "number" || record.lastReminderAt === null)
+        && (typeof record.lastReminderCaseUpdatedAt === "number" || record.lastReminderCaseUpdatedAt === null)
+        && (record.lastReminderOverdueKind === "unreviewed" || record.lastReminderOverdueKind === "in_review" || record.lastReminderOverdueKind === null)
+    )
+}
+
+function isDigestStateRecord(value: unknown): value is OTQualityReviewDigestStateRecord {
+    const record = value as OTQualityReviewDigestStateRecord
+    return Boolean(
+        record
+        && typeof record === "object"
+        && typeof record.digestDate === "string"
+        && /^\d{4}-\d{2}-\d{2}$/.test(record.digestDate)
+        && typeof record.lastDeliveredAt === "number"
+        && typeof record.deliveredCount === "number"
     )
 }
