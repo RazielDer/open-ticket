@@ -259,11 +259,13 @@
             </form>
           <% }) %>
         </div>
-        <ul class="entry-stack">
-          <% ticketDetail.deferredActions.forEach((label) => { %>
-            <li><%= label %></li>
-          <% }) %>
-        </ul>
+        <% if (ticketDetail.deferredActions.length) { %>
+          <ul class="entry-stack">
+            <% ticketDetail.deferredActions.forEach((label) => { %>
+              <li><%= label %></li>
+            <% }) %>
+          </ul>
+        <% } %>
       </section>
     </div>
 

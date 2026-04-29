@@ -16,8 +16,11 @@ import type {
   DashboardTicketQueueFacts,
   DashboardTicketQueueState,
   DashboardTicketQueueSummary,
+  DashboardTicketTeamQueueSummary,
   DashboardTicketTelemetrySignals,
-  DashboardTicketTransportMode
+  DashboardTicketTransportMode,
+  DashboardTicketWorkbenchSavedViewSummary,
+  DashboardTicketWorkbenchViewRecord
 } from "./ticket-workbench-types"
 import { DASHBOARD_TICKET_ACTION_IDS } from "./ticket-workbench-types"
 
@@ -30,6 +33,24 @@ export const TICKET_WORKBENCH_ATTENTION_FILTERS = ["all", "first-response", "una
 export const TICKET_WORKBENCH_SORTS = ["queue-priority", "activity-desc", "activity-asc", "opened-desc", "opened-asc"] as const
 export const TICKET_WORKBENCH_LIMITS = [10, 25, 50, 100] as const
 export const TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES = ["claimed", "assigned", "unclaimed", "unassigned", "escalated"] as const
+export const TICKET_WORKBENCH_UNASSIGNED_TEAM_ID = "__unassigned"
+const TICKET_WORKBENCH_TEAM_DEPTH_DEGRADED_REASON = "tickets.page.teamDepthDegraded"
+export const TICKET_WORKBENCH_SAVED_VIEW_QUERY_KEYS = [
+  "q",
+  "status",
+  "transport",
+  "feedback",
+  "reopened",
+  "queueState",
+  "attention",
+  "teamId",
+  "assigneeId",
+  "optionId",
+  "panelId",
+  "creatorId",
+  "sort",
+  "limit"
+] as const
 
 type TicketWorkbenchTranslator = DashboardI18n["t"]
 
@@ -71,6 +92,7 @@ export interface TicketWorkbenchListRequest {
   sort: TicketWorkbenchSort
   limit: number
   page: number
+  viewId: string
   statusOptions: Array<{ value: TicketWorkbenchStatusFilter; label: string }>
   transportOptions: Array<{ value: TicketWorkbenchTransportFilter; label: string }>
   feedbackOptions: Array<{ value: TicketWorkbenchFeedbackFilter; label: string }>
@@ -136,6 +158,17 @@ export interface TicketWorkbenchListModel {
     returnTo: string
   }
   qualityReviewHref: string | null
+  savedViews: {
+    available: boolean
+    createAction: string
+    activeView: DashboardTicketWorkbenchSavedViewSummary | null
+    privateViews: DashboardTicketWorkbenchSavedViewSummary[]
+    sharedViews: DashboardTicketWorkbenchSavedViewSummary[]
+    currentQuery: Record<string, string>
+    canManageShared: boolean
+    unavailableMessage: string
+  }
+  teamQueueSummaries: DashboardTicketTeamQueueSummary[]
   options: Array<{ id: string; label: string }>
   panels: Array<{ id: string; label: string }>
   supportTeams: Array<{ id: string; label: string }>
@@ -172,7 +205,7 @@ export interface TicketWorkbenchActionForm {
   choices: Array<{ value: string; label: string }>
   choiceName: "assigneeUserId" | "targetOptionId" | "newCreatorUserId" | "participantUserId" | "priorityId" | null
   choiceLabel: string | null
-  textName: "topic" | null
+  textName: "topic" | "renameName" | null
   textValue: string
   textLabel: string | null
   textPlaceholder: string | null
@@ -259,8 +292,23 @@ function buildPageHref(basePath: string, request: TicketWorkbenchListRequest, pa
     creatorId: request.creatorId,
     sort: request.sort === "queue-priority" ? "" : request.sort,
     limit: request.limit === 25 ? "" : request.limit,
+    viewId: request.viewId,
     page
   })
+}
+
+export function buildTicketWorkbenchSavedViewHref(basePath: string, view: DashboardTicketWorkbenchViewRecord) {
+  return appendQuery(joinBasePath(basePath, "admin/tickets"), {
+    ...view.query,
+    viewId: view.viewId,
+    page: 1
+  })
+}
+
+export function removeTicketWorkbenchViewIdFromHref(href: string) {
+  const url = new URL(`http://dashboard.local${href}`)
+  url.searchParams.delete("viewId")
+  return `${url.pathname}${url.search}`
 }
 
 export function sanitizeTicketWorkbenchReturnTo(basePath: string, candidate: unknown) {
@@ -307,6 +355,7 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
     sort: enumOrDefault(query.sort, TICKET_WORKBENCH_SORTS, "queue-priority"),
     limit,
     page: intOrDefault(query.page, 1),
+    viewId: normalizeString(query.viewId),
     statusOptions: [
       { value: "all", label: "All" },
       { value: "open", label: "Open" },
@@ -361,16 +410,25 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
 function readConfigArray(configService: DashboardConfigService, id: "options" | "panels" | "support-teams") {
   try {
     const value = configService.readManagedJson<ConfigRecord[]>(id)
-    return Array.isArray(value) ? value : []
+    return {
+      records: Array.isArray(value) ? value : [],
+      unavailable: false
+    }
   } catch {
-    return []
+    return {
+      records: [],
+      unavailable: true
+    }
   }
 }
 
 function buildConfigLookups(configService: DashboardConfigService) {
-  const options = readConfigArray(configService, "options")
-  const panels = readConfigArray(configService, "panels")
-  const supportTeams = readConfigArray(configService, "support-teams")
+  const optionsRead = readConfigArray(configService, "options")
+  const panelsRead = readConfigArray(configService, "panels")
+  const supportTeamsRead = readConfigArray(configService, "support-teams")
+  const options = optionsRead.records
+  const panels = panelsRead.records
+  const supportTeams = supportTeamsRead.records
 
   const optionById = new Map<string, ConfigRecord>()
   const panelById = new Map<string, ConfigRecord>()
@@ -397,7 +455,20 @@ function buildConfigLookups(configService: DashboardConfigService) {
     if (id) teamById.set(id, team)
   }
 
-  return { options, panels, supportTeams, optionById, panelById, teamById, panelForOption }
+  return {
+    options,
+    panels,
+    supportTeams,
+    optionById,
+    panelById,
+    teamById,
+    panelForOption,
+    unavailable: {
+      options: optionsRead.unavailable,
+      panels: panelsRead.unavailable,
+      supportTeams: supportTeamsRead.unavailable
+    }
+  }
 }
 
 function labelFromRecord(record: ConfigRecord | null | undefined, fallback: string) {
@@ -452,6 +523,51 @@ function defaultTelemetrySignals(): DashboardTicketTelemetrySignals {
     latestFeedbackCompletedAt: null,
     latestRatings: []
   }
+}
+
+function hasQueryValue(query: Record<string, unknown>, key: string) {
+  const value = query[key]
+  if (Array.isArray(value)) return value.some((entry) => normalizeString(entry))
+  return normalizeString(value).length > 0
+}
+
+export function ticketWorkbenchSavedQueryFromRequest(request: TicketWorkbenchListRequest): Record<string, string> {
+  const query: Record<string, string> = {}
+  if (request.q) query.q = request.q
+  if (request.status !== "all") query.status = request.status
+  if (request.transport !== "all") query.transport = request.transport
+  if (request.feedback !== "all") query.feedback = request.feedback
+  if (request.reopened !== "all") query.reopened = request.reopened
+  if (request.queueState !== "all") query.queueState = request.queueState
+  if (request.attention !== "all") query.attention = request.attention
+  if (request.teamId) query.teamId = request.teamId
+  if (request.assigneeId) query.assigneeId = request.assigneeId
+  if (request.optionId) query.optionId = request.optionId
+  if (request.panelId) query.panelId = request.panelId
+  if (request.creatorId) query.creatorId = request.creatorId
+  if (request.sort !== "queue-priority") query.sort = request.sort
+  if (request.limit !== 25) query.limit = String(request.limit)
+  return query
+}
+
+export function normalizeTicketWorkbenchSavedViewQuery(query: Record<string, unknown>): Record<string, string> {
+  const request = parseTicketWorkbenchListRequest(query)
+  const normalized: Record<string, string> = {}
+  if (hasQueryValue(query, "q") && request.q) normalized.q = request.q
+  if (hasQueryValue(query, "status")) normalized.status = request.status
+  if (hasQueryValue(query, "transport")) normalized.transport = request.transport
+  if (hasQueryValue(query, "feedback")) normalized.feedback = request.feedback
+  if (hasQueryValue(query, "reopened")) normalized.reopened = request.reopened
+  if (hasQueryValue(query, "queueState")) normalized.queueState = request.queueState
+  if (hasQueryValue(query, "attention")) normalized.attention = request.attention
+  if (hasQueryValue(query, "teamId") && request.teamId) normalized.teamId = request.teamId
+  if (hasQueryValue(query, "assigneeId") && request.assigneeId) normalized.assigneeId = request.assigneeId
+  if (hasQueryValue(query, "optionId") && request.optionId) normalized.optionId = request.optionId
+  if (hasQueryValue(query, "panelId") && request.panelId) normalized.panelId = request.panelId
+  if (hasQueryValue(query, "creatorId") && request.creatorId) normalized.creatorId = request.creatorId
+  if (hasQueryValue(query, "sort")) normalized.sort = request.sort
+  if (hasQueryValue(query, "limit")) normalized.limit = String(request.limit)
+  return normalized
 }
 
 function ticketTelemetrySignal(signals: Record<string, DashboardTicketTelemetrySignals> | undefined, ticketId: string) {
@@ -660,7 +776,9 @@ function applyListFilters(
     if (request.status === "claimed" && !ticket.claimed) return false
     if (request.status === "unclaimed" && ticket.claimed) return false
     if (request.transport !== "all" && ticket.transportMode !== request.transport) return false
-    if (request.teamId && ticket.assignedTeamId !== request.teamId) return false
+    if (request.teamId === TICKET_WORKBENCH_UNASSIGNED_TEAM_ID) {
+      if (ticket.assignedTeamId && (lookups.unavailable.supportTeams || lookups.teamById.has(ticket.assignedTeamId))) return false
+    } else if (request.teamId && ticket.assignedTeamId !== request.teamId) return false
     if (request.assigneeId && ticket.assignedStaffUserId !== request.assigneeId) return false
     if (request.optionId && ticket.optionId !== request.optionId) return false
     if (request.panelId && panel.panelId !== request.panelId) return false
@@ -757,7 +875,16 @@ function buildActiveFilters(request: TicketWorkbenchListRequest, lookups: Return
   if (request.reopened !== "all") filters.push({ label: "Reopened", value: request.reopened === "ever" ? "Ever reopened" : "Never reopened" })
   if (request.queueState !== "all") filters.push({ label: "Queue", value: queueStateBadge(request.queueState).label })
   if (request.attention !== "all") filters.push({ label: "Attention", value: attentionBadge(request.attention).label })
-  if (request.teamId) filters.push({ label: "Team", value: resolveTeamLabel(lookups.teamById, request.teamId) })
+  if (request.teamId) {
+    filters.push({
+      label: "Team",
+      value: request.teamId === TICKET_WORKBENCH_UNASSIGNED_TEAM_ID
+        ? "Unassigned/no team"
+        : lookups.unavailable.supportTeams && request.teamId
+          ? `Team unavailable (${request.teamId})`
+          : resolveTeamLabel(lookups.teamById, request.teamId)
+    })
+  }
   if (request.assigneeId) filters.push({ label: "Assignee", value: unknownUserLabel(request.assigneeId) })
   if (request.optionId) filters.push({ label: "Option", value: resolveOptionLabel(lookups.optionById, request.optionId) })
   if (request.panelId) filters.push({ label: "Panel", value: labelFromRecord(lookups.panelById.get(request.panelId), `Missing panel (${request.panelId})`) })
@@ -765,6 +892,103 @@ function buildActiveFilters(request: TicketWorkbenchListRequest, lookups: Return
   if (request.sort !== "queue-priority") filters.push({ label: "Sort", value: request.sort })
   if (request.limit !== 25) filters.push({ label: "Rows", value: String(request.limit) })
   return filters
+}
+
+function buildTeamQueueSummaries(
+  basePath: string,
+  tickets: DashboardTicketRecord[],
+  lookups: ReturnType<typeof buildConfigLookups>,
+  queueFacts: Record<string, DashboardTicketQueueFacts>
+): DashboardTicketTeamQueueSummary[] {
+  const buckets = new Map<string | null, {
+    teamId: string | null
+    teamLabel: string
+    tickets: DashboardTicketRecord[]
+  }>()
+  const supportTeamsUnavailable = lookups.unavailable.supportTeams
+
+  for (const ticket of tickets) {
+    const configuredTeamId = normalizeString(ticket.assignedTeamId)
+    const teamId = configuredTeamId && (supportTeamsUnavailable || lookups.teamById.has(configuredTeamId)) ? configuredTeamId : null
+    const teamLabel = teamId
+      ? supportTeamsUnavailable && !lookups.teamById.has(teamId)
+        ? `Team unavailable (${teamId})`
+        : resolveTeamLabel(lookups.teamById, teamId)
+      : "Unassigned/no team"
+    const current = buckets.get(teamId) || { teamId, teamLabel, tickets: [] }
+    current.tickets.push(ticket)
+    buckets.set(teamId, current)
+  }
+
+  return [...buckets.values()]
+    .map((bucket) => {
+      const facts = bucket.tickets
+        .map((ticket) => queueFacts[ticket.id] || projectDashboardTicketQueueFacts(ticket))
+      const active = facts.filter((item) => item.queueState !== "resolved")
+      const anchors = active
+        .map((item) => item.queueAnchorAt)
+        .filter((value): value is number => value != null)
+      const oldestQueueAnchorAt = anchors.length ? Math.min(...anchors) : null
+      return {
+        teamId: bucket.teamId,
+        teamLabel: bucket.teamLabel,
+        activeCount: active.length,
+        waitingStaffCount: active.filter((item) => item.queueState === "waiting_staff").length,
+        ownedCount: active.filter((item) => item.queueState === "owned").length,
+        attentionCount: active.filter((item) => item.attention.length > 0).length,
+        firstResponseOverdueCount: active.filter((item) => item.firstResponseOverdue).length,
+        unassignedCount: active.filter((item) => item.unassignedAttention).length,
+        staleOwnerCount: active.filter((item) => item.staleOwner).length,
+        closeRequestCount: active.filter((item) => item.closeRequestAttention).length,
+        awaitingUserCount: active.filter((item) => item.awaitingUserAttention).length,
+        oldestQueueAnchorAt,
+        oldestQueueAnchorLabel: formatDate(oldestQueueAnchorAt),
+        viewHref: appendQuery(joinBasePath(basePath, "admin/tickets"), {
+          teamId: bucket.teamId || TICKET_WORKBENCH_UNASSIGNED_TEAM_ID,
+          sort: "queue-priority",
+          page: 1
+        }),
+        unavailableReason: supportTeamsUnavailable && bucket.teamId ? TICKET_WORKBENCH_TEAM_DEPTH_DEGRADED_REASON : null
+      }
+    })
+    .filter((summary) => summary.activeCount > 0)
+    .sort((left, right) => right.activeCount - left.activeCount || left.teamLabel.localeCompare(right.teamLabel))
+}
+
+function buildSavedViewSummaries(input: {
+  basePath: string
+  views?: DashboardTicketWorkbenchViewRecord[]
+  activeViewId?: string
+  actorUserId?: string
+  canManageShared?: boolean
+}) {
+  const activeViewId = normalizeString(input.activeViewId)
+  const actorUserId = normalizeString(input.actorUserId)
+  const canManageShared = input.canManageShared === true
+  const summaries = (input.views || [])
+    .map((view): DashboardTicketWorkbenchSavedViewSummary => {
+      const ownerCanWrite = view.scope === "private" && view.ownerUserId === actorUserId
+      const sharedCanWrite = view.scope === "shared" && canManageShared
+      return {
+        viewId: view.viewId,
+        scope: view.scope,
+        ownerUserId: view.ownerUserId,
+        name: view.name,
+        query: view.query,
+        applyHref: buildTicketWorkbenchSavedViewHref(input.basePath, view),
+        updateAction: joinBasePath(input.basePath, `admin/tickets/views/${encodeURIComponent(view.viewId)}/update`),
+        deleteAction: joinBasePath(input.basePath, `admin/tickets/views/${encodeURIComponent(view.viewId)}/delete`),
+        active: view.viewId === activeViewId,
+        canUpdate: ownerCanWrite || sharedCanWrite,
+        canDelete: ownerCanWrite || sharedCanWrite
+      }
+    })
+    .sort((left, right) => left.name.localeCompare(right.name) || left.viewId.localeCompare(right.viewId))
+  return {
+    activeView: summaries.find((view) => view.active) || null,
+    privateViews: summaries.filter((view) => view.scope === "private"),
+    sharedViews: summaries.filter((view) => view.scope === "shared")
+  }
 }
 
 export function buildTicketWorkbenchListModel(input: {
@@ -785,6 +1009,11 @@ export function buildTicketWorkbenchListModel(input: {
   now?: number
   writesSupported?: boolean
   qualityReviewHref?: string | null
+  savedViews?: DashboardTicketWorkbenchViewRecord[]
+  actorUserId?: string
+  canManageSharedViews?: boolean
+  savedViewsAvailable?: boolean
+  savedViewsUnavailableMessage?: string
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
   const telemetrySupported = input.readsSupported && input.telemetrySupported === true
@@ -881,6 +1110,13 @@ export function buildTicketWorkbenchListModel(input: {
       }
     }
   })
+  const savedViewSummaries = buildSavedViewSummaries({
+    basePath: input.basePath,
+    views: input.savedViews || [],
+    activeViewId: effectiveRequest.viewId,
+    actorUserId: input.actorUserId,
+    canManageShared: input.canManageSharedViews
+  })
 
   return {
     available: input.readsSupported,
@@ -932,6 +1168,17 @@ export function buildTicketWorkbenchListModel(input: {
       returnTo: currentHref
     },
     qualityReviewHref: input.qualityReviewHref || null,
+    savedViews: {
+      available: input.savedViewsAvailable !== false,
+      createAction: joinBasePath(input.basePath, "admin/tickets/views/create"),
+      activeView: savedViewSummaries.activeView,
+      privateViews: savedViewSummaries.privateViews,
+      sharedViews: savedViewSummaries.sharedViews,
+      currentQuery: ticketWorkbenchSavedQueryFromRequest({ ...effectiveRequest, page }),
+      canManageShared: input.canManageSharedViews === true,
+      unavailableMessage: input.savedViewsUnavailableMessage || ""
+    },
+    teamQueueSummaries: buildTeamQueueSummaries(input.basePath, normalizedTickets, lookups, queueFacts),
     options: lookups.options
       .filter((option) => normalizeString(option.type) === "ticket")
       .map((option) => ({ id: normalizeString(option.id), label: labelFromRecord(option, normalizeString(option.id)) }))
@@ -1044,6 +1291,30 @@ export function buildFallbackTicketDetail(input: {
           ? "tickets.detail.availability.ticketNotOpen"
           : "tickets.detail.availability.awaitingUserMissing"
     ),
+    pin: availability(
+      Boolean(input.ticket.open && !input.ticket.closed && transport === "channel_text" && !input.ticket.pinned && !locked.has("pin")),
+      locked.has("pin")
+        ? "tickets.detail.availability.lockedByProvider"
+        : transport !== "channel_text"
+          ? "tickets.detail.availability.pinUnsupportedTransport"
+          : input.ticket.pinned
+            ? "tickets.detail.availability.ticketAlreadyPinned"
+            : "tickets.detail.availability.ticketNotOpen"
+    ),
+    unpin: availability(
+      Boolean(input.ticket.open && !input.ticket.closed && transport === "channel_text" && input.ticket.pinned && !locked.has("unpin")),
+      locked.has("unpin")
+        ? "tickets.detail.availability.lockedByProvider"
+        : transport !== "channel_text"
+          ? "tickets.detail.availability.pinUnsupportedTransport"
+          : !input.ticket.pinned
+            ? "tickets.detail.availability.ticketNotPinned"
+            : "tickets.detail.availability.ticketNotOpen"
+    ),
+    rename: availability(
+      Boolean(input.ticket.open && !input.ticket.closed && !locked.has("rename")),
+      locked.has("rename") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotOpen"
+    ),
     close: availability(Boolean(input.ticket.open && !input.ticket.closed && !locked.has("close")), locked.has("close") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketAlreadyClosed"),
     reopen: availability(Boolean(input.ticket.closed && !locked.has("reopen")), locked.has("reopen") ? "tickets.detail.availability.lockedByProvider" : "tickets.detail.availability.ticketNotClosed"),
     refresh: availability(!locked.has("refresh"), locked.has("refresh") ? "tickets.detail.availability.lockedByProvider" : null)
@@ -1112,6 +1383,12 @@ function actionCopy(t: TicketWorkbenchTranslator, action: DashboardTicketActionI
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "primary" as const, needsReason: true }
     case "clear-awaiting-user":
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
+    case "pin":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
+    case "unpin":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
+    case "rename":
+      return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "secondary" as const, needsReason: true }
     case "close":
       return { title: t(`tickets.detail.actionCopy.${key}.title`), body: t(`tickets.detail.actionCopy.${key}.body`), variant: "danger" as const, needsReason: true }
     case "reopen":
@@ -1128,6 +1405,7 @@ const ADVANCED_TICKET_ACTIONS = new Set<DashboardTicketActionId>([
   "remove-participant",
   "set-priority",
   "set-topic",
+  "rename",
   "approve-close-request",
   "dismiss-close-request",
   "set-awaiting-user",
@@ -1257,10 +1535,10 @@ export function buildTicketWorkbenchDetailModel(input: {
           choices: actionChoices(t, detail, action),
           choiceName: actionChoiceName(action),
           choiceLabel: actionChoiceLabel(t, action),
-          textName: action === "set-topic" ? "topic" as const : null,
-          textValue: action === "set-topic" ? detail.topic || "" : "",
-          textLabel: action === "set-topic" ? t("tickets.detail.facts.topic") : null,
-          textPlaceholder: action === "set-topic" ? t("tickets.detail.actions.topicPlaceholder") : null,
+          textName: action === "set-topic" ? "topic" as const : action === "rename" ? "renameName" as const : null,
+          textValue: action === "set-topic" ? detail.topic || "" : action === "rename" ? detail.ticket.channelName || detail.ticket.channelSuffix || "" : "",
+          textLabel: action === "set-topic" ? t("tickets.detail.facts.topic") : action === "rename" ? t("tickets.detail.actions.renameNameLabel") : null,
+          textPlaceholder: action === "set-topic" ? t("tickets.detail.actions.topicPlaceholder") : action === "rename" ? t("tickets.detail.actions.renameNamePlaceholder") : null,
           buttonVariant: copy.variant
         }
       })
@@ -1277,8 +1555,6 @@ export function buildTicketWorkbenchDetailModel(input: {
     summaryCards,
     actionForms: actionForms.filter((form) => !ADVANCED_TICKET_ACTIONS.has(form.action)),
     advancedActionForms: actionForms.filter((form) => ADVANCED_TICKET_ACTIONS.has(form.action)),
-    deferredActions: [
-      t("tickets.detail.deferredActions.pinUnpinRename")
-    ]
+    deferredActions: []
   }
 }

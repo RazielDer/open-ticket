@@ -37,6 +37,109 @@
   <% } %>
 </section>
 
+<section class="section-card transcript-workspace-shell ticket-saved-views-shell">
+  <div class="transcript-workspace-header">
+    <div class="transcript-workspace-copy">
+      <h3><%= t("tickets.page.savedViewsTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.savedViewsBody") %></p>
+    </div>
+  </div>
+
+  <% if (!ticketList.savedViews.available) { %>
+    <div class="transcript-workspace-status tone-warning">
+      <span class="status-pill tone-warning"><%= t("tickets.page.unavailableBadge") %></span>
+      <p class="item-copy"><%= ticketList.savedViews.unavailableMessage %></p>
+    </div>
+  <% } %>
+
+  <div class="form-grid three-up transcript-filter-grid">
+    <div>
+      <h4><%= t("tickets.page.savedViewsPrivateTitle") %></h4>
+      <% if (ticketList.savedViews.privateViews.length) { %>
+        <div class="sticky-actions transcript-active-filters-list">
+          <% ticketList.savedViews.privateViews.forEach((view) => { %>
+            <a class="pill-tag <%= view.active ? 'tone-success' : '' %>" href="<%= view.applyHref %>"><%= view.name %></a>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <p class="field-help"><%= t("tickets.page.savedViewsEmptyPrivate") %></p>
+      <% } %>
+    </div>
+    <div>
+      <h4><%= t("tickets.page.savedViewsSharedTitle") %></h4>
+      <% if (ticketList.savedViews.sharedViews.length) { %>
+        <div class="sticky-actions transcript-active-filters-list">
+          <% ticketList.savedViews.sharedViews.forEach((view) => { %>
+            <a class="pill-tag <%= view.active ? 'tone-success' : '' %>" href="<%= view.applyHref %>"><%= view.name %></a>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <p class="field-help"><%= t("tickets.page.savedViewsEmptyShared") %></p>
+      <% } %>
+    </div>
+    <form method="post" action="<%= ticketList.savedViews.createAction %>" class="stack-form">
+      <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+      <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+      <% Object.entries(ticketList.savedViews.currentQuery).forEach(([key, value]) => { %>
+        <input type="hidden" name="<%= key %>" value="<%= value %>">
+      <% }) %>
+      <h4><%= t("tickets.page.savedViewsCreateTitle") %></h4>
+      <label>
+        <span class="field-label"><%= t("tickets.page.savedViewsNameLabel") %></span>
+        <input class="text-input" type="text" name="name" placeholder="<%= t('tickets.page.savedViewsNamePlaceholder') %>" <%= ticketList.savedViews.available ? '' : 'disabled' %>>
+      </label>
+      <label>
+        <span class="field-label"><%= t("tickets.page.savedViewsScopeLabel") %></span>
+        <select class="select-input" name="scope" <%= ticketList.savedViews.available ? '' : 'disabled' %>>
+          <option value="private"><%= t("tickets.page.savedViewsPrivateScope") %></option>
+          <% if (ticketList.savedViews.canManageShared) { %>
+            <option value="shared"><%= t("tickets.page.savedViewsSharedScope") %></option>
+          <% } %>
+        </select>
+      </label>
+      <button class="btn primary" type="submit" <%= ticketList.savedViews.available ? '' : 'disabled' %>><%= t("tickets.page.savedViewsCreateAction") %></button>
+    </form>
+  </div>
+
+  <% if (ticketList.savedViews.activeView && (ticketList.savedViews.activeView.canUpdate || ticketList.savedViews.activeView.canDelete)) { %>
+    <div class="transcript-bulk-toolbar ticket-bulk-toolbar">
+      <% if (ticketList.savedViews.activeView.canUpdate) { %>
+        <form method="post" action="<%= ticketList.savedViews.activeView.updateAction %>" class="stack-form transcript-bulk-reason">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+          <% Object.entries(ticketList.savedViews.currentQuery).forEach(([key, value]) => { %>
+            <input type="hidden" name="<%= key %>" value="<%= value %>">
+          <% }) %>
+          <h4><%= t("tickets.page.savedViewsUpdateTitle") %></h4>
+          <label>
+            <span class="field-label"><%= t("tickets.page.savedViewsNameLabel") %></span>
+            <input class="text-input" type="text" name="name" value="<%= ticketList.savedViews.activeView.name %>">
+          </label>
+          <label>
+            <span class="field-label"><%= t("tickets.page.savedViewsScopeLabel") %></span>
+            <select class="select-input" name="scope">
+              <option value="private" <%= ticketList.savedViews.activeView.scope === 'private' ? 'selected' : '' %>><%= t("tickets.page.savedViewsPrivateScope") %></option>
+              <% if (ticketList.savedViews.canManageShared) { %>
+                <option value="shared" <%= ticketList.savedViews.activeView.scope === 'shared' ? 'selected' : '' %>><%= t("tickets.page.savedViewsSharedScope") %></option>
+              <% } %>
+            </select>
+          </label>
+          <button class="btn secondary" type="submit"><%= t("tickets.page.savedViewsUpdateAction") %></button>
+        </form>
+      <% } %>
+      <% if (ticketList.savedViews.activeView.canDelete) { %>
+        <form method="post" action="<%= ticketList.savedViews.activeView.deleteAction %>" class="stack-form transcript-bulk-reason">
+          <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
+          <input type="hidden" name="returnTo" value="<%= ticketList.currentHref %>">
+          <h4><%= ticketList.savedViews.activeView.name %></h4>
+          <p class="field-help"><%= t("tickets.page.savedViewsDeleteBody") %></p>
+          <button class="btn danger" type="submit"><%= t("tickets.page.savedViewsDeleteAction") %></button>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
+</section>
+
 <details class="section-card editor-disclosure transcript-filter-shell ticket-filter-shell" data-responsive-disclosure="ticket-filters" open>
   <summary class="transcript-filter-summary">
     <div class="transcript-filter-heading">
@@ -50,6 +153,9 @@
 
   <div class="editor-disclosure-body">
     <form method="get" action="<%= ticketList.filterAction %>" class="stack-form">
+      <% if (ticketList.savedViews.activeView) { %>
+        <input type="hidden" name="viewId" value="<%= ticketList.savedViews.activeView.viewId %>">
+      <% } %>
       <div class="form-grid transcript-filter-grid">
         <label>
           <span class="field-label"><%= t("tickets.page.filters.searchLabel") %></span>
@@ -110,6 +216,7 @@
               <span class="field-label"><%= t("tickets.page.filters.teamLabel") %></span>
               <select class="select-input" name="teamId">
                 <option value=""><%= t("tickets.page.filters.anyTeam") %></option>
+                <option value="__unassigned" <%= ticketList.request.teamId === '__unassigned' ? 'selected' : '' %>><%= t("tickets.page.filters.unassignedTeam") %></option>
                 <% ticketList.supportTeams.forEach((team) => { %>
                   <option value="<%= team.id %>" <%= ticketList.request.teamId === team.id ? 'selected' : '' %>><%= team.label %></option>
                 <% }) %>
@@ -206,6 +313,7 @@
         <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
         <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
         <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <input type="hidden" name="viewId" value="<%= ticketList.request.viewId %>">
         <button class="btn secondary" type="submit"><%= t("tickets.page.exportJsonAction") %></button>
       </form>
       <form method="post" action="<%= ticketList.exportActions.csvAction %>">
@@ -226,11 +334,42 @@
         <input type="hidden" name="sort" value="<%= ticketList.request.sort %>">
         <input type="hidden" name="limit" value="<%= ticketList.request.limit %>">
         <input type="hidden" name="page" value="<%= ticketList.request.page %>">
+        <input type="hidden" name="viewId" value="<%= ticketList.request.viewId %>">
         <button class="btn secondary" type="submit"><%= t("tickets.page.exportCsvAction") %></button>
       </form>
     </div>
   </div>
 </details>
+
+<section class="section-card transcript-workspace-shell ticket-team-depth-shell">
+  <div class="section-heading transcript-records-heading">
+    <div class="transcript-records-heading-copy">
+      <h3><%= t("tickets.page.teamDepthTitle") %></h3>
+      <p class="item-copy"><%= t("tickets.page.teamDepthBody") %></p>
+    </div>
+  </div>
+  <% if (ticketList.teamQueueSummaries.length) { %>
+    <div class="transcript-summary-strip">
+      <% ticketList.teamQueueSummaries.forEach((summary) => { %>
+        <article class="transcript-summary-token tone-<%= summary.attentionCount > 0 ? 'warning' : 'muted' %>">
+          <p class="transcript-summary-token-label"><%= summary.teamLabel %></p>
+          <strong class="transcript-summary-token-value"><%= summary.activeCount %></strong>
+          <p class="field-help"><%= t("tickets.page.teamDepthDetail", { waiting: summary.waitingStaffCount, owned: summary.ownedCount, attention: summary.attentionCount }) %></p>
+          <p class="field-help"><%= t("tickets.page.teamDepthOldestAnchor", { value: summary.oldestQueueAnchorLabel }) %></p>
+          <% if (summary.unavailableReason) { %>
+            <p class="field-help"><%= t(summary.unavailableReason) %></p>
+          <% } %>
+          <a class="transcript-table-link" href="<%= summary.viewHref %>"><%= t("tickets.page.teamDepthOpenAction") %></a>
+        </article>
+      <% }) %>
+    </div>
+  <% } else { %>
+    <div class="empty-panel">
+      <h3><%= t("tickets.page.teamDepthEmptyTitle") %></h3>
+      <p><%= t("tickets.page.teamDepthEmpty") %></p>
+    </div>
+  <% } %>
+</section>
 
 <section class="section-card transcript-records-shell ticket-records-shell">
   <div class="section-heading transcript-records-heading">

@@ -34,12 +34,14 @@ import {
   type DashboardTicketDetailRecord,
   type DashboardTicketFeedbackTelemetryRecord,
   type DashboardTicketLifecycleTelemetryRecord,
-  type DashboardTicketTelemetrySignals
+  type DashboardTicketTelemetrySignals,
+  type DashboardTicketWorkbenchViewRecord
 } from "../server/ticket-workbench-types"
 import {
   buildTicketWorkbenchListModel,
   buildTicketQueueSummary,
   deriveDashboardTicketQueueState,
+  normalizeTicketWorkbenchSavedViewQuery,
   parseTicketWorkbenchListRequest,
   projectDashboardTicketQueueFacts,
   sanitizeTicketWorkbenchReturnTo
@@ -507,12 +509,14 @@ async function startServer(options: {
   ticketQueueSummaryError?: string
   qualityReviewQueueSummaryError?: string
   qualityReviewNotificationStatus?: DashboardQualityReviewNotificationStatus | null
+  savedViews?: DashboardTicketWorkbenchViewRecord[]
 } = {}) {
   const projectRoot = createProjectRoot()
   const tickets = options.tickets || [ticket({}), ticket({ id: "ticket-2", optionId: "missing-option", transportMode: "private_thread", assignedTeamId: "missing-team", assignedStaffUserId: "staff-2", openedOn: 1710000100000 })]
   const actionRequests: DashboardTicketActionRequest[] = []
   const qualityReviewActionRequests: DashboardQualityReviewActionRequest[] = []
   const aiAssistRequests: DashboardTicketAiAssistRequest[] = []
+  const savedViews = new Map<string, DashboardTicketWorkbenchViewRecord>((options.savedViews || []).map((view) => [view.viewId, view]))
   const telemetryEnabled = Boolean(options.telemetrySignals || options.lifecycleTelemetry || options.feedbackTelemetry)
   const members = new Map([
     ["admin-user", member("admin-user", ["role-admin"])],
@@ -622,6 +626,9 @@ async function startServer(options: {
           "dismiss-close-request": { enabled: false, reason: "No close request is pending." },
           "set-awaiting-user": { enabled: true, reason: null },
           "clear-awaiting-user": { enabled: false, reason: "This ticket is not awaiting user response." },
+          pin: { enabled: true, reason: null },
+          unpin: { enabled: false, reason: "Ticket is not pinned." },
+          rename: { enabled: true, reason: null },
           close: { enabled: false, reason: "Locked by provider." },
           reopen: { enabled: false, reason: "Ticket is not closed." },
           refresh: { enabled: true, reason: null }
@@ -685,6 +692,60 @@ async function startServer(options: {
         unavailableReason: telemetryEnabled ? null : "Ticket lifecycle telemetry reads are unavailable.",
         now: input.now
       })
+    },
+    async listTicketWorkbenchViews(actorUserId: string) {
+      return [...savedViews.values()]
+        .filter((view) => view.scope === "shared" || view.ownerUserId === actorUserId)
+        .sort((left, right) => left.name.localeCompare(right.name) || left.viewId.localeCompare(right.viewId))
+    },
+    async getTicketWorkbenchView(viewId: string, actorUserId: string) {
+      const view = savedViews.get(viewId) || null
+      return view && (view.scope === "shared" || view.ownerUserId === actorUserId) ? view : null
+    },
+    async createTicketWorkbenchView(input) {
+      const name = String(input.name || "").trim()
+      if (!name || name.length > 80 || (input.scope === "shared" && !input.actorIsAdmin)) {
+        return { ok: false, status: "warning" as const, message: "tickets.page.savedViews.validationFailed", view: null }
+      }
+      const view: DashboardTicketWorkbenchViewRecord = {
+        viewId: `view-${savedViews.size + 1}`,
+        scope: input.scope,
+        ownerUserId: input.ownerUserId || input.actorUserId,
+        name,
+        query: { ...input.query },
+        createdAt: 1710000000000 + savedViews.size,
+        updatedAt: 1710000000000 + savedViews.size
+      }
+      savedViews.set(view.viewId, view)
+      return { ok: true, status: "success" as const, message: "tickets.page.savedViews.created", view }
+    },
+    async updateTicketWorkbenchView(input) {
+      const existing = savedViews.get(input.viewId)
+      const name = String(input.name || "").trim()
+      if (!existing || (existing.scope === "private" && existing.ownerUserId !== input.actorUserId) || (existing.scope === "shared" && !input.actorIsAdmin)) {
+        return { ok: false, status: "warning" as const, message: "tickets.page.savedViews.viewUnavailable", view: null }
+      }
+      if (!name || name.length > 80 || (input.scope === "shared" && !input.actorIsAdmin)) {
+        return { ok: false, status: "warning" as const, message: "tickets.page.savedViews.validationFailed", view: null }
+      }
+      const view: DashboardTicketWorkbenchViewRecord = {
+        ...existing,
+        scope: input.scope,
+        ownerUserId: input.scope === "shared" ? input.actorUserId : existing.ownerUserId,
+        name,
+        query: { ...input.query },
+        updatedAt: existing.updatedAt + 1
+      }
+      savedViews.set(view.viewId, view)
+      return { ok: true, status: "success" as const, message: "tickets.page.savedViews.updated", view }
+    },
+    async deleteTicketWorkbenchView(input) {
+      const existing = savedViews.get(input.viewId) || null
+      if (!existing || (existing.scope === "private" && existing.ownerUserId !== input.actorUserId) || (existing.scope === "shared" && !input.actorIsAdmin)) {
+        return { ok: false, status: "warning" as const, message: "tickets.page.savedViews.viewUnavailable", view: null }
+      }
+      savedViews.delete(input.viewId)
+      return { ok: true, status: "success" as const, message: "tickets.page.savedViews.deleted", view: existing }
     },
     async listQualityReviewCases(query) {
       const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
@@ -824,6 +885,7 @@ async function startServer(options: {
     actionRequests,
     qualityReviewActionRequests,
     aiAssistRequests,
+    savedViews,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   }
 }
@@ -951,6 +1013,170 @@ test("ticket list filters, fallback labels, and returnTo links stay detail-first
   assert.match(html, /returnTo=%2Fdash%2Fadmin%2Ftickets%3Fstatus%3Dopen%26transport%3Dprivate_thread%26teamId%3Dmissing-team%26q%3Dmissing/)
   assert.doesNotMatch(html, /Close ticket<\/button>/)
   assert.doesNotMatch(html, /Assign staff<\/button>/)
+})
+
+test("ticket saved views persist normalized private and admin-only shared queries", async (t) => {
+  const runtime = await startServer({
+    savedViews: [
+      {
+        viewId: "private-1",
+        scope: "private",
+        ownerUserId: "admin-user",
+        name: "Admin private",
+        query: { status: "open" },
+        createdAt: 1710000000000,
+        updatedAt: 1710000000000
+      },
+      {
+        viewId: "shared-1",
+        scope: "shared",
+        ownerUserId: "admin-user",
+        name: "Shared queue",
+        query: { queueState: "waiting_staff" },
+        createdAt: 1710000000001,
+        updatedAt: 1710000000001
+      }
+    ]
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie } })
+  const listHtml = await listResponse.text()
+  assert.equal(listResponse.status, 200)
+  assert.match(listHtml, /Saved views/)
+  assert.match(listHtml, /Admin private/)
+  assert.match(listHtml, /Shared queue/)
+  const csrfToken = csrfFrom(listHtml)
+
+  const createResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/views/create`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?status=open&page=3",
+      name: "Open triage",
+      scope: "private",
+      status: "open",
+      teamId: "triage",
+      page: "3"
+    })
+  })
+  await createResponse.arrayBuffer()
+  assert.equal(createResponse.status, 302)
+  const createLocation = String(createResponse.headers.get("location"))
+  assert.match(createLocation, /^\/dash\/admin\/tickets\?/)
+  assert.match(createLocation, /status=open/)
+  assert.match(createLocation, /teamId=triage/)
+  assert.match(createLocation, /viewId=view-3/)
+  assert.equal(runtime.savedViews.get("view-3")?.name, "Open triage")
+  assert.deepEqual(runtime.savedViews.get("view-3")?.query, { status: "open", teamId: "triage" })
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets")
+  const editorList = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: editor.cookie } })
+  const editorCsrf = csrfFrom(await editorList.text())
+  const deniedResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/views/create`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie: editor.cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken: editorCsrf,
+      returnTo: "/dash/admin/tickets",
+      name: "Editor shared",
+      scope: "shared",
+      status: "open"
+    })
+  })
+  await deniedResponse.arrayBuffer()
+  assert.equal(deniedResponse.status, 302)
+  assert.match(String(redirectMessage(deniedResponse.headers.get("location"))), /Only admins can write shared ticket views/)
+  assert.equal([...runtime.savedViews.values()].some((view) => view.name === "Editor shared"), false)
+
+  const audits = await runtime.context.authStore.listAuditEvents({ eventType: "ticket-workbench-view" })
+  assert.ok(audits.some((event) => event.reason === "create" && event.outcome === "success" && event.details?.viewId === "view-3"))
+  assert.ok(audits.some((event) => event.reason === "shared-write-denied" && event.outcome === "failure"))
+  assert.doesNotMatch(JSON.stringify(audits), /csrfToken|returnTo|page/)
+})
+
+test("ticket action redirects preserve saved view context only when the actor can read the view", async (t) => {
+  const runtime = await startServer({
+    savedViews: [
+      {
+        viewId: "private-other",
+        scope: "private",
+        ownerUserId: "other-user",
+        name: "Other private",
+        query: { status: "open" },
+        createdAt: 1710000000000,
+        updatedAt: 1710000000000
+      },
+      {
+        viewId: "shared-1",
+        scope: "shared",
+        ownerUserId: "admin-user",
+        name: "Shared queue",
+        query: { queueState: "waiting_staff" },
+        createdAt: 1710000000001,
+        updatedAt: 1710000000001
+      }
+    ]
+  })
+  t.after(() => stopServer(runtime))
+  const { cookie } = await login(runtime.baseUrl)
+
+  const detailResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1?returnTo=${encodeURIComponent("/dash/admin/tickets?viewId=private-other&status=open")}`, { headers: { cookie } })
+  const detailHtml = await detailResponse.text()
+  assert.equal(detailResponse.status, 200)
+  assert.doesNotMatch(detailHtml, /private-other/)
+  assert.match(detailHtml, /value="\/dash\/admin\/tickets\?status=open"/)
+  const csrfToken = csrfFrom(detailHtml)
+
+  const deniedViewResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1/actions/assign`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?viewId=private-other&status=open",
+      assigneeUserId: "staff-1"
+    })
+  })
+  await deniedViewResponse.arrayBuffer()
+  assert.equal(deniedViewResponse.status, 302)
+  assert.equal(
+    new URL(String(deniedViewResponse.headers.get("location")), runtime.baseUrl).searchParams.get("returnTo"),
+    "/dash/admin/tickets?status=open"
+  )
+
+  const sharedViewResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1/actions/assign`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      returnTo: "/dash/admin/tickets?viewId=shared-1&status=open",
+      assigneeUserId: "staff-1"
+    })
+  })
+  await sharedViewResponse.arrayBuffer()
+  assert.equal(sharedViewResponse.status, 302)
+  assert.equal(
+    new URL(String(sharedViewResponse.headers.get("location")), runtime.baseUrl).searchParams.get("returnTo"),
+    "/dash/admin/tickets?viewId=shared-1&status=open"
+  )
 })
 
 test("ticket list exposes telemetry filters only when telemetry reads are available", async (t) => {
@@ -1081,6 +1307,45 @@ test("ticket list model applies feedback and reopened telemetry signals", async 
   assert.equal(model.items[0].reopenBadge?.label, "Reopened x1")
 })
 
+test("ticket saved view query normalization strips stateful and unknown fields", () => {
+  assert.deepEqual(normalizeTicketWorkbenchSavedViewQuery({
+    q: " urgent ",
+    status: "open",
+    transport: "private_thread",
+    feedback: "completed",
+    reopened: "ever",
+    queueState: "owned",
+    attention: "stale-owner",
+    teamId: "__unassigned",
+    assigneeId: " staff-1 ",
+    optionId: "intake",
+    panelId: "front-desk",
+    creatorId: "creator-1",
+    sort: "opened-asc",
+    limit: "50",
+    page: "9",
+    viewId: "view-1",
+    returnTo: "/dash/admin/tickets",
+    csrfToken: "secret",
+    unknown: "drop-me"
+  }), {
+    q: "urgent",
+    status: "open",
+    transport: "private_thread",
+    feedback: "completed",
+    reopened: "ever",
+    queueState: "owned",
+    attention: "stale-owner",
+    teamId: "__unassigned",
+    assigneeId: "staff-1",
+    optionId: "intake",
+    panelId: "front-desk",
+    creatorId: "creator-1",
+    sort: "opened-asc",
+    limit: "50"
+  })
+})
+
 test("ticket queue projection applies locked states, attention thresholds, and owned anchors", () => {
   const now = Date.parse("2026-04-28T12:00:00.000Z")
   const hour = 60 * 60 * 1000
@@ -1201,6 +1466,83 @@ test("ticket queue filters and queue-priority sorting stay additive and keep exp
   })
   assert.equal(staleModel.total, 1)
   assert.equal(staleModel.items[0].id, "stale-owner")
+})
+
+test("ticket list model exposes team queue-depth buckets including unassigned and missing teams", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+  const now = Date.parse("2026-04-28T12:00:00.000Z")
+  const queueTickets = [
+    ticket({ id: "triage-open", assignedTeamId: "triage", openedOn: now - 1_000 }),
+    ticket({ id: "missing-team-open", assignedTeamId: "missing-team", openedOn: now - 2_000 }),
+    ticket({ id: "no-team-open", assignedTeamId: null, openedOn: now - 3_000 }),
+    ticket({ id: "triage-closed", assignedTeamId: "triage", open: false, closed: true, resolvedAt: now - 500, closedOn: now - 500 })
+  ]
+
+  const model = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets",
+    request: parseTicketWorkbenchListRequest({}),
+    tickets: queueTickets,
+    configService: runtime.context.configService,
+    readsSupported: true,
+    now
+  })
+  const triage = model.teamQueueSummaries.find((summary) => summary.teamId === "triage")
+  const unassigned = model.teamQueueSummaries.find((summary) => summary.teamId === null)
+  assert.equal(triage?.activeCount, 1)
+  assert.equal(unassigned?.activeCount, 2)
+  assert.match(String(unassigned?.viewHref), /teamId=__unassigned/)
+
+  const filtered = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets?teamId=__unassigned",
+    request: parseTicketWorkbenchListRequest({ teamId: "__unassigned" }),
+    tickets: queueTickets,
+    configService: runtime.context.configService,
+    readsSupported: true,
+    now
+  })
+  assert.deepEqual(filtered.items.map((item) => item.id).sort(), ["missing-team-open", "no-team-open"])
+})
+
+test("ticket team queue-depth degrades locally when support-team config cannot be read", async (t) => {
+  const now = Date.parse("2026-04-28T12:00:00.000Z")
+  const queueTickets = [
+    ticket({ id: "triage-open", assignedTeamId: "triage", openedOn: now - 1_000 }),
+    ticket({ id: "no-team-open", assignedTeamId: null, openedOn: now - 2_000 })
+  ]
+  const runtime = await startServer({ tickets: queueTickets })
+  t.after(() => stopServer(runtime))
+  const readManagedJson = runtime.context.configService.readManagedJson.bind(runtime.context.configService) as <T>(id: any) => T
+  ;(runtime.context.configService as any).readManagedJson = <T>(id: string): T => {
+    if (id === "support-teams") throw new Error("support team config unavailable")
+    return readManagedJson<T>(id as any)
+  }
+
+  const model = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets",
+    request: parseTicketWorkbenchListRequest({}),
+    tickets: queueTickets,
+    configService: runtime.context.configService,
+    readsSupported: true,
+    now
+  })
+  const triage = model.teamQueueSummaries.find((summary) => summary.teamId === "triage")
+  const unassigned = model.teamQueueSummaries.find((summary) => summary.teamId === null)
+  assert.equal(triage?.teamLabel, "Team unavailable (triage)")
+  assert.equal(triage?.activeCount, 1)
+  assert.equal(triage?.unavailableReason, "tickets.page.teamDepthDegraded")
+  assert.equal(unassigned?.activeCount, 1)
+  assert.match(String(triage?.viewHref), /teamId=triage/)
+
+  const { cookie } = await login(runtime.baseUrl)
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie } })
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.match(html, /Team unavailable \(triage\)/)
+  assert.match(html, /Support-team data could not be read; stored team IDs are preserved locally\./)
 })
 
 test("quality review admits reviewers and admins without granting editor workbench access", async (t) => {
@@ -2038,7 +2380,10 @@ test("ticket detail shows provider locks, safe back links, and form-post runtime
   assert.match(detailHtml, /Set priority/)
   assert.match(detailHtml, /Set topic/)
   assert.match(detailHtml, /Original applicant authority remains/)
-  assert.match(detailHtml, /Pin, unpin, and freeform rename remain Discord-only/)
+  assert.match(detailHtml, /Pin ticket/)
+  assert.match(detailHtml, /Unpin ticket/)
+  assert.match(detailHtml, /Rename ticket/)
+  assert.match(detailHtml, /name="renameName"/)
   assert.match(detailHtml, /value="\/dash\/admin\/tickets"/)
 
   const csrfToken = csrfFrom(detailHtml)
@@ -2072,7 +2417,8 @@ test("ticket detail shows provider locks, safe back links, and form-post runtime
     newCreatorUserId: undefined,
     participantUserId: undefined,
     priorityId: undefined,
-    topic: undefined
+    topic: undefined,
+    renameName: undefined
   })
 
   await new Promise((resolve) => setTimeout(resolve, 25))
@@ -2684,6 +3030,7 @@ test("ticket action route forwards every locked action id through the runtime br
     if (action === "remove-participant") body.set("participantUserId", "staff-1")
     if (action === "set-priority") body.set("priorityId", "urgent")
     if (action === "set-topic") body.set("topic", "Updated dashboard topic")
+    if (action === "rename") body.set("renameName", "ticket-renamed")
 
     const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets/ticket-1/actions/${action}`, {
       method: "POST",
@@ -2716,6 +3063,7 @@ test("ticket action route forwards every locked action id through the runtime br
   assert.equal(runtime.actionRequests.find((request) => request.action === "remove-participant")?.participantUserId, "staff-1")
   assert.equal(runtime.actionRequests.find((request) => request.action === "set-priority")?.priorityId, "urgent")
   assert.equal(runtime.actionRequests.find((request) => request.action === "set-topic")?.topic, "Updated dashboard topic")
+  assert.equal(runtime.actionRequests.find((request) => request.action === "rename")?.renameName, "ticket-renamed")
 })
 
 test("runtime ticket move stays disabled when only config fallback options are available", async (t) => {
@@ -2819,6 +3167,68 @@ test("runtime ticket action bridge executes SLICE-010A Open Ticket action branch
   assert.equal(fixture.actionRuns[3].params.data.id, "staff-1")
   assert.equal(fixture.actionRuns[4].params.newPriority.rawName, "urgent")
   assert.equal(fixture.actionRuns[5].params.newTopic, "Updated dashboard topic")
+})
+
+test("runtime ticket action bridge executes pin, unpin, and rename with Open Ticket payloads", async (t) => {
+  t.after(() => clearDashboardRuntimeRegistry())
+  const pinFixture = registerRuntimeActionFixture()
+  const pinResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "pin",
+    actorUserId: "admin-user",
+    reason: "pin"
+  })
+  assert.equal(pinResult?.ok, true)
+  assert.equal(pinResult?.message, "tickets.detail.actionResults.pinSuccess")
+  assert.equal(pinFixture.actionRuns[0].id, "opendiscord:pin-ticket")
+  assert.equal(pinFixture.actionRuns[0].params.sendMessage, true)
+
+  const unpinFixture = registerRuntimeActionFixture({
+    ticketOverrides: {
+      "opendiscord:pinned": true
+    }
+  })
+  const unpinResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "unpin",
+    actorUserId: "admin-user",
+    reason: "unpin"
+  })
+  assert.equal(unpinResult?.ok, true)
+  assert.equal(unpinResult?.message, "tickets.detail.actionResults.unpinSuccess")
+  assert.equal(unpinFixture.actionRuns[0].id, "opendiscord:unpin-ticket")
+
+  const renameFixture = registerRuntimeActionFixture()
+  const renameResult = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "rename",
+    actorUserId: "admin-user",
+    renameName: "ticket-renamed",
+    reason: "rename"
+  })
+  assert.equal(renameResult?.ok, true)
+  assert.equal(renameResult?.message, "tickets.detail.actionResults.renameSuccess")
+  assert.equal(renameFixture.actionRuns[0].id, "opendiscord:rename-ticket")
+  assert.equal(renameFixture.actionRuns[0].params.data, "ticket-renamed")
+
+  const blankRename = await defaultDashboardRuntimeBridge.runTicketAction?.({
+    ticketId: "ticket-1",
+    action: "rename",
+    actorUserId: "admin-user",
+    renameName: "   "
+  })
+  assert.equal(blankRename?.ok, false)
+  assert.equal(blankRename?.message, "tickets.detail.actionResults.renameMissingName")
+  assert.equal(renameFixture.actionRuns.length, 1)
+
+  registerRuntimeActionFixture({
+    ticketOverrides: {
+      [ODTICKET_PLATFORM_METADATA_IDS.transportMode]: "private_thread"
+    }
+  })
+  const privateThreadDetail = await defaultDashboardRuntimeBridge.getTicketDetail?.("ticket-1", "admin-user")
+  assert.equal(privateThreadDetail?.actionAvailability.pin.enabled, false)
+  assert.equal(privateThreadDetail?.actionAvailability.pin.reason, "tickets.detail.availability.pinUnsupportedTransport")
 })
 
 test("runtime ticket action bridge executes SLICE-012 workflow action branches", async (t) => {

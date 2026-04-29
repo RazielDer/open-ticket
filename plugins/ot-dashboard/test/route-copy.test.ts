@@ -131,7 +131,12 @@ test("ticket detail template and model keep extended operation copy locale-backe
     "Choose a configured Open Ticket priority before updating this ticket.",
     "Ticket priority updated.",
     "Enter a ticket topic before updating this ticket.",
-    "Ticket topic updated."
+    "Ticket topic updated.",
+    "Pin this channel ticket through the Open Ticket runtime action.",
+    "Unpin this channel ticket through the Open Ticket runtime action.",
+    "Rename this ticket channel through the Open Ticket runtime action.",
+    "Enter a ticket channel name before renaming this ticket.",
+    "The Open Ticket rename action is unavailable in the current runtime."
   ]) {
     assert.equal(templateSource.includes(phrase) || modelSource.includes(phrase) || runtimeBridgeSource.includes(phrase), false, `expected ticket detail source to avoid hardcoded phrase: ${phrase}`)
   }
@@ -142,9 +147,15 @@ test("ticket detail template and model keep extended operation copy locale-backe
     't("tickets.detail.facts.topic")',
     't("tickets.detail.facts.currentCreator")',
     't("tickets.detail.facts.originalApplicant")',
-    't("tickets.detail.deferredActions.pinUnpinRename")',
+    't(`tickets.detail.actionCopy.${key}.title`)',
+    't("tickets.detail.actions.renameNameLabel")',
+    't("tickets.detail.actions.renameNamePlaceholder")',
     '"tickets.detail.warnings.creatorTransfer"',
     '"tickets.detail.availability.noSameOwnerMoveTargets"',
+    '"tickets.detail.availability.pinUnsupportedTransport"',
+    '"tickets.detail.availability.ticketAlreadyPinned"',
+    '"tickets.detail.availability.ticketNotPinned"',
+    '"tickets.detail.availability.renameUnavailable"',
     '"tickets.detail.actionResults.moveMissingTarget"',
     '"tickets.detail.actionResults.moveInvalidTarget"',
     '"tickets.detail.actionResults.moveSuccess"',
@@ -160,7 +171,11 @@ test("ticket detail template and model keep extended operation copy locale-backe
     '"tickets.detail.actionResults.priorityUnconfigured"',
     '"tickets.detail.actionResults.prioritySuccess"',
     '"tickets.detail.actionResults.topicMissing"',
-    '"tickets.detail.actionResults.topicSuccess"'
+    '"tickets.detail.actionResults.topicSuccess"',
+    '"tickets.detail.actionResults.pinSuccess"',
+    '"tickets.detail.actionResults.unpinSuccess"',
+    '"tickets.detail.actionResults.renameMissingName"',
+    '"tickets.detail.actionResults.renameSuccess"'
   ]) {
     assert.equal(templateSource.includes(localeCall) || modelSource.includes(localeCall) || runtimeBridgeSource.includes(localeCall), true, `expected ticket detail source to use locale call: ${localeCall}`)
   }

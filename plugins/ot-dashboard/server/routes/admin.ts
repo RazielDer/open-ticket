@@ -85,13 +85,16 @@ import {
   sanitizeQualityReviewReturnTo
 } from "../quality-review"
 import {
+  buildTicketWorkbenchSavedViewHref,
   buildFallbackTicketDetail,
   buildTicketQueueSummary,
   buildTicketWorkbenchDetailModel,
   buildTicketWorkbenchListModel,
+  normalizeTicketWorkbenchSavedViewQuery,
   parseDashboardTicketBulkActionId,
   parseDashboardTicketActionId,
   parseTicketWorkbenchListRequest,
+  removeTicketWorkbenchViewIdFromHref,
   sanitizeTicketWorkbenchReturnTo,
   TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES,
   translateTicketWorkbenchMessage
@@ -102,7 +105,8 @@ import type {
   DashboardQualityReviewQueueSummary,
   DashboardTicketLifecycleTelemetryRecord,
   DashboardTicketQueueSummary,
-  DashboardTicketTelemetrySignals
+  DashboardTicketTelemetrySignals,
+  DashboardTicketWorkbenchViewRecord
 } from "../ticket-workbench-types"
 
 function renderPage(res: express.Response, view: string, locals: Record<string, unknown> = {}) {
@@ -135,8 +139,39 @@ function normalizeStringListInput(value: unknown) {
     .filter((entry, index, values) => values.indexOf(entry) === index)
 }
 
+function normalizeStringInput(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
 function appendAlertQuery(href: string, status: string, message: string) {
   return `${href}${href.includes("?") ? "&" : "?"}alertStatus=${encodeURIComponent(status)}&msg=${encodeURIComponent(message)}`
+}
+
+function ticketWorkbenchReturnToViewId(href: string) {
+  try {
+    const url = new URL(`http://dashboard.local${href}`)
+    return normalizeStringInput(url.searchParams.get("viewId"))
+  } catch {
+    return ""
+  }
+}
+
+async function sanitizeAuthorizedTicketWorkbenchReturnTo(
+  basePath: string,
+  runtimeBridge: DashboardRuntimeBridge,
+  actorUserId: string,
+  candidate: unknown
+) {
+  const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, candidate)
+  const viewId = ticketWorkbenchReturnToViewId(returnTo)
+  if (!viewId) return returnTo
+  if (typeof runtimeBridge.listTicketWorkbenchViews !== "function") return removeTicketWorkbenchViewIdFromHref(returnTo)
+  try {
+    const visibleViews = await runtimeBridge.listTicketWorkbenchViews(actorUserId)
+    return visibleViews.some((view) => view.viewId === viewId) ? returnTo : removeTicketWorkbenchViewIdFromHref(returnTo)
+  } catch {
+    return removeTicketWorkbenchViewIdFromHref(returnTo)
+  }
 }
 
 function parseQualityReviewActionId(value: string): DashboardQualityReviewActionId | null {
@@ -455,6 +490,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       ? buildQualityReviewQueueHref(basePath)
       : null
   }
+  const translateTicketWorkbenchViewMessage = (message: string) => (
+    message.startsWith("tickets.page.savedViews.")
+      ? i18n.t(message)
+      : message
+  )
   const qualityReviewRuntimeBridge: DashboardRuntimeBridge = {
     ...runtimeBridge,
     resolveQualityReviewOwnerLabel: (userId) => resolveCurrentQualityReviewOwnerLabel(context, userId)
@@ -490,7 +530,18 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     })
   }
 
-  const buildTicketWorkbenchWorkspaceModel = async (query: Record<string, unknown>, currentHref: string, qualityReviewHref: string | null = null) => {
+  const buildTicketWorkbenchWorkspaceModel = async (
+    query: Record<string, unknown>,
+    currentHref: string,
+    qualityReviewHref: string | null = null,
+    savedViewOptions: {
+      savedViews?: DashboardTicketWorkbenchViewRecord[]
+      actorUserId?: string
+      canManageSharedViews?: boolean
+      savedViewsAvailable?: boolean
+      savedViewsUnavailableMessage?: string
+    } = {}
+  ) => {
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const runtimeAvailable = snapshot.ticketSummary.available === true
     const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
@@ -585,7 +636,12 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         ? ""
         : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
       telemetryWarningMessage,
-      qualityReviewHref
+      qualityReviewHref,
+      savedViews: savedViewOptions.savedViews,
+      actorUserId: savedViewOptions.actorUserId,
+      canManageSharedViews: savedViewOptions.canManageSharedViews,
+      savedViewsAvailable: savedViewOptions.savedViewsAvailable,
+      savedViewsUnavailableMessage: savedViewOptions.savedViewsUnavailableMessage
     })
   }
 
@@ -1547,10 +1603,60 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
   app.get(joinBasePath(basePath, "admin/tickets"), adminGuard.page("ticket.workbench"), async (req, res, next) => {
     try {
+      const access = adminGuard.getAccess(res)
+      const actorUserId = access?.identity?.userId || ""
+      const actorIsAdmin = access?.tier === "admin"
+      const savedViewsAvailable = typeof runtimeBridge.listTicketWorkbenchViews === "function"
+      let savedViews: DashboardTicketWorkbenchViewRecord[] = []
+      let savedViewsUnavailableMessage = ""
+
+      if (savedViewsAvailable) {
+        try {
+          savedViews = await runtimeBridge.listTicketWorkbenchViews!(actorUserId)
+        } catch {
+          savedViewsUnavailableMessage = i18n.t("tickets.page.savedViews.unavailable")
+        }
+      } else {
+        savedViewsUnavailableMessage = i18n.t("tickets.page.savedViews.unavailable")
+      }
+
+      const listRequest = parseTicketWorkbenchListRequest(req.query as Record<string, unknown>)
+      const activeSavedView = listRequest.viewId
+        ? savedViews.find((view) => view.viewId === listRequest.viewId) || null
+        : null
+      if (listRequest.viewId && savedViewsAvailable && !savedViewsUnavailableMessage && !activeSavedView) {
+        await recordAdminAuditEvent(context, req, access?.identity, {
+          eventType: "ticket-workbench-view",
+          target: listRequest.viewId,
+          outcome: "failure",
+          reason: "view-unavailable",
+          details: {
+            viewId: listRequest.viewId,
+            actorUserId
+          }
+        })
+        const fallback = removeTicketWorkbenchViewIdFromHref(req.originalUrl || joinBasePath(basePath, "admin/tickets"))
+        return res.redirect(appendAlertQuery(fallback, "warning", i18n.t("tickets.page.savedViews.viewUnavailable")))
+      }
+
+      if (activeSavedView) {
+        const explicitQuery = normalizeTicketWorkbenchSavedViewQuery(req.query as Record<string, unknown>)
+        if (Object.keys(explicitQuery).length === 0 && Object.keys(activeSavedView.query).length > 0) {
+          return res.redirect(buildTicketWorkbenchSavedViewHref(basePath, activeSavedView))
+        }
+      }
+
       const model = await buildTicketWorkbenchWorkspaceModel(
         req.query as Record<string, unknown>,
         req.originalUrl || joinBasePath(basePath, "admin/tickets"),
-        qualityReviewHrefForAccess(res)
+        qualityReviewHrefForAccess(res),
+        {
+          savedViews,
+          actorUserId,
+          canManageSharedViews: actorIsAdmin,
+          savedViewsAvailable: savedViewsAvailable && !savedViewsUnavailableMessage,
+          savedViewsUnavailableMessage
+        }
       )
 
       renderPage(res, "admin-shell", buildAdminShell(context, "tickets", {
@@ -1569,10 +1675,173 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }
   })
 
+  app.post(joinBasePath(basePath, "admin/tickets/views/create"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const scope = req.body?.scope === "shared" ? "shared" as const : "private" as const
+    const name = normalizeStringInput(req.body?.name)
+    const query = normalizeTicketWorkbenchSavedViewQuery(req.body as Record<string, unknown>)
+
+    if (scope === "shared" && !actorIsAdmin) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "ticket-workbench-view",
+        target: "new",
+        outcome: "failure",
+        reason: "shared-write-denied",
+        details: {
+          action: "create",
+          scope,
+          actorUserId,
+          queryKeys: Object.keys(query).sort()
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.savedViews.sharedWriteDenied")))
+    }
+
+    const result = typeof runtimeBridge.createTicketWorkbenchView === "function"
+      ? await runtimeBridge.createTicketWorkbenchView({
+        actorUserId,
+        actorIsAdmin,
+        scope,
+        ownerUserId: actorUserId,
+        name,
+        query
+      })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: result.view?.viewId || "new",
+      outcome: result.ok ? "success" : "failure",
+      reason: "create",
+      details: {
+        action: "create",
+        viewId: result.view?.viewId || null,
+        scope,
+        ownerUserId: result.view?.ownerUserId || actorUserId || null,
+        actorUserId,
+        queryKeys: Object.keys(query).sort()
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    if (result.ok && result.view) {
+      return res.redirect(appendAlertQuery(buildTicketWorkbenchSavedViewHref(basePath, result.view), result.status, message))
+    }
+    return res.redirect(appendAlertQuery(returnTo, result.status, message))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/views/:viewId/update"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const viewId = normalizeStringInput(req.params.viewId)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const scope = req.body?.scope === "shared" ? "shared" as const : "private" as const
+    const name = normalizeStringInput(req.body?.name)
+    const query = normalizeTicketWorkbenchSavedViewQuery(req.body as Record<string, unknown>)
+
+    if (scope === "shared" && !actorIsAdmin) {
+      await recordAdminAuditEvent(context, req, access?.identity, {
+        eventType: "ticket-workbench-view",
+        target: viewId,
+        outcome: "failure",
+        reason: "shared-write-denied",
+        details: {
+          action: "update",
+          viewId,
+          scope,
+          actorUserId,
+          queryKeys: Object.keys(query).sort()
+        }
+      })
+      return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("tickets.page.savedViews.sharedWriteDenied")))
+    }
+
+    const result = typeof runtimeBridge.updateTicketWorkbenchView === "function"
+      ? await runtimeBridge.updateTicketWorkbenchView({
+        viewId,
+        actorUserId,
+        actorIsAdmin,
+        scope,
+        ownerUserId: actorUserId,
+        name,
+        query
+      })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: viewId,
+      outcome: result.ok ? "success" : "failure",
+      reason: "update",
+      details: {
+        action: "update",
+        viewId,
+        scope,
+        ownerUserId: result.view?.ownerUserId || actorUserId || null,
+        actorUserId,
+        queryKeys: Object.keys(query).sort()
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    if (result.ok && result.view) {
+      return res.redirect(appendAlertQuery(buildTicketWorkbenchSavedViewHref(basePath, result.view), result.status, message))
+    }
+    return res.redirect(appendAlertQuery(returnTo, result.status, message))
+  })
+
+  app.post(joinBasePath(basePath, "admin/tickets/views/:viewId/delete"), adminGuard.form("ticket.workbench"), async (req, res) => {
+    const access = adminGuard.getAccess(res)
+    const actorUserId = access?.identity?.userId || ""
+    const actorIsAdmin = access?.tier === "admin"
+    const viewId = normalizeStringInput(req.params.viewId)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const result = typeof runtimeBridge.deleteTicketWorkbenchView === "function"
+      ? await runtimeBridge.deleteTicketWorkbenchView({ viewId, actorUserId, actorIsAdmin })
+      : {
+        ok: false,
+        status: "warning" as const,
+        message: "tickets.page.savedViews.unavailable",
+        view: null
+      }
+
+    await recordAdminAuditEvent(context, req, access?.identity, {
+      eventType: "ticket-workbench-view",
+      target: viewId,
+      outcome: result.ok ? "success" : "failure",
+      reason: "delete",
+      details: {
+        action: "delete",
+        viewId,
+        scope: result.view?.scope || null,
+        ownerUserId: result.view?.ownerUserId || null,
+        actorUserId
+      }
+    })
+
+    const message = translateTicketWorkbenchViewMessage(result.message)
+    return res.redirect(appendAlertQuery(removeTicketWorkbenchViewIdFromHref(returnTo), result.status, message))
+  })
+
   app.post(joinBasePath(basePath, "admin/tickets/export/:format"), adminGuard.form("ticket.workbench"), async (req, res) => {
-    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
-    const format = parseDashboardExportFormat(req.params.format)
     const actor = adminGuard.getAccess(res)?.identity
+    const actorUserId = actor?.userId || ""
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
+    const format = parseDashboardExportFormat(req.params.format)
     if (!format) {
       await recordAdminAuditEvent(context, req, actor, {
         eventType: "ticket-export",
@@ -1622,7 +1891,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   app.post(joinBasePath(basePath, "admin/tickets/bulk/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
     const action = parseDashboardTicketBulkActionId(req.params.actionId)
     const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
-    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, req.body?.returnTo || req.query.returnTo)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.body?.returnTo || req.query.returnTo)
     const ticketIds = normalizeStringListInput(req.body?.ticketIds)
     const reason = typeof req.body?.reason === "string" && req.body.reason.trim().length > 0 ? req.body.reason.trim() : undefined
 
@@ -1743,6 +2012,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       const readsSupported = supportsTicketWorkbenchReads(runtimeBridge) && runtimeAvailable
       const writesSupported = supportsTicketWorkbenchWrites(runtimeBridge)
       const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
+      const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, req.query.returnTo)
       let detail = readsSupported && typeof runtimeBridge.getTicketDetail === "function"
         ? await runtimeBridge.getTicketDetail(req.params.ticketId, actorUserId)
         : null
@@ -1770,7 +2040,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
       const model = buildTicketWorkbenchDetailModel({
         basePath,
-        returnTo: req.query.returnTo,
+        returnTo,
         ticketId: req.params.ticketId,
         detail,
         writesSupported,
@@ -1804,8 +2074,9 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   app.post(joinBasePath(basePath, "admin/tickets/:ticketId/actions/:actionId"), adminGuard.form("ticket.workbench"), async (req, res) => {
     const requestedTicketId = req.params.ticketId
     const action = parseDashboardTicketActionId(req.params.actionId)
+    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
     const rawReturnTo = req.body?.returnTo || req.query.returnTo
-    const returnTo = sanitizeTicketWorkbenchReturnTo(basePath, rawReturnTo)
+    const returnTo = await sanitizeAuthorizedTicketWorkbenchReturnTo(basePath, runtimeBridge, actorUserId, rawReturnTo)
     const redirectToDetail = (ticketId: string, status: string, message: string) => {
       const detailHref = joinBasePath(basePath, `admin/tickets/${encodeURIComponent(ticketId)}`)
       const params = new URLSearchParams({
@@ -1831,7 +2102,6 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       return res.redirect(redirectToDetail(requestedTicketId, "warning", message))
     }
 
-    const actorUserId = adminGuard.getAccess(res)?.identity?.userId || ""
     const actionRequest = {
       ticketId: requestedTicketId,
       action,
@@ -1842,7 +2112,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       newCreatorUserId: typeof req.body?.newCreatorUserId === "string" ? req.body.newCreatorUserId : undefined,
       participantUserId: typeof req.body?.participantUserId === "string" ? req.body.participantUserId : undefined,
       priorityId: typeof req.body?.priorityId === "string" ? req.body.priorityId : undefined,
-      topic: typeof req.body?.topic === "string" ? req.body.topic : undefined
+      topic: typeof req.body?.topic === "string" ? req.body.topic : undefined,
+      renameName: typeof req.body?.renameName === "string" ? req.body.renameName : undefined
     }
     let result
     if (action !== "refresh" && supportsTicketWorkbenchReads(runtimeBridge) && typeof runtimeBridge.getTicketDetail === "function") {

@@ -32,6 +32,67 @@ export interface DashboardTicketQueueSummary {
   unavailableReason: string | null
 }
 
+export type DashboardTicketWorkbenchViewScope = "private" | "shared"
+
+export interface DashboardTicketWorkbenchViewRecord {
+  viewId: string
+  scope: DashboardTicketWorkbenchViewScope
+  ownerUserId: string
+  name: string
+  query: Record<string, string>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface DashboardTicketWorkbenchSavedViewSummary {
+  viewId: string
+  scope: DashboardTicketWorkbenchViewScope
+  ownerUserId: string
+  name: string
+  query: Record<string, string>
+  applyHref: string
+  updateAction: string
+  deleteAction: string
+  active: boolean
+  canUpdate: boolean
+  canDelete: boolean
+}
+
+export interface DashboardTicketWorkbenchViewMutationRequest {
+  actorUserId: string
+  actorIsAdmin: boolean
+  viewId?: string
+  scope: DashboardTicketWorkbenchViewScope
+  ownerUserId?: string | null
+  name: string
+  query: Record<string, string>
+}
+
+export interface DashboardTicketWorkbenchViewMutationResult {
+  ok: boolean
+  status: "success" | "warning" | "danger"
+  message: string
+  view: DashboardTicketWorkbenchViewRecord | null
+}
+
+export interface DashboardTicketTeamQueueSummary {
+  teamId: string | null
+  teamLabel: string
+  activeCount: number
+  waitingStaffCount: number
+  ownedCount: number
+  attentionCount: number
+  firstResponseOverdueCount: number
+  unassignedCount: number
+  staleOwnerCount: number
+  closeRequestCount: number
+  awaitingUserCount: number
+  oldestQueueAnchorAt: number | null
+  oldestQueueAnchorLabel: string
+  viewHref: string
+  unavailableReason: string | null
+}
+
 export interface DashboardQualityReviewQueueSummary {
   activeCount: number
   myQueueCount: number
@@ -293,6 +354,9 @@ export const DASHBOARD_TICKET_ACTION_IDS = [
   "dismiss-close-request",
   "set-awaiting-user",
   "clear-awaiting-user",
+  "pin",
+  "unpin",
+  "rename",
   "close",
   "reopen",
   "refresh"
@@ -456,6 +520,7 @@ export interface DashboardTicketActionRequest {
   participantUserId?: string
   priorityId?: string
   topic?: string
+  renameName?: string
 }
 
 export interface DashboardTicketActionResult {

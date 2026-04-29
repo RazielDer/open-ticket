@@ -1255,6 +1255,40 @@
         "invalidAction": "That bulk ticket action is not supported.",
         "result": "Bulk action complete: {succeeded} succeeded, {skipped} skipped, {failed} failed."
       },
+      "savedViewsTitle": "Saved views",
+      "savedViewsBody": "Keep reusable private filters or admin-owned shared queue views for the ticket workbench.",
+      "savedViewsPrivateTitle": "Private",
+      "savedViewsSharedTitle": "Shared",
+      "savedViewsCreateTitle": "Save current filters",
+      "savedViewsUpdateTitle": "Update active view",
+      "savedViewsEmptyPrivate": "No private saved views.",
+      "savedViewsEmptyShared": "No shared saved views.",
+      "savedViewsNameLabel": "View name",
+      "savedViewsNamePlaceholder": "Morning queue",
+      "savedViewsScopeLabel": "Scope",
+      "savedViewsPrivateScope": "Private",
+      "savedViewsSharedScope": "Shared",
+      "savedViewsCreateAction": "Save view",
+      "savedViewsUpdateAction": "Update view",
+      "savedViewsDeleteAction": "Delete view",
+      "savedViewsDeleteBody": "Remove this saved view. The current ticket filters are not changed.",
+      "savedViews": {
+        "unavailable": "Saved views are unavailable in the current runtime.",
+        "validationFailed": "Saved view names must be 1 to 80 characters.",
+        "created": "Saved view created.",
+        "updated": "Saved view updated.",
+        "deleted": "Saved view deleted.",
+        "viewUnavailable": "That saved view is missing or unavailable.",
+        "sharedWriteDenied": "Only admins can write shared ticket views."
+      },
+      "teamDepthTitle": "Team queue depth",
+      "teamDepthBody": "Scan active ticket load by support team and open a queue-priority view for a specific team.",
+      "teamDepthDetail": "{waiting} waiting, {owned} owned, {attention} attention",
+      "teamDepthOldestAnchor": "Oldest anchor {value}",
+      "teamDepthDegraded": "Support-team data could not be read; stored team IDs are preserved locally.",
+      "teamDepthOpenAction": "Open team queue",
+      "teamDepthEmptyTitle": "No active team queues",
+      "teamDepthEmpty": "Open tickets will appear here once the runtime publishes queue state.",
       "filters": {
         "searchLabel": "Search",
         "searchPlaceholder": "Ticket, channel, creator, team, or assignee",
@@ -1267,6 +1301,7 @@
         "moreBody": "Narrow by team, assignee, option, panel, creator, or page size.",
         "teamLabel": "Team",
         "anyTeam": "Any team",
+        "unassignedTeam": "Unassigned/no team",
         "assigneeLabel": "Assignee ID",
         "assigneePlaceholder": "Discord user ID",
         "optionLabel": "Option",
@@ -1389,7 +1424,9 @@
         "participantLabel": "Participant",
         "reasonLabel": "Reason",
         "reasonPlaceholder": "Optional operator reason",
-        "topicPlaceholder": "Ticket topic"
+        "topicPlaceholder": "Ticket topic",
+        "renameNameLabel": "Channel name",
+        "renameNamePlaceholder": "ticket-creator"
       },
       "summary": {
         "state": "State",
@@ -1454,6 +1491,18 @@
           "title": "Clear awaiting user",
           "body": "Clear the waiting marker after requester or staff follow-up."
         },
+        "pin": {
+          "title": "Pin ticket",
+          "body": "Pin this channel ticket through the Open Ticket runtime action."
+        },
+        "unpin": {
+          "title": "Unpin ticket",
+          "body": "Unpin this channel ticket through the Open Ticket runtime action."
+        },
+        "rename": {
+          "title": "Rename ticket",
+          "body": "Rename this ticket channel through the Open Ticket runtime action."
+        },
         "close": {
           "title": "Close ticket",
           "body": "Close the ticket through the Open Ticket runtime action path."
@@ -1505,6 +1554,10 @@
         "dismissCloseRequestSuccess": "Close request dismissed.",
         "setAwaitingUserSuccess": "Ticket marked awaiting user.",
         "clearAwaitingUserSuccess": "Awaiting-user state cleared.",
+        "pinSuccess": "Ticket pinned.",
+        "unpinSuccess": "Ticket unpinned.",
+        "renameMissingName": "Enter a ticket channel name before renaming this ticket.",
+        "renameSuccess": "Ticket renamed.",
         "aiAssistSuccess": "AI assist request completed.",
         "aiAssistUnavailable": "AI assist is unavailable for this ticket.",
         "aiAssistDenied": "Open Ticket denied this AI assist request.",
@@ -1540,11 +1593,13 @@
         "closeRequestPending": "A close request is already pending.",
         "closeRequestMissing": "No close request is pending.",
         "awaitingUserActive": "This ticket is already awaiting user response.",
-        "awaitingUserMissing": "This ticket is not awaiting user response."
+        "awaitingUserMissing": "This ticket is not awaiting user response.",
+        "pinUnsupportedTransport": "Pin and unpin actions require a channel ticket.",
+        "ticketAlreadyPinned": "Ticket is already pinned.",
+        "ticketNotPinned": "Ticket is not pinned.",
+        "renameUnavailable": "The Open Ticket rename action is unavailable in the current runtime."
       },
-      "deferredActions": {
-        "pinUnpinRename": "Pin, unpin, and freeform rename remain Discord-only actions in this packet."
-      }
+      "deferredActions": {}
     }
   },
   "analytics": {

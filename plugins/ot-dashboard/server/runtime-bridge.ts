@@ -1,3 +1,5 @@
+import crypto from "node:crypto"
+
 import {
   getDashboardPluginDetail,
   getDashboardRuntimeSource,
@@ -42,6 +44,9 @@ import {
   type DashboardTicketTelemetrySnapshot,
   type DashboardTicketTransferCandidateChoice,
   type DashboardTicketTransportMode,
+  type DashboardTicketWorkbenchViewMutationRequest,
+  type DashboardTicketWorkbenchViewMutationResult,
+  type DashboardTicketWorkbenchViewRecord,
   type DashboardQualityReviewActionRequest,
   type DashboardQualityReviewActionResult,
   type DashboardQualityReviewAssetResult,
@@ -87,6 +92,11 @@ export interface DashboardRuntimeBridge {
   listFeedbackTelemetry?: (query: DashboardTicketFeedbackTelemetryQuery) => Promise<DashboardTicketFeedbackTelemetryResult>
   getTicketTelemetrySignals?: (ticketIds: string[]) => Promise<Record<string, DashboardTicketTelemetrySignals>>
   getTicketQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardTicketQueueSummary | null>
+  listTicketWorkbenchViews?: (actorUserId: string) => Promise<DashboardTicketWorkbenchViewRecord[]>
+  getTicketWorkbenchView?: (viewId: string, actorUserId: string) => Promise<DashboardTicketWorkbenchViewRecord | null>
+  createTicketWorkbenchView?: (input: DashboardTicketWorkbenchViewMutationRequest) => Promise<DashboardTicketWorkbenchViewMutationResult>
+  updateTicketWorkbenchView?: (input: DashboardTicketWorkbenchViewMutationRequest & { viewId: string }) => Promise<DashboardTicketWorkbenchViewMutationResult>
+  deleteTicketWorkbenchView?: (input: { viewId: string; actorUserId: string; actorIsAdmin: boolean }) => Promise<DashboardTicketWorkbenchViewMutationResult>
   listQualityReviewCases?: (query: DashboardQualityReviewCaseQuery, actorUserId: string) => Promise<DashboardQualityReviewCaseListResult>
   getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
   getQualityReviewQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardQualityReviewQueueSummary | null>
@@ -133,6 +143,21 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   async getTicketQueueSummary(input) {
     return await getRuntimeTicketQueueSummary(defaultDashboardRuntimeBridge, input)
   },
+  async listTicketWorkbenchViews(actorUserId) {
+    return await listRuntimeTicketWorkbenchViews(defaultDashboardRuntimeBridge, actorUserId)
+  },
+  async getTicketWorkbenchView(viewId, actorUserId) {
+    return await getRuntimeTicketWorkbenchView(defaultDashboardRuntimeBridge, viewId, actorUserId)
+  },
+  async createTicketWorkbenchView(input) {
+    return await createRuntimeTicketWorkbenchView(defaultDashboardRuntimeBridge, input)
+  },
+  async updateTicketWorkbenchView(input) {
+    return await updateRuntimeTicketWorkbenchView(defaultDashboardRuntimeBridge, input)
+  },
+  async deleteTicketWorkbenchView(input) {
+    return await deleteRuntimeTicketWorkbenchView(defaultDashboardRuntimeBridge, input)
+  },
   async listQualityReviewCases(query, actorUserId) {
     return await listRuntimeQualityReviewCases(defaultDashboardRuntimeBridge, query, actorUserId)
   },
@@ -177,6 +202,14 @@ interface DashboardRuntimeAuthSource extends DashboardRuntimeSource {
       data?: Record<string, unknown>
     } | null
   }
+  databases?: {
+    get?: (id: string) => {
+      get?: (category: string, key: string) => unknown | Promise<unknown>
+      set?: (category: string, key: string, value: unknown) => unknown | Promise<unknown>
+      delete?: (category: string, key: string) => unknown | Promise<unknown>
+      getCategory?: (category: string) => Array<{ key: string; value: unknown }> | undefined | Promise<Array<{ key: string; value: unknown }> | undefined>
+    } | null
+  }
 }
 
 function normalizeString(value: unknown) {
@@ -190,6 +223,89 @@ function stringOrNull(value: unknown): string | null {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+const TICKET_WORKBENCH_VIEWS_CATEGORY = "opendiscord:ticket-workbench:views"
+const TICKET_WORKBENCH_VIEW_NAME_MAX_LENGTH = 80
+
+function ticketWorkbenchViewResult(
+  ok: boolean,
+  status: DashboardTicketWorkbenchViewMutationResult["status"],
+  message: string,
+  view: DashboardTicketWorkbenchViewRecord | null = null
+): DashboardTicketWorkbenchViewMutationResult {
+  return { ok, status, message, view }
+}
+
+function normalizeViewQuery(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const query: Record<string, string> = {}
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalized = normalizeString(rawValue)
+    if (normalized) query[key] = normalized
+  }
+  return query
+}
+
+function normalizeTicketWorkbenchViewRecord(key: string, value: unknown): DashboardTicketWorkbenchViewRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const viewId = normalizeString(record.viewId) || normalizeString(key)
+  const scope = record.scope === "shared" ? "shared" : record.scope === "private" ? "private" : null
+  const ownerUserId = normalizeString(record.ownerUserId)
+  const name = normalizeString(record.name)
+  const createdAt = numberOrNull(record.createdAt) || 0
+  const updatedAt = numberOrNull(record.updatedAt) || createdAt
+  if (!viewId || !scope || !ownerUserId || !name || name.length > TICKET_WORKBENCH_VIEW_NAME_MAX_LENGTH) return null
+  return {
+    viewId,
+    scope,
+    ownerUserId,
+    name,
+    query: normalizeViewQuery(record.query),
+    createdAt,
+    updatedAt
+  }
+}
+
+function canReadTicketWorkbenchView(view: DashboardTicketWorkbenchViewRecord, actorUserId: string) {
+  return view.scope === "shared" || view.ownerUserId === actorUserId
+}
+
+function canWriteTicketWorkbenchView(view: DashboardTicketWorkbenchViewRecord, actorUserId: string, actorIsAdmin: boolean) {
+  if (view.scope === "private") return view.ownerUserId === actorUserId
+  return actorIsAdmin
+}
+
+function getTicketWorkbenchViewDatabase(runtimeBridge: DashboardRuntimeBridge) {
+  const runtime = runtimeBridge.getRuntimeSource?.() as DashboardRuntimeAuthSource | null
+  return runtime?.databases?.get?.("opendiscord:global") || null
+}
+
+function normalizeTicketWorkbenchViewName(name: unknown) {
+  const normalized = normalizeString(name)
+  return normalized.length > TICKET_WORKBENCH_VIEW_NAME_MAX_LENGTH ? "" : normalized
+}
+
+function buildTicketWorkbenchViewRecord(input: DashboardTicketWorkbenchViewMutationRequest, viewId: string, now: number, existing?: DashboardTicketWorkbenchViewRecord | null): DashboardTicketWorkbenchViewRecord | null {
+  const actorUserId = normalizeString(input.actorUserId)
+  const name = normalizeTicketWorkbenchViewName(input.name)
+  const scope = input.scope === "shared" ? "shared" : "private"
+  if (!actorUserId || !name) return null
+  if (scope === "shared" && !input.actorIsAdmin) return null
+  const ownerUserId = scope === "shared"
+    ? actorUserId
+    : normalizeString(input.ownerUserId) || actorUserId
+  if (ownerUserId !== actorUserId && !input.actorIsAdmin) return null
+  return {
+    viewId,
+    scope,
+    ownerUserId,
+    name,
+    query: normalizeViewQuery(input.query),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
+  }
 }
 
 const ticketAvailabilityReasons = {
@@ -214,7 +330,11 @@ const ticketAvailabilityReasons = {
   closeRequestPending: "tickets.detail.availability.closeRequestPending",
   closeRequestMissing: "tickets.detail.availability.closeRequestMissing",
   awaitingUserActive: "tickets.detail.availability.awaitingUserActive",
-  awaitingUserMissing: "tickets.detail.availability.awaitingUserMissing"
+  awaitingUserMissing: "tickets.detail.availability.awaitingUserMissing",
+  pinUnsupportedTransport: "tickets.detail.availability.pinUnsupportedTransport",
+  ticketAlreadyPinned: "tickets.detail.availability.ticketAlreadyPinned",
+  ticketNotPinned: "tickets.detail.availability.ticketNotPinned",
+  renameUnavailable: "tickets.detail.availability.renameUnavailable"
 } as const
 
 const ticketActionResults = {
@@ -251,6 +371,10 @@ const ticketActionResults = {
   dismissCloseRequestSuccess: "tickets.detail.actionResults.dismissCloseRequestSuccess",
   setAwaitingUserSuccess: "tickets.detail.actionResults.setAwaitingUserSuccess",
   clearAwaitingUserSuccess: "tickets.detail.actionResults.clearAwaitingUserSuccess",
+  pinSuccess: "tickets.detail.actionResults.pinSuccess",
+  unpinSuccess: "tickets.detail.actionResults.unpinSuccess",
+  renameMissingName: "tickets.detail.actionResults.renameMissingName",
+  renameSuccess: "tickets.detail.actionResults.renameSuccess",
   aiAssistSuccess: "tickets.detail.actionResults.aiAssistSuccess",
   genericSuccess: "tickets.detail.actionResults.genericSuccess",
   genericFailure: "tickets.detail.actionResults.genericFailure"
@@ -663,12 +787,34 @@ function enabledAvailability(): DashboardTicketActionAvailability {
   return { enabled: true, reason: null }
 }
 
+function getRuntimeAction(runtime: any, actionId: string) {
+  try {
+    return runtime?.actions?.get?.(actionId) || null
+  } catch {
+    return null
+  }
+}
+
+function missingRuntimeTicketActionReason(runtime: any, action: DashboardTicketActionId) {
+  if (action !== "pin" && action !== "unpin" && action !== "rename") return null
+  const runtimeActionId = `opendiscord:${action}-ticket`
+  const runtimeAction = getRuntimeAction(runtime, runtimeActionId)
+  if (runtimeAction && typeof runtimeAction.run === "function") return null
+  return action === "rename"
+    ? ticketAvailabilityReasons.renameUnavailable
+    : "tickets.detail.availability.genericUnavailable"
+}
+
 function invalidTicketStateReason(ticket: DashboardTicketRecord, action: DashboardTicketActionId) {
   if (action === "claim" && (!ticket.open || ticket.claimed)) return ticketAvailabilityReasons.ticketAlreadyClaimedOrNotOpen
   if (action === "unclaim" && (!ticket.open || !ticket.claimed)) return ticketAvailabilityReasons.ticketNotCurrentlyClaimed
   if (action === "assign" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
   if (action === "escalate" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
   if (["move", "transfer", "add-participant", "remove-participant", "set-priority", "set-topic"].includes(action) && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if ((action === "pin" || action === "unpin" || action === "rename") && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
+  if ((action === "pin" || action === "unpin") && ticket.transportMode !== "channel_text") return ticketAvailabilityReasons.pinUnsupportedTransport
+  if (action === "pin" && ticket.pinned) return ticketAvailabilityReasons.ticketAlreadyPinned
+  if (action === "unpin" && !ticket.pinned) return ticketAvailabilityReasons.ticketNotPinned
   if ((action === "approve-close-request" || action === "dismiss-close-request") && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
   if ((action === "approve-close-request" || action === "dismiss-close-request") && ticket.closeRequestState !== "requested") return ticketAvailabilityReasons.closeRequestMissing
   if (action === "set-awaiting-user" && (!ticket.open || ticket.closed)) return ticketAvailabilityReasons.ticketNotOpen
@@ -754,6 +900,14 @@ async function buildRuntimeActionAvailability(input: {
     const runtimeRequired = action !== "refresh"
     if (runtimeRequired && (!input.context?.runtime || !input.context.guild || !input.context.channel || !input.context.user)) {
       availability[action] = disabledAvailability(ticketAvailabilityReasons.runtimeContextMissing)
+      continue
+    }
+
+    const missingActionReason = runtimeRequired && input.context?.runtime
+      ? missingRuntimeTicketActionReason(input.context.runtime, action)
+      : null
+    if (missingActionReason) {
+      availability[action] = disabledAvailability(missingActionReason)
       continue
     }
 
@@ -1222,6 +1376,84 @@ async function getRuntimeTicketQueueSummary(
       now: input.now
     })
   }
+}
+
+async function listRuntimeTicketWorkbenchViews(runtimeBridge: DashboardRuntimeBridge, actorUserId: string): Promise<DashboardTicketWorkbenchViewRecord[]> {
+  const normalizedActor = normalizeString(actorUserId)
+  if (!normalizedActor) return []
+  const database = getTicketWorkbenchViewDatabase(runtimeBridge)
+  if (!database || typeof database.getCategory !== "function") return []
+  const records = await database.getCategory(TICKET_WORKBENCH_VIEWS_CATEGORY)
+  return (Array.isArray(records) ? records : [])
+    .map((entry) => normalizeTicketWorkbenchViewRecord(entry.key, entry.value))
+    .filter((entry): entry is DashboardTicketWorkbenchViewRecord => Boolean(entry && canReadTicketWorkbenchView(entry, normalizedActor)))
+    .sort((left, right) => left.name.localeCompare(right.name) || left.viewId.localeCompare(right.viewId))
+}
+
+async function getRuntimeTicketWorkbenchView(runtimeBridge: DashboardRuntimeBridge, viewId: string, actorUserId: string): Promise<DashboardTicketWorkbenchViewRecord | null> {
+  const normalizedViewId = normalizeString(viewId)
+  const normalizedActor = normalizeString(actorUserId)
+  if (!normalizedViewId || !normalizedActor) return null
+  const database = getTicketWorkbenchViewDatabase(runtimeBridge)
+  if (!database || typeof database.get !== "function") return null
+  const value = await database.get(TICKET_WORKBENCH_VIEWS_CATEGORY, normalizedViewId)
+  const record = normalizeTicketWorkbenchViewRecord(normalizedViewId, value)
+  return record && canReadTicketWorkbenchView(record, normalizedActor) ? record : null
+}
+
+async function createRuntimeTicketWorkbenchView(runtimeBridge: DashboardRuntimeBridge, input: DashboardTicketWorkbenchViewMutationRequest): Promise<DashboardTicketWorkbenchViewMutationResult> {
+  const database = getTicketWorkbenchViewDatabase(runtimeBridge)
+  if (!database || typeof database.set !== "function") {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.unavailable")
+  }
+  const now = Date.now()
+  const viewId = `twv_${crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : crypto.randomBytes(16).toString("hex")}`
+  const record = buildTicketWorkbenchViewRecord(input, viewId, now)
+  if (!record) {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.validationFailed")
+  }
+  await database.set(TICKET_WORKBENCH_VIEWS_CATEGORY, record.viewId, record)
+  return ticketWorkbenchViewResult(true, "success", "tickets.page.savedViews.created", record)
+}
+
+async function updateRuntimeTicketWorkbenchView(runtimeBridge: DashboardRuntimeBridge, input: DashboardTicketWorkbenchViewMutationRequest & { viewId: string }): Promise<DashboardTicketWorkbenchViewMutationResult> {
+  const database = getTicketWorkbenchViewDatabase(runtimeBridge)
+  if (!database || typeof database.get !== "function" || typeof database.set !== "function") {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.unavailable")
+  }
+  const viewId = normalizeString(input.viewId)
+  const actorUserId = normalizeString(input.actorUserId)
+  const existing = normalizeTicketWorkbenchViewRecord(viewId, await database.get(TICKET_WORKBENCH_VIEWS_CATEGORY, viewId))
+  if (!existing || !canWriteTicketWorkbenchView(existing, actorUserId, input.actorIsAdmin)) {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.viewUnavailable")
+  }
+  if (input.scope === "shared" && !input.actorIsAdmin) {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.sharedWriteDenied")
+  }
+  const record = buildTicketWorkbenchViewRecord(input, viewId, Date.now(), existing)
+  if (!record) {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.validationFailed")
+  }
+  await database.set(TICKET_WORKBENCH_VIEWS_CATEGORY, record.viewId, record)
+  return ticketWorkbenchViewResult(true, "success", "tickets.page.savedViews.updated", record)
+}
+
+async function deleteRuntimeTicketWorkbenchView(
+  runtimeBridge: DashboardRuntimeBridge,
+  input: { viewId: string; actorUserId: string; actorIsAdmin: boolean }
+): Promise<DashboardTicketWorkbenchViewMutationResult> {
+  const database = getTicketWorkbenchViewDatabase(runtimeBridge)
+  if (!database || typeof database.get !== "function" || typeof database.delete !== "function") {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.unavailable")
+  }
+  const viewId = normalizeString(input.viewId)
+  const actorUserId = normalizeString(input.actorUserId)
+  const existing = normalizeTicketWorkbenchViewRecord(viewId, await database.get(TICKET_WORKBENCH_VIEWS_CATEGORY, viewId))
+  if (!existing || !canWriteTicketWorkbenchView(existing, actorUserId, input.actorIsAdmin)) {
+    return ticketWorkbenchViewResult(false, "warning", "tickets.page.savedViews.viewUnavailable")
+  }
+  await database.delete(TICKET_WORKBENCH_VIEWS_CATEGORY, viewId)
+  return ticketWorkbenchViewResult(true, "success", "tickets.page.savedViews.deleted", existing)
 }
 
 const QUALITY_REVIEW_SERVICE_ID = "ot-quality-review:service"
@@ -1979,6 +2211,43 @@ async function runRuntimeTicketAction(runtimeBridge: DashboardRuntimeBridge, inp
         newTopic: topic
       })
       return ticketActionSuccess(ticketActionResults.topicSuccess, ticketId)
+    }
+
+    if (action === "pin" || action === "unpin") {
+      const runtimeAction = getRuntimeAction(context.runtime, `opendiscord:${action}-ticket`)
+      if (!runtimeAction || typeof runtimeAction.run !== "function") {
+        return ticketActionWarning(ticketActionResults.unavailable, ticketId)
+      }
+      await runtimeAction.run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true
+      })
+      return ticketActionSuccess(action === "pin" ? ticketActionResults.pinSuccess : ticketActionResults.unpinSuccess, ticketId)
+    }
+
+    if (action === "rename") {
+      const renameName = normalizeString(input.renameName)
+      if (!renameName) {
+        return ticketActionWarning(ticketActionResults.renameMissingName, ticketId)
+      }
+      const runtimeAction = getRuntimeAction(context.runtime, "opendiscord:rename-ticket")
+      if (!runtimeAction || typeof runtimeAction.run !== "function") {
+        return ticketActionWarning(ticketActionResults.unavailable, ticketId)
+      }
+      await runtimeAction.run("other", {
+        guild: context.guild,
+        channel: context.channel,
+        user: context.user,
+        ticket: context.ticket,
+        reason,
+        sendMessage: true,
+        data: renameName
+      })
+      return ticketActionSuccess(ticketActionResults.renameSuccess, ticketId)
     }
 
     const runtimeActionId = `opendiscord:${action}-ticket`
