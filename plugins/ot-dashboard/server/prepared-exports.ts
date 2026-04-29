@@ -77,8 +77,11 @@ function normalizePreparedExportRecord(exportId: string, value: unknown): Dashbo
 function resolvePreparedExportPath(projectRoot: string, relativePath: string) {
   const root = preparedExportRoot(projectRoot)
   if (!relativePath || path.isAbsolute(relativePath)) return null
-  const normalized = path.normalize(relativePath).replace(/^(\.\.[/\\])+/, "")
-  if (normalized.includes("..") || !normalized.startsWith(`prepared-exports${path.sep}`)) return null
+  const rawSegments = relativePath.split(/[\\/]+/).filter(Boolean)
+  if (rawSegments.includes("..")) return null
+  const normalized = path.normalize(relativePath)
+  const segments = normalized.split(/[\\/]+/).filter(Boolean)
+  if (segments.length < 2 || segments[0] !== "prepared-exports" || segments.includes("..")) return null
   const filePath = path.resolve(projectRoot, "runtime", "ot-dashboard", normalized)
   const relative = path.relative(root, filePath)
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null

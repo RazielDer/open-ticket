@@ -2777,11 +2777,30 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
       openedOn: 1710000200000 + index
     }))
   ]
-  const runtime = await startServer({ tickets })
+  const telemetrySignalCalls: string[][] = []
+  const runtime = await startServer({
+    tickets,
+    telemetrySignalCalls,
+    telemetrySignals: {
+      "ticket-new-0": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 5,
+        lastReopenedAt: 1710000300000,
+        latestFeedbackStatus: "completed"
+      }),
+      "ticket-b": telemetrySignals({
+        hasEverReopened: true,
+        reopenCount: 1,
+        lastReopenedAt: 1710000150000,
+        latestFeedbackStatus: "ignored"
+      })
+    }
+  })
   t.after(() => stopServer(runtime))
 
-  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/tickets?limit=10&page=2&sort=opened-desc")
-  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&page=2&sort=opened-desc`, { headers: { cookie: admin.cookie } })
+  const search = "waiting_staff"
+  const admin = await login(runtime.baseUrl, "admin-user", `/dash/admin/tickets?limit=10&page=2&sort=opened-desc&q=${search}`)
+  const listResponse = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&page=2&sort=opened-desc&q=${search}`, { headers: { cookie: admin.cookie } })
   const csrfToken = csrfFrom(await listResponse.text())
 
   const prepared = await fetch(`${runtime.baseUrl}/dash/admin/tickets/export`, {
@@ -2794,7 +2813,8 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
     body: new URLSearchParams({
       csrfToken,
       format: "json",
-      returnTo: "/dash/admin/tickets?limit=10&page=2&sort=opened-desc",
+      returnTo: `/dash/admin/tickets?limit=10&page=2&sort=opened-desc&q=${search}`,
+      q: search,
       limit: "10",
       page: "2",
       sort: "opened-desc"
@@ -2818,6 +2838,12 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
   assert.equal(body.total, 11)
   assert.equal(body.items.length, 11)
   assert.ok(body.items.some((item: any) => item.ticketId === "ticket-b"))
+  assert.equal(body.filters.q, "[redacted]")
+  assert.doesNotMatch(JSON.stringify(body), new RegExp(search))
+  const offPageTelemetryRow = body.items.find((item: any) => item.ticketId === "ticket-new-0")
+  assert.equal(offPageTelemetryRow.reopenCount, 5)
+  assert.equal(offPageTelemetryRow.latestFeedbackStatus, "completed")
+  assert.equal(telemetrySignalCalls.some((ids) => ids.length === 11 && ids.includes("ticket-new-0") && ids.includes("ticket-b")), true)
 
   const secondRelease = await fetch(`${runtime.baseUrl}/dash/admin/exports/${exportId}`, {
     headers: { cookie: admin.cookie }
@@ -2842,8 +2868,41 @@ test("prepared ticket exports are admin-only one-time full-filter releases", asy
 
   const createdAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-created" })
   assert.equal(createdAudits.some((event) => event.details?.scope === "tickets-list" && event.details?.rowCount === 11), true)
+  assert.doesNotMatch(JSON.stringify(createdAudits), new RegExp(search))
   const releaseAudits = await runtime.context.authStore.listAuditEvents({ eventType: "prepared-export-released" })
   assert.equal(releaseAudits.length, 1)
+})
+
+test("prepared export release rejects traversal registry paths", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+
+  const admin = await login(runtime.baseUrl, "admin-user", "/dash/admin/tickets")
+  const exportId = "dexp_traversal"
+  const databaseKey = `opendiscord:dashboard:prepared-exports:${exportId}`
+  const exportDirectory = path.join(runtime.projectRoot, "runtime", "ot-dashboard", "prepared-exports", "escape")
+  const exportPath = path.join(exportDirectory, "leak.json")
+  fs.mkdirSync(exportDirectory, { recursive: true })
+  fs.writeFileSync(exportPath, "{\"leak\":true}\n", "utf8")
+  runtime.globalDatabase.set(databaseKey, {
+    exportId,
+    scope: "tickets-list",
+    format: "json",
+    createdByUserId: "admin-user",
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+    fileName: "leak.json",
+    relativePath: "../prepared-exports/escape/leak.json",
+    contentType: "application/json; charset=utf-8",
+    byteSize: 14
+  })
+
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/exports/${exportId}`, {
+    headers: { cookie: admin.cookie }
+  })
+  await response.text()
+  assert.equal(response.status, 404)
+  assert.equal(runtime.globalDatabase.has(databaseKey), false)
 })
 
 test("ticket AI assist API requires csrf, stays actor-private, and audits metadata only", async (t) => {

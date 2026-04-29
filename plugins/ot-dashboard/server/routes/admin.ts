@@ -554,6 +554,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       savedViewsAvailable?: boolean
       savedViewsUnavailableMessage?: string
       exportId?: string | null
+      hydrateAllFilteredTelemetry?: boolean
     } = {}
   ) => {
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
@@ -619,8 +620,11 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           qualityReviewHref
         })
         const visibleTicketIds = preview.items.map((item) => item.id)
-        telemetrySignals = visibleTicketIds.length > 0
-          ? await runtimeBridge.getTicketTelemetrySignals(visibleTicketIds)
+        const telemetryTicketIds = savedViewOptions.hydrateAllFilteredTelemetry
+          ? preview.allExportRows.map((row) => row.ticketId)
+          : visibleTicketIds
+        telemetrySignals = telemetryTicketIds.length > 0
+          ? await runtimeBridge.getTicketTelemetrySignals(telemetryTicketIds)
           : {}
       } catch {
         telemetrySupported = false
@@ -2000,7 +2004,12 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       return res.redirect(appendAlertQuery(returnTo, "warning", i18n.t("routeMessages.invalidExportFormat")))
     }
     try {
-      const model = await buildTicketWorkbenchWorkspaceModel(req.body as Record<string, unknown>, returnTo, qualityReviewHrefForAccess(res))
+      const model = await buildTicketWorkbenchWorkspaceModel(
+        req.body as Record<string, unknown>,
+        returnTo,
+        qualityReviewHrefForAccess(res),
+        { hydrateAllFilteredTelemetry: true }
+      )
       const payload = await buildFullTicketWorkbenchExportPayload(model, format)
       const record = await prepareDashboardExport({
         projectRoot: context.projectRoot,

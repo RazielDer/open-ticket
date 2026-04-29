@@ -572,7 +572,7 @@ export async function buildAnalyticsExportPayload(
 
 function ticketFilters(model: TicketWorkbenchListModel) {
   return {
-    q: model.request.q,
+    q: model.request.q ? "[redacted]" : "",
     status: model.request.status,
     transport: model.request.transport,
     feedback: model.request.feedback,
