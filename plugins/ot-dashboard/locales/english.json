@@ -147,13 +147,30 @@
       "addOns": "Add-ons",
       "addOnsDetail": "{count} need attention",
       "tickets": "Tickets",
-      "ticketsDetail": "{count} recent events since startup"
+      "ticketsDetail": "{count} recent events since startup",
+      "qualityReview": "Quality Review",
+      "qualityReviewDetail": "Active {active}, Unassigned {unassigned}"
     },
     "nextStepTitle": "Next step",
     "setupStatusTitle": "Setup areas",
     "warningsTitle": "Warnings",
     "warningsEmptyTitle": "No warnings right now",
     "warningsEmptyBody": "The dashboard did not detect any current runtime warnings for this snapshot.",
+    "qualityReview": {
+      "title": "Quality review",
+      "myQueue": "My Queue",
+      "unassigned": "Unassigned",
+      "overdue": "Overdue",
+      "zeroTitle": "Quality review queue is clear",
+      "zeroBody": "No active quality-review cases need attention right now.",
+      "unavailableTitle": "Quality review queue unavailable",
+      "links": {
+        "active": "Active queue",
+        "mine": "My queue",
+        "unassigned": "Unassigned",
+        "overdue": "Overdue"
+      }
+    },
     "nextStep": {
       "general": {
         "title": "Finish the General settings",
@@ -1085,6 +1102,7 @@
       "historicalOnly": "Ticket no longer active",
       "noReopen": "No reopen",
       "windows": {
+        "all": "All time",
         "7d": "Last 7 days",
         "30d": "Last 30 days",
         "90d": "Last 90 days",

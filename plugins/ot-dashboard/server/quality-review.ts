@@ -5,6 +5,10 @@ import { joinBasePath } from "./dashboard-config"
 import type { DashboardRuntimeBridge } from "./runtime-bridge"
 import { supportsTicketTelemetryReads } from "./runtime-bridge"
 import { buildFallbackTicketDetail } from "./ticket-workbench"
+import {
+  buildQualityReviewQueueSummary,
+  projectQualityReviewQueueFields
+} from "./quality-review-queue"
 import type {
   DashboardTicketDetailRecord,
   DashboardTicketFeedbackStoredStatus,
@@ -15,13 +19,16 @@ import type {
   DashboardQualityReviewCaseSummary,
   DashboardQualityReviewRawFeedbackRecord,
   DashboardQualityReviewRawFeedbackStatus,
+  DashboardQualityReviewOwnerBucket,
+  DashboardQualityReviewQueueSummary,
   DashboardQualityReviewState,
+  DashboardQualityReviewOverdueKind,
   DashboardTicketTelemetrySignals,
   DashboardTicketTelemetrySnapshot,
   DashboardTicketTransportMode
 } from "./ticket-workbench-types"
 
-export const QUALITY_REVIEW_WINDOWS = ["7d", "30d", "90d", "custom"] as const
+export const QUALITY_REVIEW_WINDOWS = ["all", "7d", "30d", "90d", "custom"] as const
 export const QUALITY_REVIEW_SIGNALS = ["all", "feedback", "reopened"] as const
 export const QUALITY_REVIEW_FEEDBACK_FILTERS = ["all", "completed", "ignored", "delivery_failed"] as const
 export const QUALITY_REVIEW_REOPENED_FILTERS = ["all", "ever", "never"] as const
@@ -29,7 +36,8 @@ export const QUALITY_REVIEW_STATUS_FILTERS = ["all", "open", "closed"] as const
 export const QUALITY_REVIEW_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
 export const QUALITY_REVIEW_STATE_FILTERS = ["active", "unreviewed", "in_review", "resolved", "all"] as const
 export const QUALITY_REVIEW_RAW_FEEDBACK_FILTERS = ["all", "available", "partial", "expired", "none"] as const
-export const QUALITY_REVIEW_SORTS = ["signal-desc", "signal-asc", "opened-desc", "opened-asc"] as const
+export const QUALITY_REVIEW_ATTENTION_FILTERS = ["all", "overdue"] as const
+export const QUALITY_REVIEW_SORTS = ["queue-priority", "signal-desc", "signal-asc", "opened-desc", "opened-asc"] as const
 export const QUALITY_REVIEW_LIMITS = [10, 25, 50, 100] as const
 
 export type DashboardQualityReviewWindow = (typeof QUALITY_REVIEW_WINDOWS)[number]
@@ -40,6 +48,7 @@ export type DashboardQualityReviewStatusFilter = (typeof QUALITY_REVIEW_STATUS_F
 export type DashboardQualityReviewTransportFilter = (typeof QUALITY_REVIEW_TRANSPORT_FILTERS)[number]
 export type DashboardQualityReviewStateFilter = (typeof QUALITY_REVIEW_STATE_FILTERS)[number]
 export type DashboardQualityReviewRawFeedbackFilter = (typeof QUALITY_REVIEW_RAW_FEEDBACK_FILTERS)[number]
+export type DashboardQualityReviewAttentionFilter = (typeof QUALITY_REVIEW_ATTENTION_FILTERS)[number]
 export type DashboardQualityReviewSort = (typeof QUALITY_REVIEW_SORTS)[number]
 export type DashboardQualityReviewSignalKind = "feedback" | "reopened"
 
@@ -59,6 +68,7 @@ export interface DashboardQualityReviewQuery {
   reviewState: DashboardQualityReviewStateFilter
   ownerId: string
   rawFeedback: DashboardQualityReviewRawFeedbackFilter
+  attention: DashboardQualityReviewAttentionFilter
   q: string
   sort: DashboardQualityReviewSort
   limit: number
@@ -72,6 +82,7 @@ export interface DashboardQualityReviewQuery {
   reviewStateOptions: Array<{ value: DashboardQualityReviewStateFilter; label: string }>
   ownerOptions: Array<{ value: string; label: string }>
   rawFeedbackOptions: Array<{ value: DashboardQualityReviewRawFeedbackFilter; label: string }>
+  attentionOptions: Array<{ value: DashboardQualityReviewAttentionFilter; label: string }>
   sortOptions: Array<{ value: DashboardQualityReviewSort; label: string }>
   limitOptions: number[]
   activeFilters: Array<{ label: string; value: string }>
@@ -129,11 +140,16 @@ export interface DashboardQualityReviewListItem {
   feedbackBadge: { label: string; tone: DashboardTone }
   reviewStateBadge: { label: string; tone: DashboardTone }
   rawFeedbackBadge: { label: string; tone: DashboardTone }
+  ownerBucketBadge: { label: string; tone: DashboardTone }
+  overdueBadge: { label: string; tone: DashboardTone } | null
   reopenBadge: { label: string; tone: DashboardTone } | null
   transportLabel: string
   openedLabel: string
   latestSignalLabel: string
   matchedSignalLabel: string
+  queueAnchorLabel: string
+  queueAnchorValue: string
+  overdueReasonLabel: string
   searchText: string
 }
 
@@ -146,6 +162,7 @@ export interface DashboardQualityReviewListModel {
   currentHref: string
   request: DashboardQualityReviewQuery
   summary: DashboardQualityReviewSummary
+  queueSummary: DashboardQualityReviewQueueSummary
   summaryCards: DashboardSummaryCardInput[]
   total: number
   pageStart: number
@@ -169,6 +186,7 @@ export interface DashboardQualityReviewDetailModel {
   latestFeedbackFacts: Array<{ label: string; value: string }>
   ratingRows: Array<{ label: string; value: string; answered: boolean }>
   adjudicationFacts: Array<{ label: string; value: string }>
+  governanceFacts: Array<{ label: string; value: string }>
   canManage: boolean
   stateActionHref: string
   assignOwnerActionHref: string
@@ -230,8 +248,9 @@ interface QualityReviewRecordWithMatches {
   allWindowReopens: DashboardTicketLifecycleTelemetryRecord[]
 }
 
-const DEFAULT_WINDOW: DashboardQualityReviewWindow = "30d"
-const WINDOW_DAYS: Record<Exclude<DashboardQualityReviewWindow, "custom">, number> = {
+const DEFAULT_WINDOW: DashboardQualityReviewWindow = "all"
+const DEFAULT_SORT: DashboardQualityReviewSort = "queue-priority"
+const WINDOW_DAYS: Record<Exclude<DashboardQualityReviewWindow, "all" | "custom">, number> = {
   "7d": 7,
   "30d": 30,
   "90d": 90
@@ -288,13 +307,22 @@ function parseDateEnd(value: unknown) {
 
 function defaultWindowRange(now: number) {
   return {
-    fromMs: now - WINDOW_DAYS[DEFAULT_WINDOW] * 24 * 60 * 60 * 1000,
+    fromMs: 0,
     toMs: now
   }
 }
 
 function resolveWindow(query: Record<string, unknown>, now: number) {
   const requestedWindow = enumOrDefault(query.window, QUALITY_REVIEW_WINDOWS, DEFAULT_WINDOW)
+  if (requestedWindow === "all") {
+    return {
+      window: "all" as const,
+      fromMs: 0,
+      toMs: now,
+      from: "",
+      to: dateInput(now)
+    }
+  }
   if (requestedWindow === "custom") {
     const fromMs = parseDateStart(query.from)
     const toMs = parseDateEnd(query.to)
@@ -415,8 +443,51 @@ function rawFeedbackBadge(status: DashboardQualityReviewRawFeedbackStatus) {
   }
 }
 
+function ownerBucketBadge(bucket: DashboardQualityReviewOwnerBucket) {
+  switch (bucket) {
+    case "mine":
+      return { label: ownerBucketLabel(bucket), tone: "success" as DashboardTone }
+    case "unassigned":
+      return { label: ownerBucketLabel(bucket), tone: "warning" as DashboardTone }
+    case "resolved":
+      return { label: ownerBucketLabel(bucket), tone: "muted" as DashboardTone }
+    default:
+      return { label: ownerBucketLabel(bucket), tone: "muted" as DashboardTone }
+  }
+}
+
+function attentionLabel(value: DashboardQualityReviewAttentionFilter) {
+  return value === "overdue" ? "Overdue only" : "All attention states"
+}
+
+function ownerBucketLabel(value: DashboardQualityReviewOwnerBucket) {
+  switch (value) {
+    case "mine": return "My queue"
+    case "unassigned": return "Unassigned"
+    case "resolved": return "Resolved"
+    default: return "Assigned to another admin"
+  }
+}
+
+function overdueReasonLabel(value: DashboardQualityReviewOverdueKind) {
+  switch (value) {
+    case "unreviewed": return "Unreviewed over 72 hours"
+    case "in_review": return "In review over 168 hours"
+    default: return "Not overdue"
+  }
+}
+
+function queueAnchorLabel(state: DashboardQualityReviewState) {
+  switch (state) {
+    case "in_review": return "In-review update"
+    case "resolved": return "No active queue anchor"
+    default: return "Last signal"
+  }
+}
+
 function sortLabel(value: DashboardQualityReviewSort) {
   switch (value) {
+    case "queue-priority": return "Queue priority"
     case "signal-asc": return "Oldest signal first"
     case "opened-desc": return "Newest opened first"
     case "opened-asc": return "Oldest opened first"
@@ -435,10 +506,11 @@ function buildActiveFilters(query: Omit<DashboardQualityReviewQuery, "activeFilt
   if (query.reviewState !== "active") filters.push({ label: "Review state", value: reviewStateLabel(query.reviewState) })
   if (query.ownerId) filters.push({ label: "Owner", value: query.ownerId === "me" ? "Me" : query.ownerId === "unassigned" ? "Unassigned" : query.ownerId })
   if (query.rawFeedback !== "all") filters.push({ label: "Raw feedback", value: rawFeedbackLabel(query.rawFeedback) })
+  if (query.attention !== "all") filters.push({ label: "Attention", value: attentionLabel(query.attention) })
   if (query.teamId) filters.push({ label: "Team", value: query.teamId })
   if (query.assigneeId) filters.push({ label: "Assignee", value: query.assigneeId })
   if (query.q) filters.push({ label: "Search", value: query.q })
-  if (query.sort !== "signal-desc") filters.push({ label: "Sort", value: sortLabel(query.sort) })
+  if (query.sort !== DEFAULT_SORT) filters.push({ label: "Sort", value: sortLabel(query.sort) })
   if (query.limit !== 25) filters.push({ label: "Rows", value: String(query.limit) })
   return filters
 }
@@ -468,8 +540,9 @@ export function parseDashboardQualityReviewQuery(
     reviewState: enumOrDefault(query.reviewState, QUALITY_REVIEW_STATE_FILTERS, "active"),
     ownerId: normalizeString(query.ownerId),
     rawFeedback: enumOrDefault(query.rawFeedback, QUALITY_REVIEW_RAW_FEEDBACK_FILTERS, "all"),
+    attention: enumOrDefault(query.attention, QUALITY_REVIEW_ATTENTION_FILTERS, "all"),
     q: normalizeString(query.q),
-    sort: enumOrDefault(query.sort, QUALITY_REVIEW_SORTS, "signal-desc"),
+    sort: enumOrDefault(query.sort, QUALITY_REVIEW_SORTS, DEFAULT_SORT),
     limit: limitOrDefault(query.limit),
     page: pageOrDefault(query.page),
     windowOptions: [...QUALITY_REVIEW_WINDOWS],
@@ -485,6 +558,7 @@ export function parseDashboardQualityReviewQuery(
       { value: "unassigned", label: "Unassigned" }
     ],
     rawFeedbackOptions: QUALITY_REVIEW_RAW_FEEDBACK_FILTERS.map((value) => ({ value, label: rawFeedbackLabel(value) })),
+    attentionOptions: QUALITY_REVIEW_ATTENTION_FILTERS.map((value) => ({ value, label: attentionLabel(value) })),
     sortOptions: QUALITY_REVIEW_SORTS.map((value) => ({ value, label: sortLabel(value) })),
     limitOptions: [...QUALITY_REVIEW_LIMITS]
   }
@@ -506,6 +580,7 @@ function appendQualityReviewQuery(href: string, request: DashboardQualityReviewQ
     transport: request.transport,
     reviewState: request.reviewState,
     rawFeedback: request.rawFeedback,
+    attention: request.attention,
     sort: request.sort,
     limit: request.limit,
     page
@@ -526,6 +601,30 @@ function appendQualityReviewQuery(href: string, request: DashboardQualityReviewQ
 
 function buildQualityReviewHref(basePath: string, request: DashboardQualityReviewQuery, page = request.page) {
   return appendQualityReviewQuery(joinBasePath(basePath, "admin/quality-review"), request, page)
+}
+
+export function buildQualityReviewQueueHref(
+  basePath: string,
+  overrides: Partial<Pick<DashboardQualityReviewQuery, "ownerId" | "attention" | "page">> = {}
+) {
+  const url = new URL(`http://dashboard.local${joinBasePath(basePath, "admin/quality-review")}`)
+  const entries: Record<string, string | number> = {
+    window: "all",
+    signal: "all",
+    feedback: "all",
+    reopened: "all",
+    reviewState: "active",
+    ownerId: overrides.ownerId || "",
+    rawFeedback: "all",
+    attention: overrides.attention || "all",
+    sort: DEFAULT_SORT,
+    limit: 25,
+    page: overrides.page || 1
+  }
+  for (const [key, value] of Object.entries(entries)) {
+    url.searchParams.set(key, String(value))
+  }
+  return `${url.pathname}${url.search}`
 }
 
 function buildQualityReviewDetailHref(basePath: string, request: DashboardQualityReviewQuery, ticketId: string, returnTo: string) {
@@ -655,6 +754,7 @@ function latestCompletedAnsweredSessionIdsByTicket(records: DashboardTicketFeedb
 }
 
 function inRange(value: number | null | undefined, request: DashboardQualityReviewQuery) {
+  if (request.window === "all") return typeof value === "number" && Number.isFinite(value)
   return typeof value === "number" && Number.isFinite(value) && value >= request.fromMs && value <= request.toMs
 }
 
@@ -705,7 +805,7 @@ function syntheticReviewCase(input: {
   lastSignalAt: number
   latestCompletedAnsweredSessionId: string | null
 }): DashboardQualityReviewCaseSummary {
-  return {
+  return projectQualityReviewQueueFields({
     ticketId: input.ticketId,
     stored: false,
     state: "unreviewed",
@@ -718,7 +818,7 @@ function syntheticReviewCase(input: {
     noteCount: 0,
     rawFeedbackStatus: "none",
     latestRawFeedbackSessionId: null
-  }
+  })
 }
 
 function buildCaseSignals(
@@ -803,7 +903,9 @@ function recordSearchText(record: DashboardQualityReviewRecord) {
     record.reviewCase.state,
     record.reviewCase.ownerUserId || "",
     record.reviewCase.ownerLabel,
-    record.reviewCase.rawFeedbackStatus
+    record.reviewCase.rawFeedbackStatus,
+    record.reviewCase.ownerBucket,
+    record.reviewCase.overdue ? "overdue" : ""
   ].join(" ").toLowerCase()
 }
 
@@ -816,6 +918,7 @@ function matchesFilters(record: DashboardQualityReviewRecord, request: Dashboard
   if (request.ownerId === "unassigned" && record.reviewCase.ownerUserId) return false
   if (request.ownerId && request.ownerId !== "me" && request.ownerId !== "unassigned" && record.reviewCase.ownerUserId !== request.ownerId) return false
   if (request.rawFeedback !== "all" && record.reviewCase.rawFeedbackStatus !== request.rawFeedback) return false
+  if (request.attention === "overdue" && !record.reviewCase.overdue) return false
   if (request.teamId && record.teamId !== request.teamId) return false
   if (request.assigneeId && record.assigneeUserId !== request.assigneeId) return false
   if (request.q && !recordSearchText(record).includes(request.q.toLowerCase())) return false
@@ -831,8 +934,21 @@ function matchesTelemetryFilters(record: DashboardQualityReviewRecord, request: 
 }
 
 function sortReviewRecords(records: QualityReviewRecordWithMatches[], sort: DashboardQualityReviewSort) {
+  const ownerRank: Record<DashboardQualityReviewOwnerBucket, number> = {
+    unassigned: 0,
+    mine: 1,
+    other: 2,
+    resolved: 3
+  }
   return [...records].sort((left, right) => {
     switch (sort) {
+      case "queue-priority":
+        return Number(right.record.reviewCase.overdue) - Number(left.record.reviewCase.overdue)
+          || (left.record.reviewCase.state === "unreviewed" ? 0 : left.record.reviewCase.state === "in_review" ? 1 : 2)
+            - (right.record.reviewCase.state === "unreviewed" ? 0 : right.record.reviewCase.state === "in_review" ? 1 : 2)
+          || ownerRank[left.record.reviewCase.ownerBucket] - ownerRank[right.record.reviewCase.ownerBucket]
+          || (right.record.reviewCase.queueAnchorAt || 0) - (left.record.reviewCase.queueAnchorAt || 0)
+          || left.record.ticketId.localeCompare(right.record.ticketId)
       case "signal-asc":
         return left.record.latestMatchedSignalAt - right.record.latestMatchedSignalAt || left.record.ticketId.localeCompare(right.record.ticketId)
       case "opened-desc":
@@ -964,8 +1080,18 @@ function buildSummaryCards(summary: DashboardQualityReviewSummary): DashboardSum
   ]
 }
 
+function buildQueueSummaryCards(summary: DashboardQualityReviewQueueSummary): DashboardSummaryCardInput[] {
+  return [
+    { label: "Active", value: String(summary.activeCount), detail: "Unreviewed and in-review cases", tone: summary.activeCount > 0 ? "success" : "muted" },
+    { label: "My Queue", value: String(summary.myQueueCount), detail: "Active cases assigned to you", tone: summary.myQueueCount > 0 ? "success" : "muted" },
+    { label: "Unassigned", value: String(summary.unassignedCount), detail: "Active cases without an owner", tone: summary.unassignedCount > 0 ? "warning" : "muted" },
+    { label: "Overdue", value: String(summary.overdueCount), detail: "Active cases past the locked queue threshold", tone: summary.overdueCount > 0 ? "warning" : "muted" }
+  ]
+}
+
 function unavailableListModel(basePath: string, query: DashboardQualityReviewQuery, currentHref: string, configService: DashboardConfigService, warningMessage: string): DashboardQualityReviewListModel {
   const summary = buildSummary([])
+  const queueSummary = buildQualityReviewQueueSummary([], { unavailableReason: warningMessage })
   return {
     available: false,
     warningMessage,
@@ -975,7 +1101,8 @@ function unavailableListModel(basePath: string, query: DashboardQualityReviewQue
     currentHref,
     request: query,
     summary,
-    summaryCards: buildSummaryCards(summary),
+    queueSummary,
+    summaryCards: buildQueueSummaryCards(queueSummary),
     total: 0,
     pageStart: 0,
     pageEnd: 0,
@@ -1074,15 +1201,16 @@ export async function buildDashboardQualityReviewListModel(input: {
   const snapshot = input.runtimeBridge.getSnapshot(input.projectRoot)
   const liveTickets = snapshot.ticketSummary.available === true ? input.runtimeBridge.listTickets() : []
   const liveById = new Map(liveTickets.map((ticket) => [ticket.id, ticket]))
+  const telemetryWindow = request.window === "all"
+    ? {}
+    : { since: request.fromMs, until: request.toMs }
   const [feedback, lifecycle] = await Promise.all([
     collectFeedbackTelemetry(input.runtimeBridge, {
-      since: request.fromMs,
-      until: request.toMs,
+      ...telemetryWindow,
       statuses: request.feedback === "all" ? undefined : [request.feedback]
     }),
     collectLifecycleTelemetry(input.runtimeBridge, {
-      since: request.fromMs,
-      until: request.toMs,
+      ...telemetryWindow,
       eventTypes: ["reopened"]
     })
   ])
@@ -1101,7 +1229,7 @@ export async function buildDashboardQualityReviewListModel(input: {
   feedback.items.forEach((record) => ids.add(record.ticketId))
   lifecycle.items.forEach((record) => ids.add(record.ticketId))
 
-  const telemetryRecords = sortReviewRecords([...ids].map((ticketId) => buildReviewRecord({
+  const telemetryRecords = [...ids].map((ticketId) => buildReviewRecord({
     ticketId,
     liveTicket: liveById.get(ticketId) || null,
     snapshot: snapshotForTicket(ticketId, feedback.items, lifecycle.items),
@@ -1109,7 +1237,7 @@ export async function buildDashboardQualityReviewListModel(input: {
     lifecycleRecords: lifecycle.items,
     request,
     configService: input.configService
-  })).filter((record): record is QualityReviewRecordWithMatches => Boolean(record)), request.sort)
+  })).filter((record): record is QualityReviewRecordWithMatches => Boolean(record))
   const qualityReviewWarnings: string[] = []
   let records = telemetryRecords
   if (input.runtimeBridge.listQualityReviewCases && telemetryRecords.length > 0) {
@@ -1144,7 +1272,19 @@ export async function buildDashboardQualityReviewListModel(input: {
       qualityReviewWarnings.push("Quality review cases could not be read.")
     }
   }
-  records = records.filter((item) => matchesFilters(item.record, request, normalizeString(input.actorUserId)))
+  records = records
+    .map((item) => ({
+      ...item,
+      record: {
+        ...item.record,
+        reviewCase: projectQualityReviewQueueFields(item.record.reviewCase, {
+          actorUserId: input.actorUserId,
+          now: input.now
+        })
+      }
+    }))
+    .filter((item) => matchesFilters(item.record, request, normalizeString(input.actorUserId)))
+  records = sortReviewRecords(records, request.sort)
 
   const totalPages = Math.max(1, Math.ceil(records.length / request.limit))
   const page = Math.min(request.page, totalPages)
@@ -1156,6 +1296,10 @@ export async function buildDashboardQualityReviewListModel(input: {
   }
 
   const summary = buildSummary(records)
+  const queueSummary = buildQualityReviewQueueSummary(records.map((item) => item.record.reviewCase), {
+    actorUserId: input.actorUserId,
+    now: input.now
+  })
   const telemetryWarnings = uniqueWarnings(feedback.warnings, lifecycle.warnings)
   telemetryWarnings.push(...uniqueWarnings(qualityReviewWarnings))
   if (feedback.truncated || lifecycle.truncated) {
@@ -1171,7 +1315,8 @@ export async function buildDashboardQualityReviewListModel(input: {
     currentHref,
     request: { ...request, page },
     summary,
-    summaryCards: buildSummaryCards(summary),
+    queueSummary,
+    summaryCards: buildQueueSummaryCards(queueSummary),
     total: records.length,
     pageStart: records.length > 0 ? startIndex + 1 : 0,
     pageEnd: startIndex + pageRecords.length,
@@ -1194,6 +1339,10 @@ export async function buildDashboardQualityReviewListModel(input: {
         feedbackBadge: feedbackBadge(record.latestFeedbackStatus),
         reviewStateBadge: reviewStateBadge(record.reviewCase.state),
         rawFeedbackBadge: rawFeedbackBadge(record.reviewCase.rawFeedbackStatus),
+        ownerBucketBadge: ownerBucketBadge(record.reviewCase.ownerBucket),
+        overdueBadge: record.reviewCase.overdue
+          ? { label: "Overdue", tone: "warning" as DashboardTone }
+          : null,
         reopenBadge: record.reopenCount > 0
           ? { label: `Reopened x${record.reopenCount}`, tone: "warning" as DashboardTone }
           : null,
@@ -1201,6 +1350,9 @@ export async function buildDashboardQualityReviewListModel(input: {
         openedLabel: formatDate(record.openedAt),
         latestSignalLabel: formatDate(record.latestMatchedSignalAt),
         matchedSignalLabel: matchedSignalLabel(record.matchedSignalKinds),
+        queueAnchorLabel: queueAnchorLabel(record.reviewCase.state),
+        queueAnchorValue: formatDate(record.reviewCase.queueAnchorAt),
+        overdueReasonLabel: overdueReasonLabel(record.reviewCase.overdueKind),
         searchText: recordSearchText(record)
       }
     })
@@ -1406,6 +1558,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
   const actionHref = (actionId: string) => joinBasePath(input.basePath, `admin/quality-review/${encodeURIComponent(input.ticketId)}/actions/${actionId}`)
   const baseEmpty = {
     adjudicationFacts: [] as Array<{ label: string; value: string }>,
+    governanceFacts: [] as Array<{ label: string; value: string }>,
     canManage: Boolean(input.canManage),
     stateActionHref: actionHref("set-state"),
     assignOwnerActionHref: actionHref("assign-owner"),
@@ -1513,11 +1666,15 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     const loaded = await input.runtimeBridge.getQualityReviewCase(input.ticketId, input.actorUserId).catch(() => null)
     if (loaded) {
       reviewCase = loaded
-      historicalSummary = {
-        ...historicalSummary,
-        reviewCase
-      }
     }
+  }
+  reviewCase = projectQualityReviewQueueFields(reviewCase, {
+    actorUserId: input.actorUserId,
+    now: input.now
+  })
+  historicalSummary = {
+    ...historicalSummary,
+    reviewCase
   }
   const matchedSet = new Set(matchedWindowEventIds)
   const telemetryWarning = allFeedback.length > DETAIL_FEEDBACK_LIMIT || allLifecycle.length > DETAIL_LIFECYCLE_LIMIT || feedbackCollection.truncated || lifecycleCollection.truncated
@@ -1564,6 +1721,14 @@ export async function buildDashboardQualityReviewDetailModel(input: {
     { label: "Last signal", value: formatDate(reviewCase.lastSignalAt) },
     { label: "Resolved", value: formatDate(reviewCase.resolvedAt) }
   ]
+  const governanceFacts = [
+    { label: "Effective owner", value: reviewCase.ownerLabel },
+    { label: "Owner bucket", value: ownerBucketLabel(reviewCase.ownerBucket) },
+    { label: queueAnchorLabel(reviewCase.state), value: formatDate(reviewCase.queueAnchorAt) },
+    { label: "Overdue status", value: reviewCase.overdue ? "Overdue" : "Not overdue" },
+    { label: "Overdue reason", value: overdueReasonLabel(reviewCase.overdueKind) },
+    { label: "Overdue since", value: formatDate(reviewCase.overdueSince) }
+  ]
 
   return {
     available: true,
@@ -1591,6 +1756,7 @@ export async function buildDashboardQualityReviewDetailModel(input: {
         answered: question.ratingValue !== null
       })),
     adjudicationFacts,
+    governanceFacts,
     canManage: Boolean(input.canManage),
     stateActionHref: actionHref("set-state"),
     assignOwnerActionHref: actionHref("assign-owner"),

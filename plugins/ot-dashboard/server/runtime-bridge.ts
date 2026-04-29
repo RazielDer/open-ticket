@@ -49,10 +49,15 @@ import {
   type DashboardQualityReviewCaseQuery,
   type DashboardQualityReviewCaseSignal,
   type DashboardQualityReviewCaseSummary,
+  type DashboardQualityReviewQueueSummary,
   type DashboardQualityReviewRawFeedbackRecord,
   type DashboardQualityReviewRawFeedbackStatus,
   type DashboardQualityReviewState
 } from "./ticket-workbench-types"
+import {
+  buildQualityReviewQueueSummary,
+  projectQualityReviewQueueFields
+} from "./quality-review-queue"
 
 export interface DashboardRuntimeGuildMember {
   guildId: string
@@ -77,6 +82,7 @@ export interface DashboardRuntimeBridge {
   getTicketTelemetrySignals?: (ticketIds: string[]) => Promise<Record<string, DashboardTicketTelemetrySignals>>
   listQualityReviewCases?: (query: DashboardQualityReviewCaseQuery, actorUserId: string) => Promise<DashboardQualityReviewCaseListResult>
   getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
+  getQualityReviewQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardQualityReviewQueueSummary | null>
   runQualityReviewAction?: (input: DashboardQualityReviewActionRequest) => Promise<DashboardQualityReviewActionResult>
   resolveQualityReviewAsset?: (ticketId: string, sessionId: string, assetId: string, actorUserId: string) => Promise<DashboardQualityReviewAssetResult>
   resolveQualityReviewOwnerLabel?: (userId: string) => Promise<string>
@@ -121,6 +127,9 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async getQualityReviewCase(ticketId, actorUserId) {
     return await getRuntimeQualityReviewCase(defaultDashboardRuntimeBridge, ticketId, actorUserId)
+  },
+  async getQualityReviewQueueSummary(input) {
+    return await getRuntimeQualityReviewQueueSummary(defaultDashboardRuntimeBridge, input)
   },
   async runQualityReviewAction(input) {
     return await runRuntimeQualityReviewAction(defaultDashboardRuntimeBridge, input)
@@ -1271,12 +1280,13 @@ function normalizeQualityReviewRawFeedback(value: any): DashboardQualityReviewRa
 
 async function normalizeQualityReviewCaseSummary(
   runtimeBridge: DashboardRuntimeBridge,
-  value: any
+  value: any,
+  options: { actorUserId?: string | null; now?: number } = {}
 ): Promise<DashboardQualityReviewCaseSummary | null> {
   const ticketId = normalizeString(value?.ticketId)
   if (!ticketId) return null
   const ownerUserId = stringOrNull(value?.ownerUserId)
-  return {
+  return projectQualityReviewQueueFields({
     ticketId,
     stored: value?.stored === true,
     state: normalizeQualityReviewState(value?.state),
@@ -1289,14 +1299,15 @@ async function normalizeQualityReviewCaseSummary(
     noteCount: numberOrNull(value?.noteCount) || 0,
     rawFeedbackStatus: normalizeRawFeedbackStatus(value?.rawFeedbackStatus),
     latestRawFeedbackSessionId: stringOrNull(value?.latestRawFeedbackSessionId)
-  }
+  }, options)
 }
 
 async function normalizeQualityReviewCaseDetail(
   runtimeBridge: DashboardRuntimeBridge,
-  value: any
+  value: any,
+  options: { actorUserId?: string | null; now?: number } = {}
 ): Promise<DashboardQualityReviewCaseDetailRecord | null> {
-  const summary = await normalizeQualityReviewCaseSummary(runtimeBridge, value)
+  const summary = await normalizeQualityReviewCaseSummary(runtimeBridge, value, options)
   if (!summary) return null
   return {
     ...summary,
@@ -1317,7 +1328,7 @@ async function normalizeQualityReviewCaseDetail(
 async function listRuntimeQualityReviewCases(
   runtimeBridge: DashboardRuntimeBridge,
   query: DashboardQualityReviewCaseQuery,
-  _actorUserId: string
+  actorUserId: string
 ): Promise<DashboardQualityReviewCaseListResult> {
   const service = getRuntimeQualityReviewService(runtimeBridge)
   if (!service || typeof service.listDashboardQualityReviewCases !== "function") {
@@ -1326,7 +1337,7 @@ async function listRuntimeQualityReviewCases(
 
   try {
     const result = await service.listDashboardQualityReviewCases(query)
-    const cases = await Promise.all((Array.isArray(result?.cases) ? result.cases : []).map((record: any) => normalizeQualityReviewCaseSummary(runtimeBridge, record)))
+    const cases = await Promise.all((Array.isArray(result?.cases) ? result.cases : []).map((record: any) => normalizeQualityReviewCaseSummary(runtimeBridge, record, { actorUserId })))
     return {
       cases: cases.filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
       warnings: Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean) : []
@@ -1336,17 +1347,80 @@ async function listRuntimeQualityReviewCases(
   }
 }
 
+function buildQualityReviewSignalsFromTelemetry(input: {
+  feedbackRecords: DashboardTicketFeedbackTelemetryRecord[]
+  lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[]
+}): DashboardQualityReviewCaseSignal[] {
+  const ticketIds = new Set<string>()
+  input.feedbackRecords.forEach((record) => ticketIds.add(record.ticketId))
+  input.lifecycleRecords.forEach((record) => ticketIds.add(record.ticketId))
+
+  return [...ticketIds].map((ticketId) => {
+    const feedback = input.feedbackRecords.filter((record) => record.ticketId === ticketId)
+    const lifecycle = input.lifecycleRecords.filter((record) => record.ticketId === ticketId)
+    const times = [
+      ...feedback.map(feedbackTelemetryTime),
+      ...lifecycle.map((record) => record.occurredAt)
+    ].filter((value) => Number.isFinite(value))
+    return {
+      ticketId,
+      firstKnownAt: times.length ? Math.min(...times) : null,
+      lastSignalAt: times.length ? Math.max(...times) : null,
+      latestCompletedAnsweredSessionId: completedAnsweredSessionId(feedback)
+    }
+  })
+}
+
+async function getRuntimeQualityReviewQueueSummary(
+  runtimeBridge: DashboardRuntimeBridge,
+  input: { actorUserId: string; now?: number }
+): Promise<DashboardQualityReviewQueueSummary | null> {
+  const telemetryService = getRuntimeTelemetryService(runtimeBridge)
+  if (!telemetryService || typeof telemetryService.listLifecycleHistory !== "function" || typeof telemetryService.listFeedbackHistory !== "function") {
+    return buildQualityReviewQueueSummary([], { unavailableReason: "Ticket telemetry reads are unavailable." })
+  }
+
+  const qualityReviewService = getRuntimeQualityReviewService(runtimeBridge)
+  if (!qualityReviewService || typeof qualityReviewService.listDashboardQualityReviewCases !== "function") {
+    return buildQualityReviewQueueSummary([], { unavailableReason: "Quality review service is unavailable." })
+  }
+
+  try {
+    const [feedbackRecords, lifecycleRecords] = await Promise.all([
+      Promise.resolve(telemetryService.listFeedbackHistory({})).then((records: unknown) => (Array.isArray(records) ? records : [])
+        .map(normalizeFeedbackTelemetryRecord)
+        .filter((record): record is DashboardTicketFeedbackTelemetryRecord => Boolean(record))),
+      Promise.resolve(telemetryService.listLifecycleHistory({})).then((records: unknown) => (Array.isArray(records) ? records : [])
+        .map(normalizeLifecycleTelemetryRecord)
+        .filter((record): record is DashboardTicketLifecycleTelemetryRecord => Boolean(record)))
+    ])
+    const signals = buildQualityReviewSignalsFromTelemetry({ feedbackRecords, lifecycleRecords })
+    const result = await qualityReviewService.listDashboardQualityReviewCases({ tickets: signals })
+    const cases = await Promise.all((Array.isArray(result?.cases) ? result.cases : []).map((record: any) => normalizeQualityReviewCaseSummary(runtimeBridge, record, input)))
+    return buildQualityReviewQueueSummary(
+      cases.filter((record): record is DashboardQualityReviewCaseSummary => Boolean(record)),
+      {
+        actorUserId: input.actorUserId,
+        now: input.now,
+        unavailableReason: Array.isArray(result?.warnings) ? result.warnings.map(normalizeString).filter(Boolean)[0] || null : null
+      }
+    )
+  } catch {
+    return buildQualityReviewQueueSummary([], { unavailableReason: "Quality review queue summary could not be read." })
+  }
+}
+
 async function getRuntimeQualityReviewCase(
   runtimeBridge: DashboardRuntimeBridge,
   ticketId: string,
-  _actorUserId: string
+  actorUserId: string
 ): Promise<DashboardQualityReviewCaseDetailRecord | null> {
   const service = getRuntimeQualityReviewService(runtimeBridge)
   if (!service || typeof service.getDashboardQualityReviewCase !== "function") return null
 
   try {
     const signal = await buildRuntimeQualityReviewSignal(runtimeBridge, ticketId)
-    return await normalizeQualityReviewCaseDetail(runtimeBridge, await service.getDashboardQualityReviewCase(ticketId, signal))
+    return await normalizeQualityReviewCaseDetail(runtimeBridge, await service.getDashboardQualityReviewCase(ticketId, signal), { actorUserId })
   } catch {
     return null
   }

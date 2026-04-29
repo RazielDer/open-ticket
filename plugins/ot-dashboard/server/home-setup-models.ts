@@ -1,7 +1,9 @@
 import { buildConfigItems } from "./control-center"
 import type { DashboardAppContext } from "./create-app"
 import { joinBasePath } from "./dashboard-config"
+import { buildQualityReviewQueueHref } from "./quality-review"
 import { evaluateSetupState, type SetupNextStep, type SetupState, type SetupStatusItem } from "./setup-state"
+import type { DashboardQualityReviewQueueSummary } from "./ticket-workbench-types"
 import type { DashboardTranscriptIntegration } from "./transcript-service-bridge"
 
 const WORKSPACE_FIRST_SETUP_IDS = new Set(["general", "options", "panels", "questions"])
@@ -122,9 +124,44 @@ export function buildTranscriptIntegrationWarning(
   }
 }
 
+function buildQualityReviewHomeLinks(basePath: string) {
+  return {
+    active: buildQualityReviewQueueHref(basePath),
+    mine: buildQualityReviewQueueHref(basePath, { ownerId: "me" }),
+    unassigned: buildQualityReviewQueueHref(basePath, { ownerId: "unassigned" }),
+    overdue: buildQualityReviewQueueHref(basePath, { attention: "overdue" })
+  }
+}
+
+export function buildHomeQualityReviewBlock(
+  context: DashboardAppContext,
+  summary: DashboardQualityReviewQueueSummary | null
+) {
+  if (!summary) return null
+  return {
+    title: context.i18n.t("home.qualityReview.title"),
+    summary,
+    summaryCard: {
+      label: context.i18n.t("home.summary.qualityReview"),
+      value: String(summary.overdueCount),
+      detail: context.i18n.t("home.summary.qualityReviewDetail", {
+        active: summary.activeCount,
+        unassigned: summary.unassignedCount
+      }),
+      tone: summary.overdueCount > 0 || summary.unassignedCount > 0 ? "warning" as const : "muted" as const
+    },
+    links: buildQualityReviewHomeLinks(context.basePath),
+    unavailable: Boolean(summary.unavailableReason),
+    zeroState: summary.activeCount === 0 && summary.unassignedCount === 0 && summary.overdueCount === 0
+  }
+}
+
 export function buildHomeWorkspaceModel(
   context: DashboardAppContext,
-  transcriptIntegration: DashboardTranscriptIntegration
+  transcriptIntegration: DashboardTranscriptIntegration,
+  modelOptions: {
+    qualityReview?: ReturnType<typeof buildHomeQualityReviewBlock>
+  } = {}
 ) {
   const general = context.configService.readManagedJson<Record<string, unknown>>("general")
   const options = context.configService.readManagedJson<Record<string, unknown>[]>("options")
@@ -146,7 +183,8 @@ export function buildHomeWorkspaceModel(
     setup,
     setupCounts,
     setupCards,
-    recommendedAction: buildRecommendedAction(context, setup.nextStep)
+    recommendedAction: buildRecommendedAction(context, setup.nextStep),
+    qualityReview: modelOptions.qualityReview || null
   }
 }
 

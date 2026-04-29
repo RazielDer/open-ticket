@@ -37,6 +37,7 @@ import {
 } from "../control-center"
 import {
   buildAdvancedWorkspaceModel,
+  buildHomeQualityReviewBlock,
   buildHomeWorkspaceModel,
   buildTranscriptIntegrationWarning
 } from "../home-setup-models"
@@ -77,6 +78,7 @@ import {
 import {
   buildDashboardQualityReviewDetailModel,
   buildDashboardQualityReviewListModel,
+  buildQualityReviewQueueHref,
   sanitizeQualityReviewReturnTo
 } from "../quality-review"
 import {
@@ -438,7 +440,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   const qualityReviewHrefForAccess = (res: express.Response) => {
     const access = adminGuard.getAccess(res)
     return access && hasDashboardCapability(access, "quality.review")
-      ? joinBasePath(basePath, "admin/quality-review")
+      ? buildQualityReviewQueueHref(basePath)
       : null
   }
   const qualityReviewRuntimeBridge: DashboardRuntimeBridge = {
@@ -544,16 +546,56 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     })
   }
 
-  app.get(joinBasePath(basePath, "admin"), adminGuard.page("admin.shell"), (req, res) => {
+  app.get(joinBasePath(basePath, "admin"), adminGuard.page("quality.review"), async (req, res) => {
     const access = adminGuard.getAccess(res)
-    if (access?.tier !== "admin") {
+    if (access?.tier !== "admin" && !hasDashboardCapability(access, "quality.review")) {
       return res.redirect(access?.preferredEntryPath || joinBasePath(basePath, "visual/options"))
     }
 
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
-    const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration)
+    const queueSummary = access?.identity && hasDashboardCapability(access, "quality.review") && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
+      ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => null)
+      : null
+    const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration, {
+      qualityReview: hasDashboardCapability(access, "quality.review")
+        ? buildHomeQualityReviewBlock(context, queueSummary)
+        : null
+    })
     const setupNeedsAttention = homeModel.setupCounts.needsSetup + homeModel.setupCounts.needsAttention
+    const adminHome = access?.tier === "admin"
+    const summaryCards = adminHome
+      ? [
+          metricCard(
+            i18n.t("home.summary.setup"),
+            String(homeModel.setupCounts.ready),
+            i18n.t("home.summary.setupDetail", {
+              ready: homeModel.setupCounts.ready,
+              total: homeModel.setup.items.length
+            }),
+            setupNeedsAttention > 0 ? "warning" : "success"
+          ),
+          metricCard(
+            i18n.t("home.summary.addOns"),
+            String(snapshot.pluginSummary.discovered),
+            i18n.t("home.summary.addOnsDetail", { count: snapshot.pluginSummary.crashed }),
+            snapshot.pluginSummary.crashed > 0 ? "warning" : "muted"
+          ),
+          metricCard(
+            i18n.t("home.summary.tickets"),
+            String(snapshot.ticketSummary.total),
+            i18n.t("home.summary.ticketsDetail", { count: snapshot.ticketSummary.recentActivityCount })
+          )
+        ]
+      : []
+    if (homeModel.qualityReview) {
+      summaryCards.push(metricCard(
+        homeModel.qualityReview.summaryCard.label,
+        homeModel.qualityReview.summaryCard.value,
+        homeModel.qualityReview.summaryCard.detail,
+        homeModel.qualityReview.summaryCard.tone
+      ))
+    }
 
     renderPage(res, "admin-shell", buildAdminShell(context, "home", {
       pageTitle: `${i18n.t("home.title")} | ${brand.title}`,
@@ -561,31 +603,13 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       pageHeadline: i18n.t("home.headline"),
       pageSubtitle: i18n.t("home.subtitle"),
       pageAlert: getAlert(req) || buildTranscriptIntegrationWarning(context, transcriptIntegration),
-      summaryCards: [
-        metricCard(
-          i18n.t("home.summary.setup"),
-          String(homeModel.setupCounts.ready),
-          i18n.t("home.summary.setupDetail", {
-            ready: homeModel.setupCounts.ready,
-            total: homeModel.setup.items.length
-          }),
-          setupNeedsAttention > 0 ? "warning" : "success"
-        ),
-        metricCard(
-          i18n.t("home.summary.addOns"),
-          String(snapshot.pluginSummary.discovered),
-          i18n.t("home.summary.addOnsDetail", { count: snapshot.pluginSummary.crashed }),
-          snapshot.pluginSummary.crashed > 0 ? "warning" : "muted"
-        ),
-        metricCard(
-          i18n.t("home.summary.tickets"),
-          String(snapshot.ticketSummary.total),
-          i18n.t("home.summary.ticketsDetail", { count: snapshot.ticketSummary.recentActivityCount })
-        )
-      ],
+      summaryCards,
       contentView: "sections/overview",
       recommendedAction: homeModel.recommendedAction,
-      setupCards: homeModel.setupCards
+      setupCards: adminHome ? homeModel.setupCards : [],
+      showSetupStatus: adminHome,
+      showWarnings: adminHome,
+      qualityReviewHome: homeModel.qualityReview
     }))
   })
 

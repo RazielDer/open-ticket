@@ -77,7 +77,7 @@
         </label>
       </div>
 
-      <details class="editor-disclosure transcript-filter-advanced" <%= (qualityReview.request.feedback !== 'all' || qualityReview.request.reopened !== 'all' || qualityReview.request.status !== 'all' || qualityReview.request.transport !== 'all' || qualityReview.request.reviewState !== 'active' || qualityReview.request.ownerId || qualityReview.request.rawFeedback !== 'all' || qualityReview.request.teamId || qualityReview.request.assigneeId || qualityReview.request.limit !== 25) ? 'open' : '' %>>
+      <details class="editor-disclosure transcript-filter-advanced" <%= (qualityReview.request.feedback !== 'all' || qualityReview.request.reopened !== 'all' || qualityReview.request.status !== 'all' || qualityReview.request.transport !== 'all' || qualityReview.request.reviewState !== 'active' || qualityReview.request.ownerId || qualityReview.request.rawFeedback !== 'all' || qualityReview.request.attention !== 'all' || qualityReview.request.teamId || qualityReview.request.assigneeId || qualityReview.request.limit !== 25) ? 'open' : '' %>>
         <summary class="transcript-filter-advanced-summary">
           <div>
             <h4><%= t("qualityReview.page.filters.moreTitle") %></h4>
@@ -139,6 +139,14 @@
               <select class="select-input" name="rawFeedback">
                 <% qualityReview.request.rawFeedbackOptions.forEach((option) => { %>
                   <option value="<%= option.value %>" <%= qualityReview.request.rawFeedback === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </label>
+            <label>
+              <span class="field-label">Attention</span>
+              <select class="select-input" name="attention">
+                <% qualityReview.request.attentionOptions.forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= qualityReview.request.attention === option.value ? 'selected' : '' %>><%= option.label %></option>
                 <% }) %>
               </select>
             </label>
@@ -239,6 +247,10 @@
               </td>
               <td>
                 <span class="status-pill tone-<%= item.reviewStateBadge.tone %>"><%= item.reviewStateBadge.label %></span>
+                <span class="status-pill tone-<%= item.ownerBucketBadge.tone %>"><%= item.ownerBucketBadge.label %></span>
+                <% if (item.overdueBadge) { %>
+                  <span class="status-pill tone-<%= item.overdueBadge.tone %>"><%= item.overdueBadge.label %></span>
+                <% } %>
                 <div class="field-help"><%= item.record.reviewCase.ownerLabel %> / <%= item.record.reviewCase.noteCount %> notes</div>
               </td>
               <td><span class="status-pill tone-<%= item.feedbackBadge.tone %>"><%= item.feedbackBadge.label %></span></td>
@@ -252,6 +264,7 @@
               </td>
               <td>
                 <div><%= item.latestSignalLabel %></div>
+                <div class="field-help"><%= item.queueAnchorLabel %>: <%= item.queueAnchorValue %> / <%= item.overdueReasonLabel %></div>
                 <div class="field-help"><%= t("qualityReview.page.table.openedMeta", { value: item.openedLabel }) %></div>
               </td>
               <td><a class="transcript-table-link" href="<%= item.detailHref %>"><%= t("qualityReview.page.openAction") %></a></td>

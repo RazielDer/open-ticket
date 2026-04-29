@@ -59,6 +59,23 @@
       <% }) %>
     </div>
 
+    <div class="section-heading">
+      <h3>Queue governance</h3>
+      <% if (detail.reviewCase.overdue) { %>
+        <span class="status-pill tone-warning">Overdue</span>
+      <% } else { %>
+        <span class="status-pill tone-muted">Not overdue</span>
+      <% } %>
+    </div>
+    <div class="facts-grid">
+      <% qualityReviewDetail.governanceFacts.forEach((fact) => { %>
+        <div class="fact-row">
+          <span class="fact-label"><%= fact.label %></span>
+          <strong><%= fact.value %></strong>
+        </div>
+      <% }) %>
+    </div>
+
     <% if (qualityReviewDetail.canManage) { %>
       <div class="stack-form">
         <form method="post" action="<%= qualityReviewDetail.stateActionHref %>" class="stack-form">

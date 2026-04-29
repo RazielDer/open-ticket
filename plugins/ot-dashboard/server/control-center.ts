@@ -119,7 +119,7 @@ export function consumePendingReview(req: express.Request, token: string) {
 export function buildAdminNav(context: DashboardAppContext, activeKey: string) {
   const { basePath, i18n } = context
   const items = [
-    { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "admin.shell" },
+    { key: "home", label: i18n.t("nav.home"), href: joinBasePath(basePath, "admin"), requiredCapability: "quality.review" },
     { key: "tickets", label: i18n.t("nav.tickets"), href: joinBasePath(basePath, "admin/tickets"), requiredCapability: "ticket.workbench" },
     { key: "analytics", label: i18n.t("nav.analytics"), href: joinBasePath(basePath, "admin/analytics"), requiredCapability: "analytics.view" },
     { key: "transcripts", label: i18n.t("nav.transcripts"), href: joinBasePath(basePath, "admin/transcripts"), requiredCapability: "transcript.view.global" },

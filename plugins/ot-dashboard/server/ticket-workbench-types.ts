@@ -3,6 +3,18 @@ export type DashboardTicketFeedbackStatus = "completed" | "ignored" | "delivery_
 export type DashboardTicketFeedbackStoredStatus = Exclude<DashboardTicketFeedbackStatus, "none">
 export type DashboardQualityReviewState = "unreviewed" | "in_review" | "resolved"
 export type DashboardQualityReviewRawFeedbackStatus = "available" | "partial" | "expired" | "none"
+export type DashboardQualityReviewOwnerBucket = "mine" | "unassigned" | "other" | "resolved"
+export type DashboardQualityReviewOverdueKind = "unreviewed" | "in_review" | null
+
+export interface DashboardQualityReviewQueueSummary {
+  activeCount: number
+  myQueueCount: number
+  unassignedCount: number
+  overdueCount: number
+  overdueUnreviewedCount: number
+  overdueInReviewCount: number
+  unavailableReason: string | null
+}
 
 export interface DashboardTicketTelemetrySnapshot {
   creatorUserId: string | null
@@ -117,6 +129,11 @@ export interface DashboardQualityReviewCaseSummary {
   noteCount: number
   rawFeedbackStatus: DashboardQualityReviewRawFeedbackStatus
   latestRawFeedbackSessionId: string | null
+  ownerBucket: DashboardQualityReviewOwnerBucket
+  queueAnchorAt: number | null
+  overdue: boolean
+  overdueKind: DashboardQualityReviewOverdueKind
+  overdueSince: number | null
 }
 
 export interface DashboardQualityReviewNoteRecord {

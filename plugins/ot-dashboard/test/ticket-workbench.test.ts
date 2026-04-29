@@ -46,6 +46,7 @@ import {
   parseDashboardQualityReviewQuery,
   sanitizeQualityReviewReturnTo
 } from "../server/quality-review"
+import { buildQualityReviewQueueSummary } from "../server/quality-review-queue"
 
 const pluginRoot = path.resolve(process.cwd(), "plugins", "ot-dashboard")
 
@@ -227,6 +228,11 @@ function qualityReviewCase(overrides: Partial<DashboardQualityReviewCaseSummary>
     noteCount: 1,
     rawFeedbackStatus: "available",
     latestRawFeedbackSessionId: "feedback-1",
+    ownerBucket: "other",
+    queueAnchorAt: 1710000010000,
+    overdue: false,
+    overdueKind: null,
+    overdueSince: null,
     ...overrides
   }
 }
@@ -690,8 +696,15 @@ async function startServer(options: {
             ownerLabel: await resolveFixtureQualityReviewOwnerLabel(summary.ownerUserId),
             notes: [],
             rawFeedback: []
-          }
+        }
         : null
+    },
+    async getQualityReviewQueueSummary(input) {
+      const cases = await Promise.all((options.qualityReviewCases || []).map(async (record) => ({
+        ...record,
+        ownerLabel: await resolveFixtureQualityReviewOwnerLabel(record.ownerUserId)
+      })))
+      return buildQualityReviewQueueSummary(cases, input)
     },
     async runQualityReviewAction(input) {
       qualityReviewActionRequests.push(input)
@@ -1067,6 +1080,35 @@ test("quality review admits reviewers and admins without granting editor workben
   assert.equal(editorDenied.headers.get("location"), "/dash/visual/options")
 })
 
+test("quality review home cues admit reviewers without exposing setup controls", async (t) => {
+  const runtime = await startServer({
+    qualityReviewCases: [
+      qualityReviewCase({ ticketId: "ticket-mine", state: "in_review", ownerUserId: "reviewer-user" }),
+      qualityReviewCase({ ticketId: "ticket-unassigned", state: "unreviewed", ownerUserId: null, overdue: true, overdueKind: "unreviewed" })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/quality-review")
+  const homeResponse = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: reviewer.cookie } })
+  const homeHtml = await homeResponse.text()
+  assert.equal(homeResponse.status, 200)
+  assert.match(homeHtml, /Quality review/)
+  assert.match(homeHtml, /My Queue/)
+  assert.match(homeHtml, /Unassigned/)
+  assert.match(homeHtml, /Overdue/)
+  assert.match(homeHtml, /href="\/dash\/admin\/quality-review\?window=all/)
+  assert.doesNotMatch(homeHtml, /Setup areas/)
+  assert.doesNotMatch(homeHtml, /Open General workspace|Raw editor|Create backup|Advanced tools/)
+  assert.doesNotMatch(homeHtml, /href="\/dash\/admin\/configs/)
+
+  const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets")
+  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: editor.cookie }, redirect: "manual" })
+  await editorHome.arrayBuffer()
+  assert.equal(editorHome.status, 302)
+  assert.equal(editorHome.headers.get("location"), "/dash/visual/options")
+})
+
 test("quality review list is window-scoped, current-page drilldown only, and privacy-safe", async (t) => {
   const now = Date.now()
   const liveTicket = ticket({ id: "ticket-live", channelName: "live-review-channel", assignedStaffUserId: "staff-1" })
@@ -1285,7 +1327,7 @@ test("quality review model preserves filter semantics and unavailable telemetry 
     limit: "999",
     page: "-2"
   }, { now: Date.parse("2026-04-28T12:00:00.000Z") })
-  assert.equal(parsed.window, "30d")
+  assert.equal(parsed.window, "all")
   assert.equal(parsed.reopened, "all")
   assert.equal(parsed.limit, 25)
   assert.equal(parsed.page, 1)
@@ -1348,6 +1390,98 @@ test("quality review list merges adjudication state and raw-feedback filters", a
   assert.equal(model.items[0].reviewStateBadge.label, "In review")
   assert.equal(model.items[0].rawFeedbackBadge.label, "Raw feedback available")
   assert.equal(model.items[0].record.reviewCase.noteCount, 1)
+})
+
+test("quality review queue governance applies locked thresholds, filters, and priority order", async (t) => {
+  const now = Date.parse("2026-04-28T12:00:00.000Z")
+  const hour = 60 * 60 * 1000
+  const feedbackRecords = [
+    feedbackTelemetry({ ticketId: "ticket-overdue-unassigned", sessionId: "feedback-overdue-unassigned", triggeredAt: now - 73 * hour, completedAt: now - 73 * hour }),
+    feedbackTelemetry({ ticketId: "ticket-overdue-mine", sessionId: "feedback-overdue-mine", triggeredAt: now - 200 * hour, completedAt: now - 200 * hour }),
+    feedbackTelemetry({ ticketId: "ticket-fresh-unassigned", sessionId: "feedback-fresh-unassigned", triggeredAt: now - hour, completedAt: now - hour }),
+    feedbackTelemetry({ ticketId: "ticket-other", sessionId: "feedback-other", triggeredAt: now - 2 * hour, completedAt: now - 2 * hour }),
+    feedbackTelemetry({ ticketId: "ticket-resolved", sessionId: "feedback-resolved", triggeredAt: now - 300 * hour, completedAt: now - 300 * hour })
+  ]
+  const runtime = await startServer({
+    tickets: [],
+    feedbackTelemetry: feedbackRecords,
+    lifecycleTelemetry: [],
+    telemetrySignals: {},
+    qualityReviewCases: [
+      qualityReviewCase({ ticketId: "ticket-overdue-unassigned", state: "unreviewed", ownerUserId: null, lastSignalAt: now - 73 * hour, updatedAt: now - 73 * hour, rawFeedbackStatus: "none" }),
+      qualityReviewCase({ ticketId: "ticket-overdue-mine", state: "in_review", ownerUserId: "admin-user", lastSignalAt: now - 200 * hour, updatedAt: now - 169 * hour, rawFeedbackStatus: "none" }),
+      qualityReviewCase({ ticketId: "ticket-fresh-unassigned", state: "unreviewed", ownerUserId: null, lastSignalAt: now - hour, updatedAt: now - hour, rawFeedbackStatus: "none" }),
+      qualityReviewCase({ ticketId: "ticket-other", state: "in_review", ownerUserId: "other-admin", lastSignalAt: now - 2 * hour, updatedAt: now - 2 * hour, rawFeedbackStatus: "none" }),
+      qualityReviewCase({ ticketId: "ticket-resolved", state: "resolved", ownerUserId: null, lastSignalAt: now - 300 * hour, updatedAt: now - 200 * hour, resolvedAt: now - 200 * hour, rawFeedbackStatus: "none" })
+    ]
+  })
+  t.after(() => stopServer(runtime))
+
+  const model = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review",
+    query: {},
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+
+  assert.equal(model.request.window, "all")
+  assert.equal(model.request.reviewState, "active")
+  assert.equal(model.request.sort, "queue-priority")
+  assert.deepEqual(model.items.map((item) => item.record.ticketId), [
+    "ticket-overdue-unassigned",
+    "ticket-overdue-mine",
+    "ticket-fresh-unassigned",
+    "ticket-other"
+  ])
+  assert.equal(model.queueSummary.activeCount, 4)
+  assert.equal(model.queueSummary.myQueueCount, 1)
+  assert.equal(model.queueSummary.unassignedCount, 2)
+  assert.equal(model.queueSummary.overdueCount, 2)
+  assert.equal(model.queueSummary.overdueUnreviewedCount, 1)
+  assert.equal(model.queueSummary.overdueInReviewCount, 1)
+  assert.equal(model.items[0].record.reviewCase.overdueKind, "unreviewed")
+  assert.equal(model.items[0].record.reviewCase.overdueSince, now - hour)
+  assert.equal(model.items[1].record.reviewCase.ownerBucket, "mine")
+
+  const overdueOnly = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?attention=overdue",
+    query: { attention: "overdue" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+  assert.deepEqual(overdueOnly.items.map((item) => item.record.ticketId), ["ticket-overdue-unassigned", "ticket-overdue-mine"])
+
+  const mineOnly = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?ownerId=me",
+    query: { ownerId: "me" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+  assert.deepEqual(mineOnly.items.map((item) => item.record.ticketId), ["ticket-overdue-mine"])
+
+  const unassignedOnly = await buildDashboardQualityReviewListModel({
+    basePath: "/dash",
+    projectRoot: runtime.projectRoot,
+    currentHref: "/dash/admin/quality-review?ownerId=unassigned",
+    query: { ownerId: "unassigned" },
+    configService: runtime.context.configService,
+    runtimeBridge: runtime.context.runtimeBridge,
+    actorUserId: "admin-user",
+    now
+  })
+  assert.deepEqual(unassignedOnly.items.map((item) => item.record.ticketId), ["ticket-overdue-unassigned", "ticket-fresh-unassigned"])
 })
 
 test("quality review list and detail mark stale non-manager owners as unknown", async (t) => {
@@ -1535,6 +1669,9 @@ test("quality review detail renders admin adjudication controls and keeps review
   const adminHtml = await adminResponse.text()
   assert.equal(adminResponse.status, 200)
   assert.match(adminHtml, /Adjudication/)
+  assert.match(adminHtml, /Queue governance/)
+  assert.match(adminHtml, /Owner bucket/)
+  assert.match(adminHtml, /In review over 168 hours/)
   assert.match(adminHtml, /Private review note/)
   assert.match(adminHtml, /raw private comment/)
   assert.match(adminHtml, /feedback-legacy/)
@@ -3180,6 +3317,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   const authSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "auth.ts"), "utf8")
   const routesSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "routes", "admin.ts"), "utf8")
   const controlCenterSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "control-center.ts"), "utf8")
+  const qualityReviewSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "server", "quality-review.ts"), "utf8")
   const workflowSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "workflow.yaml"), "utf8")
   const controllerSource = fs.readFileSync(path.join(root, "plugins", "ot-dashboard", "runtime", "controller-state.yaml"), "utf8")
   const bridgeSource = fs.readFileSync(path.join(root, "plugins", "ot-eotfs-bridge", "index.ts"), "utf8")
@@ -3194,6 +3332,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
   assert.match(routesSource, /admin\/analytics\/export\/:format"\), adminGuard\.form\("analytics\.view"\)/)
   assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
+  assert.match(routesSource, /admin"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId\/actions\/:actionId"\), adminGuard\.form\("quality\.review\.manage"\)/)
@@ -3204,6 +3343,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
   assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
   assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review/i)
+  assert.doesNotMatch(qualityReviewSource, /setInterval|setTimeout|cron\.schedule|node-cron|digest|reminder/i)
   assert.doesNotMatch(controlCenterSource, /admin\/quality-review/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)
   assert.equal(bridgeSource.includes("ot-eotfs-bridge:legacy"), false)
