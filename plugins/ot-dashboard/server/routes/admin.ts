@@ -38,6 +38,7 @@ import {
 import {
   buildAdvancedWorkspaceModel,
   buildHomeQualityReviewBlock,
+  buildHomeTicketQueueBlock,
   buildHomeWorkspaceModel,
   buildTranscriptIntegrationWarning
 } from "../home-setup-models"
@@ -70,6 +71,7 @@ import {
   type DashboardTranscriptRetentionPreview
 } from "../transcript-service-bridge"
 import {
+  supportsTicketQueueTelemetryReads,
   supportsTicketTelemetryReads,
   supportsTicketWorkbenchReads,
   supportsTicketWorkbenchWrites,
@@ -84,18 +86,22 @@ import {
 } from "../quality-review"
 import {
   buildFallbackTicketDetail,
+  buildTicketQueueSummary,
   buildTicketWorkbenchDetailModel,
   buildTicketWorkbenchListModel,
   parseDashboardTicketBulkActionId,
   parseDashboardTicketActionId,
   parseTicketWorkbenchListRequest,
   sanitizeTicketWorkbenchReturnTo,
+  TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES,
   translateTicketWorkbenchMessage
 } from "../ticket-workbench"
 import type {
   DashboardQualityReviewActionId,
   DashboardQualityReviewNotificationStatus,
   DashboardQualityReviewQueueSummary,
+  DashboardTicketLifecycleTelemetryRecord,
+  DashboardTicketQueueSummary,
   DashboardTicketTelemetrySignals
 } from "../ticket-workbench-types"
 
@@ -492,9 +498,34 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     const request = parseTicketWorkbenchListRequest(query)
     const tickets = readsSupported ? runtimeBridge.listTickets() : []
     let telemetrySupported = readsSupported && supportsTicketTelemetryReads(runtimeBridge)
+    const queueTelemetrySupported = readsSupported && supportsTicketQueueTelemetryReads(runtimeBridge)
     let telemetrySignals: Record<string, DashboardTicketTelemetrySignals> = {}
     let telemetryFilterSignals: Record<string, DashboardTicketTelemetrySignals> = {}
+    let queueLifecycleRecords: DashboardTicketLifecycleTelemetryRecord[] = []
     let telemetryWarningMessage = ""
+    let queueWarningMessage = ""
+
+    if (readsSupported) {
+      if (queueTelemetrySupported && runtimeBridge.listLifecycleTelemetry) {
+        try {
+          const queueTelemetry = await runtimeBridge.listLifecycleTelemetry({
+            eventTypes: [...TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES],
+            order: "desc",
+            limit: 500
+          })
+          queueLifecycleRecords = queueTelemetry.items
+          if (queueTelemetry.truncated) {
+            queueWarningMessage = "Ticket lifecycle telemetry exceeded the queue governance scan ceiling; stale-owner attention may be incomplete."
+          } else if (queueTelemetry.warnings.length > 0) {
+            queueWarningMessage = queueTelemetry.warnings[0]
+          }
+        } catch {
+          queueWarningMessage = "Ticket lifecycle telemetry could not be read; stale-owner attention is unavailable."
+        }
+      } else {
+        queueWarningMessage = "Ticket lifecycle telemetry reads are unavailable; stale-owner attention is unavailable."
+      }
+    }
 
     if (telemetrySupported && runtimeBridge.getTicketTelemetrySignals) {
       try {
@@ -513,6 +544,9 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           telemetrySupported,
           telemetrySignals: telemetryFilterSignals,
           telemetryFilterSignals,
+          queueLifecycleRecords,
+          queueTelemetryAvailable: queueTelemetrySupported && !queueWarningMessage,
+          queueWarningMessage,
           warningMessage: runtimeAvailable
             ? ""
             : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
@@ -544,6 +578,9 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       telemetrySupported,
       telemetrySignals,
       telemetryFilterSignals,
+      queueLifecycleRecords,
+      queueTelemetryAvailable: queueTelemetrySupported && !queueWarningMessage,
+      queueWarningMessage,
       warningMessage: runtimeAvailable
         ? ""
         : "The Open Ticket runtime is not exposing ticket inventory to the dashboard right now.",
@@ -552,20 +589,33 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     })
   }
 
-  app.get(joinBasePath(basePath, "admin"), adminGuard.page("quality.review"), async (req, res) => {
+  app.get(joinBasePath(basePath, "admin"), adminGuard.page("viewer.portal"), async (req, res) => {
     const access = adminGuard.getAccess(res)
-    if (access?.tier !== "admin" && !hasDashboardCapability(access, "quality.review")) {
+    const canReadTicketQueue = hasDashboardCapability(access, "ticket.workbench")
+    const canReadQualityReview = hasDashboardCapability(access, "quality.review")
+    if (access?.tier !== "admin" && !canReadQualityReview && !canReadTicketQueue) {
       return res.redirect(access?.preferredEntryPath || joinBasePath(basePath, "visual/options"))
     }
 
     const snapshot = runtimeBridge.getSnapshot(context.projectRoot)
     const transcriptIntegration = resolveTranscriptIntegration(context.projectRoot, configService, runtimeBridge)
-    const canReadQualityReview = hasDashboardCapability(access, "quality.review")
+    const unavailableTicketQueueSummary = () => buildTicketQueueSummary([], {
+      unavailableReason: "Ticket queue summary could not be read."
+    })
     const unavailableQueueSummary = () => buildQualityReviewQueueSummary([], {
       unavailableReason: "Quality review queue summary could not be read."
     })
+    let ticketQueueSummary: DashboardTicketQueueSummary | null = null
     let queueSummary: DashboardQualityReviewQueueSummary | null = null
     let notificationStatus: DashboardQualityReviewNotificationStatus | null = null
+    if (canReadTicketQueue) {
+      ticketQueueSummary = access?.identity && typeof runtimeBridge.getTicketQueueSummary === "function"
+        ? await runtimeBridge.getTicketQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableTicketQueueSummary())
+        : unavailableTicketQueueSummary()
+      if (!ticketQueueSummary) {
+        ticketQueueSummary = unavailableTicketQueueSummary()
+      }
+    }
     if (canReadQualityReview) {
       queueSummary = access?.identity && typeof qualityReviewRuntimeBridge.getQualityReviewQueueSummary === "function"
         ? await qualityReviewRuntimeBridge.getQualityReviewQueueSummary({ actorUserId: access.identity.userId }).catch(() => unavailableQueueSummary())
@@ -578,6 +628,9 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         : null
     }
     const homeModel = buildHomeWorkspaceModel(context, transcriptIntegration, {
+      ticketQueue: canReadTicketQueue
+        ? buildHomeTicketQueueBlock(context, ticketQueueSummary)
+        : null,
       qualityReview: canReadQualityReview
         ? buildHomeQualityReviewBlock(context, queueSummary, notificationStatus)
         : null
@@ -608,6 +661,14 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
           )
         ]
       : []
+    if (homeModel.ticketQueue) {
+      summaryCards.push(metricCard(
+        homeModel.ticketQueue.summaryCard.label,
+        homeModel.ticketQueue.summaryCard.value,
+        homeModel.ticketQueue.summaryCard.detail,
+        homeModel.ticketQueue.summaryCard.tone
+      ))
+    }
     if (homeModel.qualityReview) {
       summaryCards.push(metricCard(
         homeModel.qualityReview.summaryCard.label,
@@ -629,6 +690,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       setupCards: adminHome ? homeModel.setupCards : [],
       showSetupStatus: adminHome,
       showWarnings: adminHome,
+      ticketQueueHome: homeModel.ticketQueue,
       qualityReviewHome: homeModel.qualityReview
     }))
   })

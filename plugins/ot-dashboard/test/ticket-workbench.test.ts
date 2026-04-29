@@ -38,7 +38,10 @@ import {
 } from "../server/ticket-workbench-types"
 import {
   buildTicketWorkbenchListModel,
+  buildTicketQueueSummary,
+  deriveDashboardTicketQueueState,
   parseTicketWorkbenchListRequest,
+  projectDashboardTicketQueueFacts,
   sanitizeTicketWorkbenchReturnTo
 } from "../server/ticket-workbench"
 import {
@@ -501,6 +504,7 @@ async function startServer(options: {
   qualityReviewCases?: DashboardQualityReviewCaseSummary[]
   qualityReviewDetail?: DashboardQualityReviewCaseDetailRecord | null
   qualityReviewAsset?: DashboardQualityReviewAssetResult
+  ticketQueueSummaryError?: string
   qualityReviewQueueSummaryError?: string
   qualityReviewNotificationStatus?: DashboardQualityReviewNotificationStatus | null
 } = {}) {
@@ -671,6 +675,17 @@ async function startServer(options: {
         ]))
       }
     } : {}),
+    async getTicketQueueSummary(input) {
+      if (options.ticketQueueSummaryError) {
+        throw new Error(options.ticketQueueSummaryError)
+      }
+      return buildTicketQueueSummary(tickets, {
+        lifecycleRecords: options.lifecycleTelemetry || [],
+        lifecycleAvailable: telemetryEnabled,
+        unavailableReason: telemetryEnabled ? null : "Ticket lifecycle telemetry reads are unavailable.",
+        now: input.now
+      })
+    },
     async listQualityReviewCases(query) {
       const caseByTicket = new Map((options.qualityReviewCases || []).map((record) => [record.ticketId, record]))
       const cases = await Promise.all(query.tickets.map(async (signal) => {
@@ -882,7 +897,7 @@ function unzipStoredEntries(buffer: Buffer) {
   return entries
 }
 
-test("ticket workbench restores editor/admin access without reopening admin home to editors", async (t) => {
+test("ticket workbench restores editor/admin access and exposes ticket queue home cues", async (t) => {
   const runtime = await startServer()
   t.after(() => stopServer(runtime))
 
@@ -893,14 +908,26 @@ test("ticket workbench restores editor/admin access without reopening admin home
   assert.equal(adminTickets.status, 200)
   assert.match(adminHtml, /href="\/dash\/admin\/tickets"[^>]*>Tickets</)
   assert.match(adminHtml, /Ticket records/)
+  assert.match(adminHtml, /Queue state/)
+  assert.match(adminHtml, /Queue priority/)
+
+  const queueFiltered = await fetch(`${runtime.baseUrl}/dash/admin/tickets?queueState=waiting_staff&attention=first-response`, { headers: { cookie: admin.cookie } })
+  const queueHtml = await queueFiltered.text()
+  assert.equal(queueFiltered.status, 200)
+  assert.match(queueHtml, /Waiting on staff/)
+  assert.match(queueHtml, /First response overdue/)
+  assert.match(queueHtml, /returnTo=%2Fdash%2Fadmin%2Ftickets%3FqueueState%3Dwaiting_staff%26attention%3Dfirst-response/)
 
   const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets")
   const editorTickets = await fetch(`${runtime.baseUrl}/dash/admin/tickets`, { headers: { cookie: editor.cookie } })
   assert.equal(editorTickets.status, 200)
-  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: editor.cookie }, redirect: "manual" })
-  await editorHome.arrayBuffer()
-  assert.equal(editorHome.status, 302)
-  assert.equal(editorHome.headers.get("location"), "/dash/visual/options")
+  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: editor.cookie } })
+  const editorHomeHtml = await editorHome.text()
+  assert.equal(editorHome.status, 200)
+  assert.match(editorHomeHtml, /Ticket Queue/)
+  assert.match(editorHomeHtml, /Ticket queue unavailable/)
+  assert.doesNotMatch(editorHomeHtml, /Setup areas/)
+  assert.doesNotMatch(editorHomeHtml, /Quality review/)
 
   const reviewer = await login(runtime.baseUrl, "reviewer-user", "/dash/admin/tickets")
   assert.equal(reviewer.location, "/dash/admin/quality-review")
@@ -985,7 +1012,7 @@ test("ticket list batches badge telemetry for the visible page", async (t) => {
   t.after(() => stopServer(runtime))
   const { cookie } = await login(runtime.baseUrl)
 
-  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10`, { headers: { cookie } })
+  const response = await fetch(`${runtime.baseUrl}/dash/admin/tickets?limit=10&sort=opened-desc`, { headers: { cookie } })
   const html = await response.text()
   assert.equal(response.status, 200)
   assert.deepEqual(telemetrySignalCalls, [[
@@ -1054,6 +1081,128 @@ test("ticket list model applies feedback and reopened telemetry signals", async 
   assert.equal(model.items[0].reopenBadge?.label, "Reopened x1")
 })
 
+test("ticket queue projection applies locked states, attention thresholds, and owned anchors", () => {
+  const now = Date.parse("2026-04-28T12:00:00.000Z")
+  const hour = 60 * 60 * 1000
+  const lifecycleRecords = [
+    lifecycleTelemetry({ ticketId: "owned-stale", recordId: "owned-moved", eventType: "moved", occurredAt: now - 1 * hour }),
+    lifecycleTelemetry({ ticketId: "owned-stale", recordId: "owned-transferred", eventType: "transferred", occurredAt: now - 2 * hour }),
+    lifecycleTelemetry({ ticketId: "owned-stale", recordId: "owned-assigned", eventType: "assigned", occurredAt: now - 80 * hour }),
+    lifecycleTelemetry({ ticketId: "owned-fresh", recordId: "owned-fresh-assigned", eventType: "assigned", occurredAt: now - 2 * hour })
+  ]
+
+  const waiting = ticket({ id: "waiting", openedOn: now - 25 * hour })
+  const ownedStale = ticket({ id: "owned-stale", firstStaffResponseAt: now - 100 * hour, assignedStaffUserId: "staff-1", claimed: true, claimedBy: "staff-1", openedOn: now - 120 * hour })
+  const ownedFresh = ticket({ id: "owned-fresh", firstStaffResponseAt: now - 100 * hour, assignedStaffUserId: "staff-1", openedOn: now - 120 * hour })
+  const awaiting = ticket({ id: "awaiting", awaitingUserState: "reminded", awaitingUserSince: now - 200 * hour, openedOn: now - 300 * hour })
+  const closeRequested = ticket({ id: "close-requested", closeRequestState: "requested", closeRequestAt: now - 25 * hour, openedOn: now - 300 * hour })
+  const resolved = ticket({ id: "resolved", open: false, closed: true, closedOn: now - hour, resolvedAt: now - hour })
+
+  assert.equal(deriveDashboardTicketQueueState(resolved), "resolved")
+  assert.equal(deriveDashboardTicketQueueState(closeRequested), "close_requested")
+  assert.equal(deriveDashboardTicketQueueState(awaiting), "awaiting_user")
+  assert.equal(deriveDashboardTicketQueueState(waiting), "waiting_staff")
+  assert.equal(deriveDashboardTicketQueueState(ownedStale), "owned")
+
+  const waitingFacts = projectDashboardTicketQueueFacts(waiting, { lifecycleRecords, now })
+  assert.deepEqual(waitingFacts.attention, ["first-response", "unassigned"])
+
+  const ownedStaleFacts = projectDashboardTicketQueueFacts(ownedStale, { lifecycleRecords, now })
+  assert.equal(ownedStaleFacts.queueAnchorAt, now - 80 * hour)
+  assert.deepEqual(ownedStaleFacts.attention, ["stale-owner"])
+
+  const ownedFreshFacts = projectDashboardTicketQueueFacts(ownedFresh, { lifecycleRecords, now })
+  assert.equal(ownedFreshFacts.queueAnchorAt, now - 2 * hour)
+  assert.deepEqual(ownedFreshFacts.attention, [])
+
+  const unavailableFacts = projectDashboardTicketQueueFacts(ownedStale, {
+    lifecycleRecords,
+    lifecycleAvailable: false,
+    unavailableReason: "Ticket lifecycle telemetry reads are unavailable.",
+    now
+  })
+  assert.equal(unavailableFacts.staleOwner, false)
+  assert.equal(unavailableFacts.unavailableReason, "Ticket lifecycle telemetry reads are unavailable.")
+
+  const summary = buildTicketQueueSummary([waiting, ownedStale, ownedFresh, awaiting, closeRequested, resolved], {
+    lifecycleRecords,
+    now
+  })
+  assert.equal(summary.activeCount, 5)
+  assert.equal(summary.waitingStaffCount, 1)
+  assert.equal(summary.firstResponseOverdueCount, 1)
+  assert.equal(summary.unassignedCount, 1)
+  assert.equal(summary.staleOwnerCount, 1)
+  assert.equal(summary.closeRequestCount, 1)
+  assert.equal(summary.awaitingUserCount, 1)
+})
+
+test("ticket queue filters and queue-priority sorting stay additive and keep exports unchanged", async (t) => {
+  const runtime = await startServer()
+  t.after(() => stopServer(runtime))
+  const now = Date.parse("2026-04-28T12:00:00.000Z")
+  const hour = 60 * 60 * 1000
+  const lifecycleRecords = [
+    lifecycleTelemetry({ ticketId: "stale-owner", recordId: "stale-owner-assigned", eventType: "assigned", occurredAt: now - 80 * hour }),
+    lifecycleTelemetry({ ticketId: "remaining-active", recordId: "remaining-active-assigned", eventType: "assigned", occurredAt: now - 2 * hour })
+  ]
+  const request = parseTicketWorkbenchListRequest({ queueState: "invalid", attention: "invalid", sort: "invalid" })
+  assert.equal(request.queueState, "all")
+  assert.equal(request.attention, "all")
+  assert.equal(request.sort, "queue-priority")
+  const queueTickets = [
+    ticket({ id: "resolved", open: false, closed: true, resolvedAt: now - hour, closedOn: now - hour, openedOn: now - 300 * hour }),
+    ticket({ id: "awaiting-user", awaitingUserState: "waiting", awaitingUserSince: now - 2 * hour, openedOn: now - 300 * hour }),
+    ticket({ id: "close-request", closeRequestState: "requested", closeRequestAt: now - 25 * hour, openedOn: now - 300 * hour }),
+    ticket({ id: "stale-owner", firstStaffResponseAt: now - 100 * hour, assignedStaffUserId: "staff-1", openedOn: now - 300 * hour }),
+    ticket({ id: "unassigned-owned", firstStaffResponseAt: now - 2 * hour, openedOn: now - 300 * hour }),
+    ticket({ id: "first-response", openedOn: now - 26 * hour }),
+    ticket({ id: "remaining-active", firstStaffResponseAt: now - 2 * hour, assignedStaffUserId: "staff-1", openedOn: now - 300 * hour })
+  ]
+
+  const model = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets",
+    request,
+    tickets: queueTickets,
+    configService: runtime.context.configService,
+    readsSupported: true,
+    queueLifecycleRecords: lifecycleRecords,
+    queueTelemetryAvailable: true,
+    now
+  })
+
+  assert.deepEqual(model.items.map((item) => item.id), [
+    "first-response",
+    "unassigned-owned",
+    "stale-owner",
+    "close-request",
+    "awaiting-user",
+    "remaining-active",
+    "resolved"
+  ])
+  assert.equal(model.items[0].queueStateBadge.label, "Waiting on staff")
+  assert.deepEqual(model.items[0].attentionBadges.map((badge) => badge.label), ["First response overdue", "Unassigned"])
+  assert.equal(model.items[2].attentionBadges[0].label, "Stale owner")
+  assert.equal(Object.prototype.hasOwnProperty.call(model.exportRows[0], "queueState"), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(model.exportRows[0], "attention"), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(model.exportRows[0], "queueAnchorAt"), false)
+
+  const staleModel = buildTicketWorkbenchListModel({
+    basePath: "/dash",
+    currentHref: "/dash/admin/tickets?attention=stale-owner",
+    request: parseTicketWorkbenchListRequest({ attention: "stale-owner" }),
+    tickets: queueTickets,
+    configService: runtime.context.configService,
+    readsSupported: true,
+    queueLifecycleRecords: lifecycleRecords,
+    queueTelemetryAvailable: true,
+    now
+  })
+  assert.equal(staleModel.total, 1)
+  assert.equal(staleModel.items[0].id, "stale-owner")
+})
+
 test("quality review admits reviewers and admins without granting editor workbench access", async (t) => {
   const runtime = await startServer({
     telemetrySignals: {},
@@ -1112,10 +1261,12 @@ test("quality review home cues admit reviewers without exposing setup controls",
   assert.doesNotMatch(homeHtml, /href="\/dash\/admin\/configs/)
 
   const editor = await login(runtime.baseUrl, "editor-user", "/dash/admin/tickets")
-  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: editor.cookie }, redirect: "manual" })
-  await editorHome.arrayBuffer()
-  assert.equal(editorHome.status, 302)
-  assert.equal(editorHome.headers.get("location"), "/dash/visual/options")
+  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, { headers: { cookie: editor.cookie } })
+  const editorHomeHtml = await editorHome.text()
+  assert.equal(editorHome.status, 200)
+  assert.match(editorHomeHtml, /Ticket Queue/)
+  assert.doesNotMatch(editorHomeHtml, /Quality review/)
+  assert.doesNotMatch(editorHomeHtml, /Setup areas/)
 })
 
 test("quality review home renders unavailable queue summary without exposing setup controls", async (t) => {
@@ -3442,7 +3593,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.doesNotMatch(routesSource, /DashboardActionProviderBridge/)
   assert.match(routesSource, /admin\/analytics\/export\/:format"\), adminGuard\.form\("analytics\.view"\)/)
   assert.match(routesSource, /admin\/tickets\/export\/:format"\), adminGuard\.form\("ticket\.workbench"\)/)
-  assert.match(routesSource, /admin"\), adminGuard\.page\("quality\.review"\)/)
+  assert.match(routesSource, /admin"\), adminGuard\.page\("viewer\.portal"\)/)
   assert.match(routesSource, /admin\/quality-review"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId"\), adminGuard\.page\("quality\.review"\)/)
   assert.match(routesSource, /admin\/quality-review\/:ticketId\/actions\/:actionId"\), adminGuard\.form\("quality\.review\.manage"\)/)
@@ -3453,6 +3604,7 @@ test("ticket workbench source boundaries preserve dashboard and bridge contracts
   assert.doesNotMatch(routesSource, /assigneeUserId:\s*actorUserId/)
   assert.doesNotMatch(routesSource, /admin\/tickets\/:ticketId\/export|prepared ticket export|prepareTicketExport/i)
   assert.doesNotMatch(routesSource, /admin\/quality-review\/export|adminGuard\.form\("quality\.review"\)|api\/quality-review|admin\/quality-review\/[^"']*(digest|reminder)/i)
+  assert.doesNotMatch(routesSource, /admin\/tickets\/[^"']*(digest|reminder|schedule)|api\/tickets\/[^"']*(digest|reminder|schedule)/i)
   assert.doesNotMatch(qualityReviewSource, /setInterval|setTimeout|cron\.schedule|node-cron/i)
   assert.doesNotMatch(controlCenterSource, /admin\/quality-review/)
   assert.match(bridgeSource, /getDashboardTicketLockState/)

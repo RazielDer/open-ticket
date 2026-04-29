@@ -1,10 +1,36 @@
 export type DashboardTicketTransportMode = "channel_text" | "private_thread"
 export type DashboardTicketFeedbackStatus = "completed" | "ignored" | "delivery_failed" | "none"
 export type DashboardTicketFeedbackStoredStatus = Exclude<DashboardTicketFeedbackStatus, "none">
+export type DashboardTicketQueueState = "waiting_staff" | "owned" | "awaiting_user" | "close_requested" | "resolved"
+export type DashboardTicketQueueAttention = "first-response" | "unassigned" | "stale-owner" | "close-request" | "awaiting-user"
 export type DashboardQualityReviewState = "unreviewed" | "in_review" | "resolved"
 export type DashboardQualityReviewRawFeedbackStatus = "available" | "partial" | "expired" | "none"
 export type DashboardQualityReviewOwnerBucket = "mine" | "unassigned" | "other" | "resolved"
 export type DashboardQualityReviewOverdueKind = "unreviewed" | "in_review" | null
+
+export interface DashboardTicketQueueFacts {
+  ticketId: string
+  queueState: DashboardTicketQueueState
+  queueAnchorAt: number | null
+  attention: DashboardTicketQueueAttention[]
+  firstResponseOverdue: boolean
+  unassignedAttention: boolean
+  staleOwner: boolean
+  closeRequestAttention: boolean
+  awaitingUserAttention: boolean
+  unavailableReason: string | null
+}
+
+export interface DashboardTicketQueueSummary {
+  activeCount: number
+  waitingStaffCount: number
+  firstResponseOverdueCount: number
+  unassignedCount: number
+  staleOwnerCount: number
+  closeRequestCount: number
+  awaitingUserCount: number
+  unavailableReason: string | null
+}
 
 export interface DashboardQualityReviewQueueSummary {
   activeCount: number

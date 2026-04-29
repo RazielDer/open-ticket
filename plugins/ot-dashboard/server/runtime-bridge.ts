@@ -32,6 +32,7 @@ import {
   type DashboardTicketParticipantChoice,
   type DashboardTicketProviderLockedActionId,
   type DashboardTicketProviderLock,
+  type DashboardTicketQueueSummary,
   type DashboardTicketIntegrationSummary,
   type DashboardTicketLifecycleTelemetryQuery,
   type DashboardTicketLifecycleTelemetryRecord,
@@ -59,6 +60,10 @@ import {
   buildQualityReviewQueueSummary,
   projectQualityReviewQueueFields
 } from "./quality-review-queue"
+import {
+  buildTicketQueueSummary,
+  TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES
+} from "./ticket-workbench"
 
 export interface DashboardRuntimeGuildMember {
   guildId: string
@@ -81,6 +86,7 @@ export interface DashboardRuntimeBridge {
   listLifecycleTelemetry?: (query: DashboardTicketLifecycleTelemetryQuery) => Promise<DashboardTicketLifecycleTelemetryResult>
   listFeedbackTelemetry?: (query: DashboardTicketFeedbackTelemetryQuery) => Promise<DashboardTicketFeedbackTelemetryResult>
   getTicketTelemetrySignals?: (ticketIds: string[]) => Promise<Record<string, DashboardTicketTelemetrySignals>>
+  getTicketQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardTicketQueueSummary | null>
   listQualityReviewCases?: (query: DashboardQualityReviewCaseQuery, actorUserId: string) => Promise<DashboardQualityReviewCaseListResult>
   getQualityReviewCase?: (ticketId: string, actorUserId: string) => Promise<DashboardQualityReviewCaseDetailRecord | null>
   getQualityReviewQueueSummary?: (input: { actorUserId: string; now?: number }) => Promise<DashboardQualityReviewQueueSummary | null>
@@ -123,6 +129,9 @@ export const defaultDashboardRuntimeBridge: DashboardRuntimeBridge = {
   },
   async getTicketTelemetrySignals(ticketIds) {
     return await getRuntimeTicketTelemetrySignals(defaultDashboardRuntimeBridge, ticketIds)
+  },
+  async getTicketQueueSummary(input) {
+    return await getRuntimeTicketQueueSummary(defaultDashboardRuntimeBridge, input)
   },
   async listQualityReviewCases(query, actorUserId) {
     return await listRuntimeQualityReviewCases(defaultDashboardRuntimeBridge, query, actorUserId)
@@ -1174,6 +1183,47 @@ async function getRuntimeTicketTelemetrySignals(
   return signals
 }
 
+async function getRuntimeTicketQueueSummary(
+  runtimeBridge: DashboardRuntimeBridge,
+  input: { actorUserId: string; now?: number }
+): Promise<DashboardTicketQueueSummary | null> {
+  let tickets: DashboardTicketRecord[] = []
+  try {
+    tickets = typeof runtimeBridge.listTickets === "function" ? runtimeBridge.listTickets() : []
+  } catch {
+    return buildTicketQueueSummary([], { unavailableReason: "Ticket queue inventory could not be read.", now: input.now })
+  }
+
+  const service = getRuntimeTelemetryService(runtimeBridge)
+  if (!service || typeof service.listLifecycleHistory !== "function") {
+    return buildTicketQueueSummary(tickets, {
+      lifecycleAvailable: false,
+      unavailableReason: "Ticket lifecycle telemetry reads are unavailable.",
+      now: input.now
+    })
+  }
+
+  try {
+    const ownedEvents = new Set<string>(TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES)
+    const lifecycleRecords = (await service.listLifecycleHistory({}) as unknown[])
+      .map(normalizeLifecycleTelemetryRecord)
+      .filter((record): record is DashboardTicketLifecycleTelemetryRecord => (
+        record !== null && ownedEvents.has(record.eventType)
+      ))
+    return buildTicketQueueSummary(tickets, {
+      lifecycleRecords,
+      lifecycleAvailable: true,
+      now: input.now
+    })
+  } catch {
+    return buildTicketQueueSummary(tickets, {
+      lifecycleAvailable: false,
+      unavailableReason: "Ticket lifecycle telemetry could not be read.",
+      now: input.now
+    })
+  }
+}
+
 const QUALITY_REVIEW_SERVICE_ID = "ot-quality-review:service"
 
 function getRuntimeQualityReviewService(runtimeBridge: DashboardRuntimeBridge) {
@@ -2112,6 +2162,11 @@ export function supportsTicketTelemetryReads(runtimeBridge: DashboardRuntimeBrid
     && typeof runtimeBridge.getTicketTelemetrySignals === "function"
   )
   if (!hasBridgeMethods) return false
+  return runtimeBridge === defaultDashboardRuntimeBridge ? hasRuntimeTelemetryService(runtimeBridge) : true
+}
+
+export function supportsTicketQueueTelemetryReads(runtimeBridge: DashboardRuntimeBridge) {
+  if (typeof runtimeBridge.listLifecycleTelemetry !== "function") return false
   return runtimeBridge === defaultDashboardRuntimeBridge ? hasRuntimeTelemetryService(runtimeBridge) : true
 }
 

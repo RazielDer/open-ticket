@@ -81,6 +81,56 @@
   </section>
 <% } %>
 
+<% if (ticketQueueHome) { %>
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("home.ticketQueue.title") %></h3>
+    </div>
+    <% if (ticketQueueHome.unavailable) { %>
+      <div class="empty-panel">
+        <h3><%= t("home.ticketQueue.unavailableTitle") %></h3>
+        <p><%= ticketQueueHome.summary.unavailableReason %></p>
+      </div>
+    <% } else if (ticketQueueHome.zeroState) { %>
+      <div class="empty-panel">
+        <h3><%= t("home.ticketQueue.zeroTitle") %></h3>
+        <p><%= t("home.ticketQueue.zeroBody") %></p>
+      </div>
+    <% } else { %>
+      <div class="facts-grid">
+        <div class="fact-row">
+          <span class="fact-label"><%= t("home.ticketQueue.firstResponse") %></span>
+          <strong><%= ticketQueueHome.summary.firstResponseOverdueCount %></strong>
+        </div>
+        <div class="fact-row">
+          <span class="fact-label"><%= t("home.ticketQueue.unassigned") %></span>
+          <strong><%= ticketQueueHome.summary.unassignedCount %></strong>
+        </div>
+        <div class="fact-row">
+          <span class="fact-label"><%= t("home.ticketQueue.staleOwner") %></span>
+          <strong><%= ticketQueueHome.summary.staleOwnerCount %></strong>
+        </div>
+        <div class="fact-row">
+          <span class="fact-label"><%= t("home.ticketQueue.closeRequest") %></span>
+          <strong><%= ticketQueueHome.summary.closeRequestCount %></strong>
+        </div>
+        <div class="fact-row">
+          <span class="fact-label"><%= t("home.ticketQueue.awaitingUser") %></span>
+          <strong><%= ticketQueueHome.summary.awaitingUserCount %></strong>
+        </div>
+      </div>
+    <% } %>
+    <div class="card-actions">
+      <a class="btn secondary" href="<%= ticketQueueHome.links.active %>"><%= t("home.ticketQueue.links.active") %></a>
+      <a class="btn secondary" href="<%= ticketQueueHome.links.firstResponse %>"><%= t("home.ticketQueue.links.firstResponse") %></a>
+      <a class="btn secondary" href="<%= ticketQueueHome.links.unassigned %>"><%= t("home.ticketQueue.links.unassigned") %></a>
+      <a class="btn secondary" href="<%= ticketQueueHome.links.staleOwner %>"><%= t("home.ticketQueue.links.staleOwner") %></a>
+      <a class="btn secondary" href="<%= ticketQueueHome.links.closeRequest %>"><%= t("home.ticketQueue.links.closeRequest") %></a>
+      <a class="btn secondary" href="<%= ticketQueueHome.links.awaitingUser %>"><%= t("home.ticketQueue.links.awaitingUser") %></a>
+    </div>
+  </section>
+<% } %>
+
 <% if (qualityReviewHome) { %>
   <section class="section-card">
     <div class="section-heading">

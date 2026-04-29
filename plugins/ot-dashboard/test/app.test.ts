@@ -984,7 +984,7 @@ test("seeded owners can bootstrap admin access while non-mapped members cannot s
   assert.match(memberLocation, /returnTo=%2Fdash%2Fadmin/)
 })
 
-test("editors stay inside visual workspaces while reviewers stay inside quality review", async (t) => {
+test("editors get ticket queue home without admin setup while reviewers stay inside quality review", async (t) => {
   const runtime = await startTestServer()
   t.after(async () => {
     await stopTestServer(runtime)
@@ -1037,8 +1037,16 @@ test("editors stay inside visual workspaces while reviewers stay inside quality 
   await questionsResponse.arrayBuffer()
   assert.equal(questionsResponse.status, 200)
 
+  const editorHome = await fetch(`${runtime.baseUrl}/dash/admin`, {
+    headers: { cookie }
+  })
+  const editorHomeHtml = await editorHome.text()
+  assert.equal(editorHome.status, 200)
+  assert.match(editorHomeHtml, /Ticket Queue/)
+  assert.doesNotMatch(editorHomeHtml, /Setup areas/)
+  assert.doesNotMatch(editorHomeHtml, /Quality review/)
+
   const disallowedGetTargets = [
-    `${runtime.baseUrl}/dash/admin`,
     `${runtime.baseUrl}/dash/visual/general`,
     `${runtime.baseUrl}/dash/visual/transcripts`,
     `${runtime.baseUrl}/dash/config/general`,

@@ -148,6 +148,8 @@
       "addOnsDetail": "{count} need attention",
       "tickets": "Tickets",
       "ticketsDetail": "{count} recent events since startup",
+      "ticketQueue": "Ticket Queue",
+      "ticketQueueDetail": "First response {firstResponse}, Unassigned {unassigned}, Stale owner {staleOwner}, Close request {closeRequest}, Awaiting user {awaitingUser}",
       "qualityReview": "Quality Review",
       "qualityReviewDetail": "Active {active}, Unassigned {unassigned}"
     },
@@ -156,6 +158,25 @@
     "warningsTitle": "Warnings",
     "warningsEmptyTitle": "No warnings right now",
     "warningsEmptyBody": "The dashboard did not detect any current runtime warnings for this snapshot.",
+    "ticketQueue": {
+      "title": "Ticket Queue",
+      "firstResponse": "First Response",
+      "unassigned": "Unassigned",
+      "staleOwner": "Stale Owner",
+      "closeRequest": "Close Request",
+      "awaitingUser": "Awaiting User",
+      "zeroTitle": "Ticket queue is clear",
+      "zeroBody": "No active tickets need queue attention right now.",
+      "unavailableTitle": "Ticket queue unavailable",
+      "links": {
+        "active": "Active queue",
+        "firstResponse": "First response",
+        "unassigned": "Unassigned",
+        "staleOwner": "Stale owner",
+        "closeRequest": "Close requests",
+        "awaitingUser": "Awaiting user"
+      }
+    },
     "qualityReview": {
       "title": "Quality review",
       "myQueue": "My Queue",
@@ -1196,6 +1217,7 @@
       "workspaceBody": "Use the list for search, filtering, pagination, navigation, and guarded bulk actions. Rich operator workflows stay on ticket detail pages.",
       "unavailableBadge": "Unavailable",
       "telemetryDegradedBadge": "Telemetry degraded",
+      "queueDegradedBadge": "Queue degraded",
       "unavailableTitle": "Ticket inventory is unavailable",
       "filtersTitle": "Find tickets",
       "filtersBody": "Filter the live ticket inventory without mutating ticket state.",
@@ -1238,6 +1260,8 @@
         "searchPlaceholder": "Ticket, channel, creator, team, or assignee",
         "statusLabel": "Status",
         "transportLabel": "Transport",
+        "queueStateLabel": "Queue state",
+        "attentionLabel": "Attention",
         "sortLabel": "Sort",
         "moreTitle": "Route and ownership filters",
         "moreBody": "Narrow by team, assignee, option, panel, creator, or page size.",
@@ -1264,7 +1288,8 @@
         "owner": "Owner",
         "activity": "Activity",
         "access": "Access",
-        "openedMeta": "Opened {value}"
+        "openedMeta": "Opened {value}",
+        "queueAnchorMeta": "Queue anchor {value}"
       }
     },
     "detail": {

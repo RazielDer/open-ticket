@@ -7,7 +7,7 @@ import { test } from "node:test"
 
 import { createDashboardApp } from "../server/create-app"
 import type { DashboardConfig } from "../server/dashboard-config"
-import { buildHomeQualityReviewBlock } from "../server/home-setup-models"
+import { buildHomeQualityReviewBlock, buildHomeTicketQueueBlock } from "../server/home-setup-models"
 import type { DashboardRuntimeBridge } from "../server/runtime-bridge"
 import { evaluateSetupState } from "../server/setup-state"
 
@@ -499,6 +499,39 @@ test("setup-state evaluation follows the locked beginner-first rules", () => {
     transcripts: { general: { enabled: true, mode: "html" } }
   }, { state: "ready", htmlMode: true })
   assert.equal(result.nextStep.id, "operations")
+})
+
+test("home ticket queue block carries queue counts without setup warnings", () => {
+  const block = buildHomeTicketQueueBlock({
+    basePath: "/dash",
+    i18n: {
+      t(key: string, params?: Record<string, unknown>) {
+        const labels: Record<string, string> = {
+          "home.ticketQueue.title": "Ticket Queue",
+          "home.summary.ticketQueue": "Ticket Queue",
+          "home.summary.ticketQueueDetail": "First response {firstResponse}, Unassigned {unassigned}, Stale owner {staleOwner}, Close request {closeRequest}, Awaiting user {awaitingUser}"
+        }
+        return (labels[key] || key).replace(/\{([^}]+)\}/g, (_match, name) => String(params?.[name] ?? ""))
+      }
+    }
+  } as any, {
+    activeCount: 7,
+    waitingStaffCount: 2,
+    firstResponseOverdueCount: 1,
+    unassignedCount: 2,
+    staleOwnerCount: 3,
+    closeRequestCount: 1,
+    awaitingUserCount: 1,
+    unavailableReason: null
+  })
+
+  assert.ok(block)
+  assert.equal(block?.summaryCard.label, "Ticket Queue")
+  assert.equal(block?.summaryCard.value, "7")
+  assert.match(block?.summaryCard.detail || "", /First response 1/)
+  assert.equal(block?.links.staleOwner, "/dash/admin/tickets?attention=stale-owner")
+  assert.equal(block?.unavailable, false)
+  assert.equal(block?.zeroState, false)
 })
 
 test("home quality-review block carries reminder and digest facts without setup warnings", () => {

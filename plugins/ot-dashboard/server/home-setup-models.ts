@@ -3,7 +3,7 @@ import type { DashboardAppContext } from "./create-app"
 import { joinBasePath } from "./dashboard-config"
 import { buildQualityReviewQueueHref } from "./quality-review"
 import { evaluateSetupState, type SetupNextStep, type SetupState, type SetupStatusItem } from "./setup-state"
-import type { DashboardQualityReviewNotificationStatus, DashboardQualityReviewQueueSummary } from "./ticket-workbench-types"
+import type { DashboardQualityReviewNotificationStatus, DashboardQualityReviewQueueSummary, DashboardTicketQueueSummary } from "./ticket-workbench-types"
 import type { DashboardTranscriptIntegration } from "./transcript-service-bridge"
 
 const WORKSPACE_FIRST_SETUP_IDS = new Set(["general", "options", "panels", "questions"])
@@ -133,10 +133,53 @@ function buildQualityReviewHomeLinks(basePath: string) {
   }
 }
 
+function buildTicketQueueHomeLinks(basePath: string) {
+  const ticketsHref = joinBasePath(basePath, "admin/tickets")
+  return {
+    active: ticketsHref,
+    firstResponse: `${ticketsHref}?attention=first-response`,
+    unassigned: `${ticketsHref}?attention=unassigned`,
+    staleOwner: `${ticketsHref}?attention=stale-owner`,
+    closeRequest: `${ticketsHref}?attention=close-request`,
+    awaitingUser: `${ticketsHref}?attention=awaiting-user`
+  }
+}
+
 function formatNotificationDate(value: number | null | undefined, fallback: string) {
   return typeof value === "number" && Number.isFinite(value)
     ? `${new Date(value).toISOString().slice(0, 16).replace("T", " ")} UTC`
     : fallback
+}
+
+export function buildHomeTicketQueueBlock(
+  context: DashboardAppContext,
+  summary: DashboardTicketQueueSummary | null
+) {
+  if (!summary) return null
+  return {
+    title: context.i18n.t("home.ticketQueue.title"),
+    summary,
+    summaryCard: {
+      label: context.i18n.t("home.summary.ticketQueue"),
+      value: String(summary.activeCount),
+      detail: context.i18n.t("home.summary.ticketQueueDetail", {
+        firstResponse: summary.firstResponseOverdueCount,
+        unassigned: summary.unassignedCount,
+        staleOwner: summary.staleOwnerCount,
+        closeRequest: summary.closeRequestCount,
+        awaitingUser: summary.awaitingUserCount
+      }),
+      tone: summary.firstResponseOverdueCount > 0 || summary.unassignedCount > 0 || summary.staleOwnerCount > 0 || summary.closeRequestCount > 0 ? "warning" as const : "muted" as const
+    },
+    links: buildTicketQueueHomeLinks(context.basePath),
+    unavailable: Boolean(summary.unavailableReason),
+    zeroState: summary.activeCount === 0
+      && summary.firstResponseOverdueCount === 0
+      && summary.unassignedCount === 0
+      && summary.staleOwnerCount === 0
+      && summary.closeRequestCount === 0
+      && summary.awaitingUserCount === 0
+  }
 }
 
 export function buildHomeQualityReviewBlock(
@@ -183,6 +226,7 @@ export function buildHomeWorkspaceModel(
   context: DashboardAppContext,
   transcriptIntegration: DashboardTranscriptIntegration,
   modelOptions: {
+    ticketQueue?: ReturnType<typeof buildHomeTicketQueueBlock>
     qualityReview?: ReturnType<typeof buildHomeQualityReviewBlock>
   } = {}
 ) {
@@ -207,6 +251,7 @@ export function buildHomeWorkspaceModel(
     setupCounts,
     setupCards,
     recommendedAction: buildRecommendedAction(context, setup.nextStep),
+    ticketQueue: modelOptions.ticketQueue || null,
     qualityReview: modelOptions.qualityReview || null
   }
 }

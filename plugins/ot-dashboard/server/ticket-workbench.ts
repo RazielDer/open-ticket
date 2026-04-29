@@ -10,7 +10,12 @@ import type {
   DashboardTicketDetailRecord,
   DashboardTicketEscalationTargetChoice,
   DashboardTicketFeedbackStatus,
+  DashboardTicketLifecycleTelemetryRecord,
   DashboardTicketProviderLock,
+  DashboardTicketQueueAttention,
+  DashboardTicketQueueFacts,
+  DashboardTicketQueueState,
+  DashboardTicketQueueSummary,
   DashboardTicketTelemetrySignals,
   DashboardTicketTransportMode
 } from "./ticket-workbench-types"
@@ -20,8 +25,11 @@ export const TICKET_WORKBENCH_STATUS_FILTERS = ["all", "open", "closed", "claime
 export const TICKET_WORKBENCH_TRANSPORT_FILTERS = ["all", "channel_text", "private_thread"] as const
 export const TICKET_WORKBENCH_FEEDBACK_FILTERS = ["all", "completed", "ignored", "delivery_failed", "none"] as const
 export const TICKET_WORKBENCH_REOPENED_FILTERS = ["all", "ever", "never"] as const
-export const TICKET_WORKBENCH_SORTS = ["opened-desc", "opened-asc", "activity-desc", "activity-asc"] as const
+export const TICKET_WORKBENCH_QUEUE_STATE_FILTERS = ["all", "waiting_staff", "owned", "awaiting_user", "close_requested", "resolved"] as const
+export const TICKET_WORKBENCH_ATTENTION_FILTERS = ["all", "first-response", "unassigned", "stale-owner", "close-request", "awaiting-user"] as const
+export const TICKET_WORKBENCH_SORTS = ["queue-priority", "activity-desc", "activity-asc", "opened-desc", "opened-asc"] as const
 export const TICKET_WORKBENCH_LIMITS = [10, 25, 50, 100] as const
+export const TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES = ["claimed", "assigned", "unclaimed", "unassigned", "escalated"] as const
 
 type TicketWorkbenchTranslator = DashboardI18n["t"]
 
@@ -29,6 +37,8 @@ export type TicketWorkbenchStatusFilter = (typeof TICKET_WORKBENCH_STATUS_FILTER
 export type TicketWorkbenchTransportFilter = (typeof TICKET_WORKBENCH_TRANSPORT_FILTERS)[number]
 export type TicketWorkbenchFeedbackFilter = (typeof TICKET_WORKBENCH_FEEDBACK_FILTERS)[number]
 export type TicketWorkbenchReopenedFilter = (typeof TICKET_WORKBENCH_REOPENED_FILTERS)[number]
+export type TicketWorkbenchQueueStateFilter = (typeof TICKET_WORKBENCH_QUEUE_STATE_FILTERS)[number]
+export type TicketWorkbenchAttentionFilter = (typeof TICKET_WORKBENCH_ATTENTION_FILTERS)[number]
 export type TicketWorkbenchSort = (typeof TICKET_WORKBENCH_SORTS)[number]
 
 interface ConfigRecord {
@@ -51,6 +61,8 @@ export interface TicketWorkbenchListRequest {
   transport: TicketWorkbenchTransportFilter
   feedback: TicketWorkbenchFeedbackFilter
   reopened: TicketWorkbenchReopenedFilter
+  queueState: TicketWorkbenchQueueStateFilter
+  attention: TicketWorkbenchAttentionFilter
   teamId: string
   assigneeId: string
   optionId: string
@@ -63,6 +75,8 @@ export interface TicketWorkbenchListRequest {
   transportOptions: Array<{ value: TicketWorkbenchTransportFilter; label: string }>
   feedbackOptions: Array<{ value: TicketWorkbenchFeedbackFilter; label: string }>
   reopenedOptions: Array<{ value: TicketWorkbenchReopenedFilter; label: string }>
+  queueStateOptions: Array<{ value: TicketWorkbenchQueueStateFilter; label: string }>
+  attentionOptions: Array<{ value: TicketWorkbenchAttentionFilter; label: string }>
   sortOptions: Array<{ value: TicketWorkbenchSort; label: string }>
   limitOptions: number[]
 }
@@ -93,6 +107,7 @@ export interface TicketWorkbenchListModel {
   available: boolean
   warningMessage: string
   telemetryWarningMessage: string
+  queueWarningMessage: string
   filterAction: string
   clearFiltersHref: string
   currentHref: string
@@ -135,6 +150,9 @@ export interface TicketWorkbenchListModel {
     transportLabel: string
     channelNameLabel: string
     statusBadge: { label: string; tone: DashboardTone }
+    queueStateBadge: { label: string; tone: DashboardTone }
+    attentionBadges: Array<{ label: string; tone: DashboardTone }>
+    queueAnchorLabel: string
     feedbackBadge: { label: string; tone: DashboardTone } | null
     reopenBadge: { label: string; tone: DashboardTone } | null
     openedLabel: string
@@ -232,12 +250,14 @@ function buildPageHref(basePath: string, request: TicketWorkbenchListRequest, pa
     transport: request.transport === "all" ? "" : request.transport,
     feedback: request.feedback === "all" ? "" : request.feedback,
     reopened: request.reopened === "all" ? "" : request.reopened,
+    queueState: request.queueState === "all" ? "" : request.queueState,
+    attention: request.attention === "all" ? "" : request.attention,
     teamId: request.teamId,
     assigneeId: request.assigneeId,
     optionId: request.optionId,
     panelId: request.panelId,
     creatorId: request.creatorId,
-    sort: request.sort === "activity-desc" ? "" : request.sort,
+    sort: request.sort === "queue-priority" ? "" : request.sort,
     limit: request.limit === 25 ? "" : request.limit,
     page
   })
@@ -277,12 +297,14 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
     transport: enumOrDefault(query.transport, TICKET_WORKBENCH_TRANSPORT_FILTERS, "all"),
     feedback: enumOrDefault(query.feedback, TICKET_WORKBENCH_FEEDBACK_FILTERS, "all"),
     reopened: enumOrDefault(query.reopened, TICKET_WORKBENCH_REOPENED_FILTERS, "all"),
+    queueState: enumOrDefault(query.queueState, TICKET_WORKBENCH_QUEUE_STATE_FILTERS, "all"),
+    attention: enumOrDefault(query.attention, TICKET_WORKBENCH_ATTENTION_FILTERS, "all"),
     teamId: normalizeString(query.teamId),
     assigneeId: normalizeString(query.assigneeId),
     optionId: normalizeString(query.optionId),
     panelId: normalizeString(query.panelId),
     creatorId: normalizeString(query.creatorId),
-    sort: enumOrDefault(query.sort, TICKET_WORKBENCH_SORTS, "activity-desc"),
+    sort: enumOrDefault(query.sort, TICKET_WORKBENCH_SORTS, "queue-priority"),
     limit,
     page: intOrDefault(query.page, 1),
     statusOptions: [
@@ -309,7 +331,24 @@ export function parseTicketWorkbenchListRequest(query: Record<string, unknown>):
       { value: "ever", label: "Ever reopened" },
       { value: "never", label: "Never reopened" }
     ],
+    queueStateOptions: [
+      { value: "all", label: "All queue states" },
+      { value: "waiting_staff", label: "Waiting on staff" },
+      { value: "owned", label: "Owned" },
+      { value: "awaiting_user", label: "Awaiting user" },
+      { value: "close_requested", label: "Close requested" },
+      { value: "resolved", label: "Resolved" }
+    ],
+    attentionOptions: [
+      { value: "all", label: "All attention" },
+      { value: "first-response", label: "First response overdue" },
+      { value: "unassigned", label: "Unassigned" },
+      { value: "stale-owner", label: "Stale owner" },
+      { value: "close-request", label: "Close request overdue" },
+      { value: "awaiting-user", label: "Awaiting user" }
+    ],
     sortOptions: [
+      { value: "queue-priority", label: "Queue priority" },
       { value: "activity-desc", label: "Recent activity first" },
       { value: "activity-asc", label: "Oldest activity first" },
       { value: "opened-desc", label: "Newest opened first" },
@@ -437,12 +476,174 @@ function activityTime(ticket: DashboardTicketRecord) {
   )
 }
 
+const HOUR_MS = 60 * 60 * 1000
+export const TICKET_QUEUE_FIRST_RESPONSE_OVERDUE_MS = 24 * HOUR_MS
+export const TICKET_QUEUE_STALE_OWNER_MS = 72 * HOUR_MS
+export const TICKET_QUEUE_CLOSE_REQUEST_OVERDUE_MS = 24 * HOUR_MS
+
+function nowOrDefault(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : Date.now()
+}
+
+function finiteNumberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function isTicketQueueOwnedAnchorEvent(value: string) {
+  return (TICKET_QUEUE_OWNED_ANCHOR_EVENT_TYPES as readonly string[]).includes(value)
+}
+
+function ticketHasStaffOwner(ticket: DashboardTicketRecord) {
+  return Boolean(normalizeString(ticket.assignedStaffUserId) || (ticket.claimed ? normalizeString(ticket.claimedBy) : ""))
+}
+
+export function deriveDashboardTicketQueueState(ticket: DashboardTicketRecord): DashboardTicketQueueState {
+  if (ticket.closed) return "resolved"
+  if (ticket.closeRequestState === "requested") return "close_requested"
+  if (ticket.awaitingUserState === "waiting" || ticket.awaitingUserState === "reminded") return "awaiting_user"
+  if (ticket.open && ticket.firstStaffResponseAt == null) return "waiting_staff"
+  return "owned"
+}
+
+function latestOwnedAnchorForTicket(
+  ticketId: string,
+  lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[]
+) {
+  let latest: number | null = null
+  for (const record of lifecycleRecords) {
+    if (record.ticketId !== ticketId || !isTicketQueueOwnedAnchorEvent(record.eventType)) continue
+    if (latest == null || record.occurredAt > latest) {
+      latest = record.occurredAt
+    }
+  }
+  return latest
+}
+
+function queueAnchorForTicket(
+  ticket: DashboardTicketRecord,
+  queueState: DashboardTicketQueueState,
+  lifecycleRecords: DashboardTicketLifecycleTelemetryRecord[]
+) {
+  if (queueState === "waiting_staff") return finiteNumberOrNull(ticket.openedOn)
+  if (queueState === "owned") {
+    const anchors = [
+      finiteNumberOrNull(ticket.firstStaffResponseAt),
+      latestOwnedAnchorForTicket(ticket.id, lifecycleRecords),
+      finiteNumberOrNull(ticket.openedOn)
+    ].filter((value): value is number => value != null)
+    return anchors.length ? Math.max(...anchors) : null
+  }
+  if (queueState === "awaiting_user") return finiteNumberOrNull(ticket.awaitingUserSince)
+  if (queueState === "close_requested") return finiteNumberOrNull(ticket.closeRequestAt)
+  return null
+}
+
+function isAtLeastAge(anchor: number | null, now: number, thresholdMs: number) {
+  return anchor != null && now - anchor >= thresholdMs
+}
+
+export function projectDashboardTicketQueueFacts(
+  ticket: DashboardTicketRecord,
+  input: {
+    lifecycleRecords?: DashboardTicketLifecycleTelemetryRecord[]
+    lifecycleAvailable?: boolean
+    unavailableReason?: string | null
+    now?: number
+  } = {}
+): DashboardTicketQueueFacts {
+  const now = nowOrDefault(input.now)
+  const lifecycleRecords = Array.isArray(input.lifecycleRecords) ? input.lifecycleRecords : []
+  const lifecycleAvailable = input.lifecycleAvailable !== false
+  const unavailableReason = normalizeString(input.unavailableReason) || null
+  const queueState = deriveDashboardTicketQueueState(ticket)
+  const queueAnchorAt = queueAnchorForTicket(ticket, queueState, lifecycleRecords)
+  const firstResponseOverdue = queueState === "waiting_staff" && isAtLeastAge(finiteNumberOrNull(ticket.openedOn), now, TICKET_QUEUE_FIRST_RESPONSE_OVERDUE_MS)
+  const unassignedAttention = (queueState === "waiting_staff" || queueState === "owned") && !ticketHasStaffOwner(ticket)
+  const staleOwner = lifecycleAvailable && queueState === "owned" && isAtLeastAge(queueAnchorAt, now, TICKET_QUEUE_STALE_OWNER_MS)
+  const closeRequestAttention = queueState === "close_requested" && isAtLeastAge(finiteNumberOrNull(ticket.closeRequestAt), now, TICKET_QUEUE_CLOSE_REQUEST_OVERDUE_MS)
+  const awaitingUserAttention = queueState === "awaiting_user"
+  const attention: DashboardTicketQueueAttention[] = []
+  if (firstResponseOverdue) attention.push("first-response")
+  if (unassignedAttention) attention.push("unassigned")
+  if (staleOwner) attention.push("stale-owner")
+  if (closeRequestAttention) attention.push("close-request")
+  if (awaitingUserAttention) attention.push("awaiting-user")
+
+  return {
+    ticketId: ticket.id,
+    queueState,
+    queueAnchorAt,
+    attention,
+    firstResponseOverdue,
+    unassignedAttention,
+    staleOwner,
+    closeRequestAttention,
+    awaitingUserAttention,
+    unavailableReason
+  }
+}
+
+export function buildDashboardTicketQueueFactsMap(
+  tickets: DashboardTicketRecord[],
+  input: {
+    lifecycleRecords?: DashboardTicketLifecycleTelemetryRecord[]
+    lifecycleAvailable?: boolean
+    unavailableReason?: string | null
+    now?: number
+  } = {}
+) {
+  return Object.fromEntries(tickets.map((ticket) => [
+    ticket.id,
+    projectDashboardTicketQueueFacts(ticket, input)
+  ])) as Record<string, DashboardTicketQueueFacts>
+}
+
+export function buildTicketQueueSummary(
+  tickets: DashboardTicketRecord[],
+  input: {
+    lifecycleRecords?: DashboardTicketLifecycleTelemetryRecord[]
+    lifecycleAvailable?: boolean
+    unavailableReason?: string | null
+    now?: number
+  } = {}
+): DashboardTicketQueueSummary {
+  const facts = Object.values(buildDashboardTicketQueueFactsMap(tickets, input))
+  const active = facts.filter((item) => item.queueState !== "resolved")
+  return {
+    activeCount: active.length,
+    waitingStaffCount: active.filter((item) => item.queueState === "waiting_staff").length,
+    firstResponseOverdueCount: active.filter((item) => item.firstResponseOverdue).length,
+    unassignedCount: active.filter((item) => item.unassignedAttention).length,
+    staleOwnerCount: active.filter((item) => item.staleOwner).length,
+    closeRequestCount: active.filter((item) => item.closeRequestAttention).length,
+    awaitingUserCount: active.filter((item) => item.awaitingUserAttention).length,
+    unavailableReason: normalizeString(input.unavailableReason) || null
+  }
+}
+
+function queueStateBadge(state: DashboardTicketQueueState): { label: string; tone: DashboardTone } {
+  if (state === "waiting_staff") return { label: "Waiting on staff", tone: "warning" }
+  if (state === "owned") return { label: "Owned", tone: "success" }
+  if (state === "awaiting_user") return { label: "Awaiting user", tone: "muted" }
+  if (state === "close_requested") return { label: "Close requested", tone: "warning" }
+  return { label: "Resolved", tone: "muted" }
+}
+
+function attentionBadge(attention: DashboardTicketQueueAttention): { label: string; tone: DashboardTone } {
+  if (attention === "first-response") return { label: "First response overdue", tone: "danger" }
+  if (attention === "unassigned") return { label: "Unassigned", tone: "warning" }
+  if (attention === "stale-owner") return { label: "Stale owner", tone: "warning" }
+  if (attention === "close-request") return { label: "Close request overdue", tone: "warning" }
+  return { label: "Awaiting user", tone: "muted" }
+}
+
 function applyListFilters(
   tickets: DashboardTicketRecord[],
   request: TicketWorkbenchListRequest,
   lookups: ReturnType<typeof buildConfigLookups>,
   telemetrySignals: Record<string, DashboardTicketTelemetrySignals>,
-  telemetrySupported: boolean
+  telemetrySupported: boolean,
+  queueFacts: Record<string, DashboardTicketQueueFacts>
 ) {
   const q = request.q.toLowerCase()
   return tickets.filter((ticket) => {
@@ -452,6 +653,7 @@ function applyListFilters(
     const assigneeLabel = unknownUserLabel(ticket.assignedStaffUserId)
     const creatorLabel = unknownUserLabel(ticket.creatorId)
     const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
+    const queue = queueFacts[ticket.id]
 
     if (request.status === "open" && !ticket.open) return false
     if (request.status === "closed" && !ticket.closed) return false
@@ -466,6 +668,8 @@ function applyListFilters(
     if (telemetrySupported && request.feedback !== "all" && telemetry.latestFeedbackStatus !== request.feedback) return false
     if (telemetrySupported && request.reopened === "ever" && !telemetry.hasEverReopened) return false
     if (telemetrySupported && request.reopened === "never" && telemetry.hasEverReopened) return false
+    if (request.queueState !== "all" && queue?.queueState !== request.queueState) return false
+    if (request.attention !== "all" && !queue?.attention.includes(request.attention)) return false
 
     if (!q) return true
     return [
@@ -481,14 +685,62 @@ function applyListFilters(
       ticket.assignedTeamId || "",
       teamLabel,
       ticket.assignedStaffUserId || "",
-      assigneeLabel
+      assigneeLabel,
+      queue?.queueState || "",
+      ...(queue?.attention || [])
     ].join(" ").toLowerCase().includes(q)
   })
 }
 
-function sortTickets(tickets: DashboardTicketRecord[], sort: TicketWorkbenchSort) {
+function ticketQueuePriorityRank(facts: DashboardTicketQueueFacts) {
+  if (facts.firstResponseOverdue) return 0
+  if (facts.unassignedAttention) return 1
+  if (facts.staleOwner) return 2
+  if (facts.closeRequestAttention) return 3
+  if (facts.awaitingUserAttention) return 4
+  if (facts.queueState !== "resolved") return 5
+  return 6
+}
+
+function compareQueuePriorityTickets(
+  left: DashboardTicketRecord,
+  right: DashboardTicketRecord,
+  queueFacts: Record<string, DashboardTicketQueueFacts>
+) {
+  const leftFacts = queueFacts[left.id] || projectDashboardTicketQueueFacts(left)
+  const rightFacts = queueFacts[right.id] || projectDashboardTicketQueueFacts(right)
+  const leftRank = ticketQueuePriorityRank(leftFacts)
+  const rightRank = ticketQueuePriorityRank(rightFacts)
+  if (leftRank !== rightRank) return leftRank - rightRank
+
+  const leftAnchor = leftFacts.queueAnchorAt
+  const rightAnchor = rightFacts.queueAnchorAt
+  if (leftRank >= 0 && leftRank <= 4) {
+    const leftValue = leftAnchor == null ? Number.POSITIVE_INFINITY : leftAnchor
+    const rightValue = rightAnchor == null ? Number.POSITIVE_INFINITY : rightAnchor
+    if (leftValue !== rightValue) return leftValue - rightValue
+  } else if (leftRank === 5) {
+    const leftValue = leftAnchor == null ? Number.NEGATIVE_INFINITY : leftAnchor
+    const rightValue = rightAnchor == null ? Number.NEGATIVE_INFINITY : rightAnchor
+    if (leftValue !== rightValue) return rightValue - leftValue
+  }
+
+  const leftActivity = activityTime(left)
+  const rightActivity = activityTime(right)
+  if (leftActivity !== rightActivity) return rightActivity - leftActivity
+  return left.id.localeCompare(right.id)
+}
+
+function sortTickets(
+  tickets: DashboardTicketRecord[],
+  sort: TicketWorkbenchSort,
+  queueFacts: Record<string, DashboardTicketQueueFacts>
+) {
   const sorted = [...tickets]
   sorted.sort((left, right) => {
+    if (sort === "queue-priority") {
+      return compareQueuePriorityTickets(left, right, queueFacts)
+    }
     const leftValue = sort.startsWith("opened") ? left.openedOn || 0 : activityTime(left)
     const rightValue = sort.startsWith("opened") ? right.openedOn || 0 : activityTime(right)
     return sort.endsWith("asc") ? leftValue - rightValue : rightValue - leftValue
@@ -503,12 +755,14 @@ function buildActiveFilters(request: TicketWorkbenchListRequest, lookups: Return
   if (request.transport !== "all") filters.push({ label: "Transport", value: transportLabel(request.transport) })
   if (request.feedback !== "all") filters.push({ label: "Feedback", value: feedbackBadge(request.feedback).label })
   if (request.reopened !== "all") filters.push({ label: "Reopened", value: request.reopened === "ever" ? "Ever reopened" : "Never reopened" })
+  if (request.queueState !== "all") filters.push({ label: "Queue", value: queueStateBadge(request.queueState).label })
+  if (request.attention !== "all") filters.push({ label: "Attention", value: attentionBadge(request.attention).label })
   if (request.teamId) filters.push({ label: "Team", value: resolveTeamLabel(lookups.teamById, request.teamId) })
   if (request.assigneeId) filters.push({ label: "Assignee", value: unknownUserLabel(request.assigneeId) })
   if (request.optionId) filters.push({ label: "Option", value: resolveOptionLabel(lookups.optionById, request.optionId) })
   if (request.panelId) filters.push({ label: "Panel", value: labelFromRecord(lookups.panelById.get(request.panelId), `Missing panel (${request.panelId})`) })
   if (request.creatorId) filters.push({ label: "Creator", value: unknownUserLabel(request.creatorId) })
-  if (request.sort !== "activity-desc") filters.push({ label: "Sort", value: request.sort })
+  if (request.sort !== "queue-priority") filters.push({ label: "Sort", value: request.sort })
   if (request.limit !== 25) filters.push({ label: "Rows", value: String(request.limit) })
   return filters
 }
@@ -523,13 +777,18 @@ export function buildTicketWorkbenchListModel(input: {
   telemetrySupported?: boolean
   telemetrySignals?: Record<string, DashboardTicketTelemetrySignals>
   telemetryFilterSignals?: Record<string, DashboardTicketTelemetrySignals>
+  queueLifecycleRecords?: DashboardTicketLifecycleTelemetryRecord[]
+  queueTelemetryAvailable?: boolean
   warningMessage?: string
   telemetryWarningMessage?: string
+  queueWarningMessage?: string
+  now?: number
   writesSupported?: boolean
   qualityReviewHref?: string | null
 }): TicketWorkbenchListModel {
   const lookups = buildConfigLookups(input.configService)
   const telemetrySupported = input.readsSupported && input.telemetrySupported === true
+  const queueWarningMessage = normalizeString(input.queueWarningMessage)
   const effectiveRequest = telemetrySupported
     ? input.request
     : { ...input.request, feedback: "all" as const, reopened: "all" as const }
@@ -539,7 +798,17 @@ export function buildTicketWorkbenchListModel(input: {
   }))
   const telemetrySignals = input.telemetrySignals || {}
   const telemetryFilterSignals = input.telemetryFilterSignals || telemetrySignals
-  const filtered = sortTickets(applyListFilters(normalizedTickets, effectiveRequest, lookups, telemetryFilterSignals, telemetrySupported), effectiveRequest.sort)
+  const queueFacts = buildDashboardTicketQueueFactsMap(normalizedTickets, {
+    lifecycleRecords: input.queueLifecycleRecords || [],
+    lifecycleAvailable: input.queueTelemetryAvailable !== false,
+    unavailableReason: queueWarningMessage || null,
+    now: input.now
+  })
+  const filtered = sortTickets(
+    applyListFilters(normalizedTickets, effectiveRequest, lookups, telemetryFilterSignals, telemetrySupported, queueFacts),
+    effectiveRequest.sort,
+    queueFacts
+  )
   const totalPages = Math.max(1, Math.ceil(filtered.length / effectiveRequest.limit))
   const page = Math.min(effectiveRequest.page, totalPages)
   const startIndex = (page - 1) * effectiveRequest.limit
@@ -554,6 +823,7 @@ export function buildTicketWorkbenchListModel(input: {
     const channelNameLabel = normalizeString(ticket.channelName) || normalizeString(ticket.channelSuffix) || ticket.id
     const detailHref = `${joinBasePath(input.basePath, `admin/tickets/${encodeURIComponent(ticket.id)}`)}?returnTo=${encodeURIComponent(currentHref)}`
     const telemetry = ticketTelemetrySignal(telemetrySignals, ticket.id)
+    const queue = queueFacts[ticket.id] || projectDashboardTicketQueueFacts(ticket, { now: input.now })
     return {
       item: {
         id: ticket.id,
@@ -565,6 +835,9 @@ export function buildTicketWorkbenchListModel(input: {
         transportLabel: transportLabel(ticket.transportMode),
         channelNameLabel,
         statusBadge: statusBadge(ticket),
+        queueStateBadge: queueStateBadge(queue.queueState),
+        attentionBadges: queue.attention.map(attentionBadge),
+        queueAnchorLabel: formatDate(queue.queueAnchorAt),
         feedbackBadge: telemetrySupported ? feedbackBadge(telemetry.latestFeedbackStatus) : null,
         reopenBadge: telemetrySupported && telemetry.reopenCount > 0 ? { label: `Reopened x${telemetry.reopenCount}`, tone: "warning" as DashboardTone } : null,
         openedLabel: formatDate(ticket.openedOn),
@@ -579,6 +852,8 @@ export function buildTicketWorkbenchListModel(input: {
           teamLabel,
           assigneeLabel,
           ticket.transportMode || "",
+          queue.queueState,
+          ...queue.attention,
           telemetrySupported ? telemetry.latestFeedbackStatus : "",
           telemetrySupported && telemetry.hasEverReopened ? "reopened" : ""
         ].join(" ").toLowerCase()
@@ -611,6 +886,7 @@ export function buildTicketWorkbenchListModel(input: {
     available: input.readsSupported,
     warningMessage: input.warningMessage || "",
     telemetryWarningMessage: input.telemetryWarningMessage || "",
+    queueWarningMessage,
     filterAction: joinBasePath(input.basePath, "admin/tickets"),
     clearFiltersHref: joinBasePath(input.basePath, "admin/tickets"),
     currentHref,
@@ -636,6 +912,7 @@ export function buildTicketWorkbenchListModel(input: {
       cards: [
         { label: "Visible", value: String(filtered.length), tone: filtered.length > 0 ? "success" : "muted" },
         { label: "Open", value: String(filtered.filter((ticket) => ticket.open).length), tone: "warning" },
+        { label: "Attention", value: String(filtered.filter((ticket) => (queueFacts[ticket.id]?.attention.length || 0) > 0).length), tone: filtered.some((ticket) => (queueFacts[ticket.id]?.attention.length || 0) > 0) ? "warning" : "muted" },
         { label: "Private threads", value: String(filtered.filter((ticket) => ticket.transportMode === "private_thread").length), tone: "muted" },
         { label: "Claimed", value: String(filtered.filter((ticket) => ticket.claimed).length), tone: "success" }
       ]
