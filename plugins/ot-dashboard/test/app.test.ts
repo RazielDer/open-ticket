@@ -686,6 +686,9 @@ class FakeDashboardElement {
     for (const listener of this.listeners.get(event.type) || []) {
       listener(event)
     }
+    if (event.bubbles && this.parentNode) {
+      this.parentNode.dispatchEvent(event)
+    }
     return !event.defaultPrevented
   }
 
@@ -713,6 +716,13 @@ function findButton(root: FakeDashboardElement, label: string) {
   return root.querySelectorAll("button").find((button) => button.textContent === label)
 }
 
+function collectFakeText(root: FakeDashboardElement): string {
+  return [
+    root.textContent,
+    ...root.children.map((child) => collectFakeText(child))
+  ].filter(Boolean).join(" ")
+}
+
 function dashboardFieldMessages() {
   return {
     fieldTools: {
@@ -733,7 +743,11 @@ function dashboardFieldMessages() {
         copy: "Copy",
         clear: "Clear",
         cleanupList: "Clean up list",
-        expand: "Expand"
+        expand: "Expand",
+        count: "{count} ID(s)",
+        duplicates: "Duplicate entries: {values}",
+        invalidShape: "Check ID shape: {values}",
+        cleaned: "List cleaned"
       }
     }
   }
@@ -1598,20 +1612,33 @@ test("json editor visible toolbar strings come from the locale payload", () => {
 })
 
 test("field tools clean up opted-in id lists, keep values as strings, and honor opt-out and secret guards", () => {
-  const idList = createFieldToolsHarness("id-list", " 123456789012345678 \n\n234567890123456789,\n 345678901234567890 ")
+  const idList = createFieldToolsHarness("id-list", " 123456789012345678 \n\n234567890123456789,\n 345678901234567890\n234567890123456789\nbad-id ")
   let inputEvents = 0
+  let bubbledEvents = 0
   idList.textarea.addEventListener("input", () => {
     inputEvents += 1
   })
+  idList.root.addEventListener("input", (event) => {
+    if (event.bubbles) bubbledEvents += 1
+  })
+
+  assert.match(collectFakeText(idList.root), /4 ID\(s\)/)
+  assert.match(collectFakeText(idList.root), /Duplicate entries: 234567890123456789/)
+  assert.match(collectFakeText(idList.root), /Check ID shape: bad-id/)
 
   findButton(idList.root, "Clean up list")?.dispatchEvent(new FakeDashboardEvent("click"))
-  assert.equal(idList.textarea.value, "123456789012345678\n234567890123456789\n345678901234567890")
+  assert.equal(idList.textarea.value, "123456789012345678\n234567890123456789\n345678901234567890\nbad-id")
   assert.deepEqual(idList.textarea.value.split("\n"), [
     "123456789012345678",
     "234567890123456789",
-    "345678901234567890"
+    "345678901234567890",
+    "bad-id"
   ])
   assert.equal(inputEvents, 1)
+  assert.equal(bubbledEvents, 1)
+  assert.match(collectFakeText(idList.root), /4 ID\(s\)/)
+  assert.doesNotMatch(collectFakeText(idList.root), /Duplicate entries/)
+  assert.match(collectFakeText(idList.root), /Check ID shape: bad-id/)
 
   const optedOut = createFieldToolsHarness("none", " 123 ")
   assert.equal(Boolean(findButton(optedOut.root, "Clean up list")), false)
@@ -1619,7 +1646,11 @@ test("field tools clean up opted-in id lists, keep values as strings, and honor 
   for (const attributes of [
     { name: "apiToken", "data-field-tools-copy": "true" },
     { name: "providerApiKey", "data-field-tools-copy": "true" },
-    { id: "bearerHeader", "data-field-tools-copy": "true" }
+    { id: "bearerHeader", "data-field-tools-copy": "true" },
+    { name: "csrfToken" },
+    { type: "password" },
+    { readonly: "readonly" },
+    { disabled: "disabled" }
   ] as Array<Record<string, string>>) {
     const secretShaped = createFieldToolsHarness("id-list", "secret-value", attributes)
     assert.equal(Boolean(findButton(secretShaped.root, "Copy")), false)
@@ -2300,6 +2331,13 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.ok(csrfToken.length > 0)
   assert.match(securityHtml, /Security workspace/)
   assert.match(securityHtml, /Secret readiness/)
+  assert.match(securityHtml, /Admin users/)
+  assert.match(securityHtml, /Admin roles/)
+  assert.match(securityHtml, /Breakglass/)
+  assert.match(securityHtml, /Owner override/)
+  assert.match(securityHtml, /Reviewer/)
+  assert.match(securityHtml, /Editor/)
+  assert.match(securityHtml, /Full admin-host configuration access/)
   for (const fieldName of [
     "rbac.ownerUserIds",
     "rbac.roleIds.reviewer",
@@ -2311,6 +2349,7 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   ]) {
     assert.match(securityHtml, new RegExp(`name="${fieldName.replace(/[.]/g, "\\.")}"[^>]*data-field-tools="id-list"`))
   }
+  assert.doesNotMatch(securityHtml, /name="rbac\.roleIds\.owner"/)
   assert.doesNotMatch(securityHtml, /name="sessionSecret"/)
   assert.doesNotMatch(securityHtml, /name="auth\.breakglass\.passwordHash"/)
   assert.doesNotMatch(securityHtml, /name="auth\.discord\.clientSecret"/)
@@ -2320,6 +2359,21 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
 
   const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
   const beforeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
+
+  const missingCsrfResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      publicBaseUrl: "https://blocked.example"
+    }).toString()
+  })
+  const missingCsrfBody = await missingCsrfResponse.text()
+  assert.equal(missingCsrfResponse.status, 403)
+  assert.match(missingCsrfBody, /Invalid CSRF token/)
 
   const saveResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
     method: "POST",
@@ -2333,20 +2387,22 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
       publicBaseUrl: "https://admin.example",
       viewerPublicBaseUrl: "https://records.example",
       trustProxyHops: "3",
-      "rbac.ownerUserIds": " 100000000000000001 \n\n100000000000000002 ",
+      "rbac.ownerUserIds": " 100000000000000001,100000000000000002\n100000000000000001 ",
       "rbac.roleIds.reviewer": "200000000000000001",
       "rbac.roleIds.editor": "200000000000000002",
-      "rbac.roleIds.admin": "200000000000000003",
+      "rbac.roleIds.admin": "200000000000000003, 200000000000000004",
       "rbac.userIds.reviewer": "300000000000000001",
       "rbac.userIds.editor": "300000000000000002",
-      "rbac.userIds.admin": "admin-user\n\n 300000000000000003 ",
+      "rbac.userIds.admin": "admin-user, 300000000000000003\n300000000000000003 ",
       "auth.breakglass.enabled": "true"
     }).toString()
   })
   await saveResponse.arrayBuffer()
 
   assert.equal(saveResponse.status, 302)
-  assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /Saved security settings/)
+  const saveLocation = String(saveResponse.headers.get("location") || "")
+  assert.match(decodeURIComponent(saveLocation), /Saved security settings/)
+  assert.match(decodeURIComponent(saveLocation), /backupId=security-backup-/)
 
   const savedConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
   assert.equal(savedConfig.publicBaseUrl, "https://admin.example")
@@ -2355,13 +2411,21 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.deepEqual(savedConfig.rbac.ownerUserIds, ["100000000000000001", "100000000000000002"])
   assert.deepEqual(savedConfig.rbac.roleIds.reviewer, ["200000000000000001"])
   assert.deepEqual(savedConfig.rbac.roleIds.editor, ["200000000000000002"])
-  assert.deepEqual(savedConfig.rbac.roleIds.admin, ["200000000000000003"])
+  assert.deepEqual(savedConfig.rbac.roleIds.admin, ["200000000000000003", "200000000000000004"])
   assert.deepEqual(savedConfig.rbac.userIds.reviewer, ["300000000000000001"])
   assert.deepEqual(savedConfig.rbac.userIds.editor, ["300000000000000002"])
   assert.deepEqual(savedConfig.rbac.userIds.admin, ["admin-user", "300000000000000003"])
   assert.equal(savedConfig.auth.breakglass.enabled, true)
   assert.equal(savedConfig.auth.sessionSecret, beforeConfig.auth.sessionSecret)
   assert.equal(savedConfig.auth.passwordHash, beforeConfig.auth.passwordHash)
+
+  const savedFlashResponse = await fetch(`${runtime.baseUrl}${saveLocation}`, {
+    headers: { cookie }
+  })
+  const savedFlashHtml = await savedFlashResponse.text()
+  assert.equal(savedFlashResponse.status, 200)
+  assert.match(savedFlashHtml, /Saved security settings\./)
+  assert.match(savedFlashHtml, /Backup security-backup-/)
 
   const savedSecurityResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
     headers: { cookie }

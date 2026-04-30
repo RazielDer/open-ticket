@@ -409,6 +409,40 @@ function normalizeUniqueStringEntries(input: unknown): string[] {
   return normalized
 }
 
+function parseSecurityStringArray(input: unknown): string[] {
+  const normalize = (items: unknown[]) => items
+    .flatMap((item) => String(item).split(/\r?\n|,/))
+    .map((item) => item.trim())
+    .filter(Boolean)
+  if (Array.isArray(input)) return normalize(input)
+  if (typeof input === "string" && input.trim().length > 0) {
+    const trimmed = input.trim()
+    try {
+      const parsed = trimmed.startsWith("[") ? JSON.parse(trimmed) : null
+      if (Array.isArray(parsed)) return normalize(parsed)
+    } catch {}
+    return normalize([input])
+  }
+  return []
+}
+
+function normalizeUniqueSecurityStringEntries(input: unknown): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const entry of parseSecurityStringArray(input)) {
+    const value = String(entry || "").trim()
+    if (!value || seen.has(value)) {
+      continue
+    }
+
+    seen.add(value)
+    normalized.push(value)
+  }
+
+  return normalized
+}
+
 function normalizeTicketOptionTranscriptRoutingConfig(input: unknown) {
   if (!isPlainObject(input)) {
     return {
@@ -1666,7 +1700,7 @@ export function createConfigService(
     fs.renameSync(tempPath, dashboardConfigPath)
   }
 
-  const normalizeSecurityStringList = (value: unknown) => normalizeUniqueStringEntries(value)
+  const normalizeSecurityStringList = (value: unknown) => normalizeUniqueSecurityStringEntries(value)
 
   const normalizeSecuritySnapshot = (value: Partial<DashboardConfig>) => ({
     publicBaseUrl: normalizeDashboardPublicBaseUrl(value.publicBaseUrl),

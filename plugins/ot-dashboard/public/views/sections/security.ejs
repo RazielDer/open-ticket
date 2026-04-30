@@ -1,5 +1,9 @@
 <% const values = securityWorkspace.values %>
 
+<% if (securityWorkspace.savedDetail) { %>
+  <div class="inline-alert muted security-save-detail"><%= securityWorkspace.savedDetail %></div>
+<% } %>
+
 <% if (securityWorkspace.warnings.length) { %>
   <div class="entry-stack" style="margin-bottom:16px">
     <% securityWorkspace.warnings.forEach((warning) => { %>
@@ -8,66 +12,78 @@
   </div>
 <% } %>
 
-<form method="post" action="<%= securityWorkspace.formAction %>" class="entry-stack">
+<form method="post" action="<%= securityWorkspace.formAction %>" class="entry-stack security-workspace">
   <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
-
-  <section class="section-card">
-    <div class="section-heading">
-      <h3><%= t("security.sections.routing.title") %></h3>
-    </div>
-    <p class="item-copy"><%= t("security.sections.routing.description") %></p>
-    <div class="form-grid">
-      <label>
-        <span class="field-label"><%= t("security.fields.publicBaseUrl") %></span>
-        <input class="text-input" type="url" name="publicBaseUrl" value="<%= values.publicBaseUrl %>" placeholder="https://dashboard.example">
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.viewerPublicBaseUrl") %></span>
-        <input class="text-input" type="url" name="viewerPublicBaseUrl" value="<%= values.viewerPublicBaseUrl %>" placeholder="https://records.example">
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.trustProxyHops") %></span>
-        <input class="text-input" type="number" min="0" step="1" name="trustProxyHops" value="<%= values.trustProxyHops %>">
-      </label>
-    </div>
-  </section>
 
   <section class="section-card">
     <div class="section-heading">
       <h3><%= t("security.sections.rbac.title") %></h3>
     </div>
     <p class="item-copy"><%= t("security.sections.rbac.description") %></p>
-    <div class="form-grid two-up">
-      <label>
-        <span class="field-label"><%= t("security.fields.ownerUserIds") %></span>
-        <textarea class="text-input" name="rbac.ownerUserIds" rows="4" data-field-tools="id-list"><%= values.ownerUserIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.reviewerRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.reviewer" rows="4" data-field-tools="id-list"><%= values.reviewerRoleIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.editorRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.editor" rows="4" data-field-tools="id-list"><%= values.editorRoleIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.adminRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.admin" rows="4" data-field-tools="id-list"><%= values.adminRoleIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.reviewerUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.reviewer" rows="4" data-field-tools="id-list"><%= values.reviewerUserIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.editorUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.editor" rows="4" data-field-tools="id-list"><%= values.editorUserIds %></textarea>
-      </label>
-      <label>
-        <span class="field-label"><%= t("security.fields.adminUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.admin" rows="4" data-field-tools="id-list"><%= values.adminUserIds %></textarea>
-      </label>
+    <div class="table-wrap security-rbac-wrap">
+      <table class="data-table security-rbac-table">
+        <thead>
+          <tr>
+            <th scope="col"><%= t("security.rbac.accessHeader") %></th>
+            <th scope="col"><%= t("security.rbac.roleHeader") %></th>
+            <th scope="col"><%= t("security.rbac.userHeader") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% securityWorkspace.rbacRows.forEach((row) => { %>
+            <tr>
+              <th scope="row">
+                <strong><%= row.label %></strong>
+                <p class="field-help"><%= row.detail %></p>
+              </th>
+              <td>
+                <% if (row.roleField) { %>
+                  <label class="security-rbac-field">
+                    <span class="field-label"><%= row.roleField.label %></span>
+                    <textarea class="text-input security-id-list" name="<%= row.roleField.name %>" rows="4" data-field-tools="id-list"><%= row.roleField.value %></textarea>
+                    <span class="field-help"><%= row.roleField.countLabel %></span>
+                  </label>
+                <% } else { %>
+                  <p class="field-help security-rbac-not-applicable"><%= t("security.rbac.notApplicable") %></p>
+                <% } %>
+              </td>
+              <td>
+                <label class="security-rbac-field">
+                  <span class="field-label"><%= row.userField.label %></span>
+                  <textarea class="text-input security-id-list" name="<%= row.userField.name %>" rows="4" data-field-tools="id-list"><%= row.userField.value %></textarea>
+                  <span class="field-help"><%= row.userField.countLabel %></span>
+                </label>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
     </div>
     <p class="field-help"><%= t("security.fields.listHelp") %></p>
+  </section>
+
+  <section class="section-card">
+    <div class="section-heading">
+      <h3><%= t("security.sections.routing.title") %></h3>
+    </div>
+    <p class="item-copy"><%= t("security.sections.routing.description") %></p>
+    <div class="form-grid three-up">
+      <label>
+        <span class="field-label"><%= t("security.fields.publicBaseUrl") %></span>
+        <input class="text-input" type="url" name="publicBaseUrl" value="<%= values.publicBaseUrl %>" placeholder="https://dashboard.example">
+        <span class="field-help"><%= t("security.fields.publicBaseUrlHelp") %></span>
+      </label>
+      <label>
+        <span class="field-label"><%= t("security.fields.viewerPublicBaseUrl") %></span>
+        <input class="text-input" type="url" name="viewerPublicBaseUrl" value="<%= values.viewerPublicBaseUrl %>" placeholder="https://records.example">
+        <span class="field-help"><%= t("security.fields.viewerPublicBaseUrlHelp") %></span>
+      </label>
+      <label>
+        <span class="field-label"><%= t("security.fields.trustProxyHops") %></span>
+        <input class="text-input" type="number" min="0" step="1" name="trustProxyHops" value="<%= values.trustProxyHops %>">
+        <span class="field-help"><%= t("security.fields.trustProxyHopsHelp") %></span>
+      </label>
+    </div>
   </section>
 
   <section class="section-card">
@@ -82,7 +98,7 @@
     <p class="field-help"><%= t("security.sections.breakglass.help") %></p>
   </section>
 
-  <section class="section-card">
+  <section class="section-card security-secret-readiness">
     <div class="section-heading">
       <h3><%= t("security.sections.secrets.title") %></h3>
     </div>
@@ -100,7 +116,7 @@
     </div>
   </section>
 
-  <div class="section-card editor-savebar">
+  <div class="section-card editor-savebar security-savebar">
     <div class="editor-savebar-copy">
       <strong><%= t("security.savebar.title") %></strong>
       <p class="field-help"><%= t("security.savebar.body") %></p>

@@ -435,7 +435,7 @@ function recordAdminAuditEvent(
   }).catch(() => {})
 }
 
-function buildSecurityWorkspaceModel(context: DashboardAppContext) {
+function buildSecurityWorkspaceModel(context: DashboardAppContext, req?: express.Request) {
   const { config, basePath, i18n } = context
   const discord = resolveDashboardDiscordAuthConfig(config)
   const warnings = getDashboardSecurityWarnings(config).map((message) => ({
@@ -445,10 +445,123 @@ function buildSecurityWorkspaceModel(context: DashboardAppContext) {
   const sessionSecret = String(config.auth.sessionSecret || "").trim()
   const breakglassHash = String(config.auth.breakglass?.passwordHash || "").trim()
   const breakglassEnabled = config.auth.breakglass?.enabled === true
+  const adminRoleCount = config.rbac.roleIds.admin.length
+  const adminUserCount = config.rbac.userIds.admin.length
+  const ownerOverrideCount = config.rbac.ownerUserIds.length
+  const savedBackupId = typeof req?.query.backupId === "string" ? req.query.backupId.trim() : ""
+  const listField = (name: string, label: string, values: string[]) => ({
+    name,
+    label,
+    value: values.join("\n"),
+    count: values.length,
+    countLabel: i18n.t("security.rbac.count", { count: String(values.length) })
+  })
+  const rbacRows = [
+    {
+      key: "owner",
+      label: i18n.t("security.rbac.rows.owner.label"),
+      detail: i18n.t("security.rbac.rows.owner.detail"),
+      roleField: null,
+      userField: listField("rbac.ownerUserIds", i18n.t("security.fields.ownerUserIds"), config.rbac.ownerUserIds)
+    },
+    {
+      key: "reviewer",
+      label: i18n.t("security.rbac.rows.reviewer.label"),
+      detail: i18n.t("security.rbac.rows.reviewer.detail"),
+      roleField: listField("rbac.roleIds.reviewer", i18n.t("security.fields.reviewerRoleIds"), config.rbac.roleIds.reviewer),
+      userField: listField("rbac.userIds.reviewer", i18n.t("security.fields.reviewerUserIds"), config.rbac.userIds.reviewer)
+    },
+    {
+      key: "editor",
+      label: i18n.t("security.rbac.rows.editor.label"),
+      detail: i18n.t("security.rbac.rows.editor.detail"),
+      roleField: listField("rbac.roleIds.editor", i18n.t("security.fields.editorRoleIds"), config.rbac.roleIds.editor),
+      userField: listField("rbac.userIds.editor", i18n.t("security.fields.editorUserIds"), config.rbac.userIds.editor)
+    },
+    {
+      key: "admin",
+      label: i18n.t("security.rbac.rows.admin.label"),
+      detail: i18n.t("security.rbac.rows.admin.detail"),
+      roleField: listField("rbac.roleIds.admin", i18n.t("security.fields.adminRoleIds"), config.rbac.roleIds.admin),
+      userField: listField("rbac.userIds.admin", i18n.t("security.fields.adminUserIds"), config.rbac.userIds.admin)
+    }
+  ]
+  const breakglassState = breakglassEnabled
+    ? breakglassHash
+      ? {
+        label: i18n.t("security.summary.breakglassEnabled"),
+        detail: i18n.t("security.summary.breakglassReadyDetail"),
+        tone: "success" as DashboardTone
+      }
+      : {
+        label: i18n.t("security.summary.breakglassWarning"),
+        detail: i18n.t("security.summary.breakglassMissingDetail"),
+        tone: "warning" as DashboardTone
+      }
+    : {
+      label: i18n.t("security.summary.breakglassDisabled"),
+      detail: i18n.t("security.summary.breakglassDisabledDetail"),
+      tone: "muted" as DashboardTone
+    }
+  const adminHost = context.config.publicBaseUrl || i18n.t("common.unavailable")
+  const viewerHost = context.config.viewerPublicBaseUrl || i18n.t("common.unavailable")
+  const summary = {
+    adminUsersCount: adminUserCount,
+    adminRolesCount: adminRoleCount,
+    ownerOverridesCount: ownerOverrideCount,
+    warningCount: warnings.length,
+    adminHost,
+    viewerHost,
+    breakglass: breakglassState
+  }
 
   return {
     formAction: joinBasePath(basePath, "admin/security"),
     warnings,
+    savedDetail: savedBackupId
+      ? i18n.t("security.messages.savedBackupDetail", { backupId: savedBackupId })
+      : "",
+    summary,
+    summaryCards: [
+      metricCard(
+        i18n.t("security.summary.adminUsers"),
+        String(adminUserCount),
+        i18n.t("security.summary.adminUsersDetail")
+      ),
+      metricCard(
+        i18n.t("security.summary.adminRoles"),
+        String(adminRoleCount),
+        i18n.t("security.summary.adminRolesDetail")
+      ),
+      metricCard(
+        i18n.t("security.summary.owners"),
+        String(ownerOverrideCount),
+        i18n.t("security.summary.ownersDetail")
+      ),
+      statusCard(
+        i18n.t("security.summary.breakglass"),
+        breakglassState.label,
+        breakglassState.detail,
+        breakglassState.tone
+      ),
+      metricCard(
+        i18n.t("security.summary.warnings"),
+        String(warnings.length),
+        i18n.t("security.summary.warningsDetail"),
+        warnings.length > 0 ? "warning" : "success"
+      ),
+      metricCard(
+        i18n.t("security.summary.adminHost"),
+        adminHost,
+        i18n.t("security.summary.adminHostDetail")
+      ),
+      metricCard(
+        i18n.t("security.summary.viewerHost"),
+        viewerHost,
+        i18n.t("security.summary.viewerHostDetail")
+      )
+    ],
+    rbacRows,
     secrets: [
       {
         title: i18n.t("security.secrets.discord.title"),
@@ -493,13 +606,6 @@ function buildSecurityWorkspaceModel(context: DashboardAppContext) {
       publicBaseUrl: String(config.publicBaseUrl || ""),
       viewerPublicBaseUrl: String(config.viewerPublicBaseUrl || ""),
       trustProxyHops: String(config.trustProxyHops),
-      ownerUserIds: config.rbac.ownerUserIds.join("\n"),
-      reviewerRoleIds: config.rbac.roleIds.reviewer.join("\n"),
-      editorRoleIds: config.rbac.roleIds.editor.join("\n"),
-      adminRoleIds: config.rbac.roleIds.admin.join("\n"),
-      reviewerUserIds: config.rbac.userIds.reviewer.join("\n"),
-      editorUserIds: config.rbac.userIds.editor.join("\n"),
-      adminUserIds: config.rbac.userIds.admin.join("\n"),
       breakglassEnabled
     }
   }
@@ -1285,7 +1391,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
   })
 
   app.get(joinBasePath(basePath, "admin/security"), adminGuard.page("config.write.security"), (req, res) => {
-    const securityWorkspace = buildSecurityWorkspaceModel(context)
+    const securityWorkspace = buildSecurityWorkspaceModel(context, req)
     renderPage(res, "admin-shell", buildAdminShell(context, "advanced", {
       pageTitle: `${i18n.t("security.title")} | ${brand.title}`,
       pageEyebrow: i18n.t("security.eyebrow"),
@@ -1295,29 +1401,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       heroActions: [
         { href: joinBasePath(basePath, "admin/advanced"), label: i18n.t("security.backAction"), variant: "secondary" }
       ],
-      summaryCards: [
-        metricCard(
-          i18n.t("security.summary.adminHost"),
-          context.config.publicBaseUrl || i18n.t("common.unavailable"),
-          i18n.t("security.summary.adminHostDetail")
-        ),
-        metricCard(
-          i18n.t("security.summary.viewerHost"),
-          context.config.viewerPublicBaseUrl || i18n.t("common.unavailable"),
-          i18n.t("security.summary.viewerHostDetail")
-        ),
-        metricCard(
-          i18n.t("security.summary.owners"),
-          String(context.config.rbac.ownerUserIds.length),
-          i18n.t("security.summary.ownersDetail")
-        ),
-        metricCard(
-          i18n.t("security.summary.warnings"),
-          String(securityWorkspace.warnings.length),
-          i18n.t("security.summary.warningsDetail"),
-          securityWorkspace.warnings.length > 0 ? "warning" : "success"
-        )
-      ],
+      summaryCards: securityWorkspace.summaryCards,
       contentView: "sections/security",
       securityWorkspace
     }))
@@ -1349,8 +1433,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         }
       })
       res.redirect(
-        `${joinBasePath(basePath, "admin/security")}?saved=1&msg=${encodeURIComponent(
-          i18n.t("security.messages.saved", { backupId: result.backupId })
+        `${joinBasePath(basePath, "admin/security")}?saved=1&backupId=${encodeURIComponent(result.backupId)}&msg=${encodeURIComponent(
+          i18n.t("security.messages.saved")
         )}`
       )
     } catch (error) {

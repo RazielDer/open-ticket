@@ -1202,6 +1202,27 @@ input[type="radio"] {
   flex-wrap: wrap;
 }
 
+.field-tools-status {
+  min-height: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.field-tools-count,
+.field-tools-warning {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.field-tools-warning {
+  color: var(--warning);
+}
+
 .field-tool-button {
   appearance: none;
   min-height: 34px;
@@ -1228,6 +1249,40 @@ input[type="radio"] {
 .field-tools-shell > .text-input,
 .field-tools-shell > .code-area {
   width: 100%;
+}
+
+.security-rbac-wrap .data-table {
+  min-width: 820px;
+}
+
+.security-rbac-table th[scope="row"] {
+  width: 190px;
+}
+
+.security-rbac-field {
+  display: grid;
+  gap: 6px;
+}
+
+.security-rbac-field .field-label {
+  margin-bottom: 0;
+}
+
+.security-id-list {
+  min-height: 116px;
+  resize: vertical;
+}
+
+.security-rbac-not-applicable {
+  margin: 0;
+}
+
+.security-save-detail {
+  margin-bottom: 16px;
+}
+
+.security-secret-readiness .item-card {
+  opacity: 0.86;
 }
 
 .plugin-workbench,

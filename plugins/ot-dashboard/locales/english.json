@@ -59,7 +59,11 @@
       "copy": "Copy",
       "clear": "Clear",
       "cleanupList": "Clean up list",
-      "expand": "Expand"
+      "expand": "Expand",
+      "count": "{count} ID(s)",
+      "duplicates": "Duplicate entries: {values}",
+      "invalidShape": "Check ID shape: {values}",
+      "cleaned": "List cleaned"
     }
   },
   "nav": {
@@ -631,12 +635,23 @@
     "subtitle": "Only non-secret host routing and RBAC fields are editable here. Secrets stay read-only, and runtime backup plus audit records are created before apply.",
     "backAction": "Back to Advanced",
     "summary": {
+      "adminUsers": "Admin users",
+      "adminUsersDetail": "Direct admin user mappings.",
+      "adminRoles": "Admin roles",
+      "adminRolesDetail": "Discord roles with admin access.",
       "adminHost": "Admin host",
       "adminHostDetail": "Canonical URL for the admin host.",
       "viewerHost": "Viewer host",
       "viewerHostDetail": "Canonical URL for the viewer host.",
       "owners": "Owner IDs",
       "ownersDetail": "Seeded owner overrides for admin access.",
+      "breakglass": "Breakglass",
+      "breakglassEnabled": "Enabled",
+      "breakglassWarning": "Enabled, missing hash",
+      "breakglassDisabled": "Disabled",
+      "breakglassReadyDetail": "Emergency fallback has a configured hash.",
+      "breakglassMissingDetail": "Fallback is enabled but no hash is configured.",
+      "breakglassDisabledDetail": "Emergency fallback is not active.",
       "warnings": "Warnings",
       "warningsDetail": "Current dashboard exposure and readiness checks."
     },
@@ -671,7 +686,35 @@
       "editorUserIds": "Editor user IDs",
       "adminUserIds": "Admin user IDs",
       "breakglassEnabled": "Enable breakglass fallback",
-      "listHelp": "Enter one ID per line or separate values with commas."
+      "listHelp": "Enter one ID per line or separate values with commas.",
+      "publicBaseUrlHelp": "Absolute http or https URL for the admin host.",
+      "viewerPublicBaseUrlHelp": "Optional absolute http or https URL for private transcript viewers.",
+      "trustProxyHopsHelp": "Set the trusted reverse-proxy hop count before exposing a non-loopback host."
+    },
+    "rbac": {
+      "accessHeader": "Access",
+      "roleHeader": "Role IDs",
+      "userHeader": "User IDs",
+      "notApplicable": "Owner access uses user IDs only.",
+      "count": "{count} ID(s)",
+      "rows": {
+        "owner": {
+          "label": "Owner override",
+          "detail": "Bootstrap access for trusted operators."
+        },
+        "reviewer": {
+          "label": "Reviewer",
+          "detail": "Read-focused dashboard and review access."
+        },
+        "editor": {
+          "label": "Editor",
+          "detail": "Operational dashboard editing access."
+        },
+        "admin": {
+          "label": "Admin",
+          "detail": "Full admin-host configuration access."
+        }
+      }
     },
     "secrets": {
       "ready": "Ready",
@@ -700,7 +743,8 @@
     },
     "messages": {
       "preApplyBackup": "Pre-apply backup for dashboard security workspace",
-      "saved": "Saved security settings. Backup {backupId} created."
+      "saved": "Saved security settings.",
+      "savedBackupDetail": "Backup {backupId} created and audit evidence recorded."
     }
   },
   "editor": {
