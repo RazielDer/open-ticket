@@ -6,7 +6,11 @@ import * as discord from "discord.js"
 import { resolveTicketIntegrationActionLock } from "./ticketIntegration.js"
 import { appendTicketTelemetryLifecycleEvent, snapshotTicketForTelemetry } from "./ticketTelemetry.js"
 
-const generalConfig = opendiscord.configs.get("opendiscord:general")
+const getGeneralConfig = () => {
+    const generalConfig = opendiscord.configs.get("opendiscord:general")
+    if (!generalConfig) throw new Error("Ticket workflow requires opendiscord:general config to be loaded.")
+    return generalConfig
+}
 
 export type TicketWorkflowAction =
     "request-close" |
@@ -208,6 +212,7 @@ export async function resolveCreatorDirectCloseAvailability(guild: discord.Guild
         if (!creator) return null
         const member = await guild.members.fetch(creatorId).catch(() => null)
         if (!member) return null
+        const generalConfig = getGeneralConfig()
         const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",creator,member,channel,guild)
         if (!permsResult || typeof permsResult.hasPerms != "boolean") return null
         return permsResult.hasPerms
@@ -224,6 +229,7 @@ export async function verifyTicketCloseRequestApproval(
     ticket: api.ODTicket
 ): Promise<CloseRequestApprovalVerificationResult> {
     const checkedMember = member ?? await guild.members.fetch(user.id).catch(() => null)
+    const generalConfig = getGeneralConfig()
     const permsResult = await opendiscord.permissions.checkCommandPerms(generalConfig.data.system.permissions.close,"support",user,checkedMember,channel,guild)
     if (!permsResult?.hasPerms){
         return {
@@ -545,6 +551,7 @@ export const registerActions = async () => {
 }
 
 export const registerVerifyBars = async () => {
+    const generalConfig = getGeneralConfig()
     opendiscord.verifybars.add(new api.ODVerifyBar("opendiscord:approve-close-request-message",opendiscord.builders.messages.getSafe("opendiscord:verifybar-close-request-message"),!generalConfig.data.system.disableVerifyBars))
     const approveCloseRequestVerifybar = opendiscord.verifybars.get("opendiscord:approve-close-request-message")
     if (!approveCloseRequestVerifybar) return

@@ -307,7 +307,7 @@ export function buildAdvancedWorkspaceModel(context: DashboardAppContext) {
         description: context.i18n.t("advanced.sections.editors.description"),
         items: configItems.map((item) => ({
           id: item.id,
-          title: context.i18n.t(`setup.areas.${item.id}.label`),
+          title: context.i18n.t(item.titleKey),
           description: context.i18n.t(`advanced.sections.editors.items.${item.id}`),
           href: item.rawHref
         }))

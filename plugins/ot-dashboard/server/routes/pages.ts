@@ -476,7 +476,7 @@ export function registerPageRoutes(app: express.Express, context: DashboardAppCo
     }
 
     renderRawEditor(res, definition, context, {
-      jsonText: configService.prettifyText(configService.readManagedText(definition.id)),
+      jsonText: configService.prettifyText(configService.readManagedDisplayText(definition.id)),
       saved: savedFlag(req)
     })
   })

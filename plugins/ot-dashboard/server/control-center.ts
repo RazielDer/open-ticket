@@ -314,7 +314,7 @@ export function buildParityWarnings(id: ManagedConfigId) {
 }
 
 export function buildConfigDetailModel(context: DashboardAppContext, definition: ManagedConfigDefinition, textOverride?: string) {
-  const text = textOverride ?? context.configService.prettifyText(context.configService.readManagedText(definition.id))
+  const text = textOverride ?? context.configService.prettifyText(context.configService.readManagedDisplayText(definition.id))
   let value: any = null
   try {
     value = JSON.parse(text)
@@ -521,12 +521,13 @@ export function buildPluginAssetDetailModel(
 }
 
 export function buildVerificationCards(projectRoot: string) {
-  const verificationPath = path.resolve(projectRoot, "evidence", "ot-dashboard-plugin-self-containment-verification.md")
+  const verificationFile = path.join("evidence", "ot-dashboard-plugin-self-containment-verification.md")
+  const verificationPath = path.resolve(projectRoot, verificationFile)
   const exists = fs.existsSync(verificationPath)
   const updatedAt = exists ? formatDate(fs.statSync(verificationPath).mtime.toISOString()) : "Not written yet"
 
   return {
-    verificationPath,
+    verificationPath: verificationFile,
     exists,
     updatedAt,
     commands: [

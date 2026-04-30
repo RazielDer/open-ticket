@@ -92,10 +92,11 @@
         <%- include(contentView) %>
       </main>
 
-      <%- include('partials/footer') %>
+  <%- include('partials/footer') %>
     </div>
   </div>
   <script src="<%= assetPath('js/dashboard-ui.js') %>"></script>
+  <script src="<%= assetPath('js/field-tools.js') %>"></script>
   <% if (includeJsonEditor) { %>
     <script src="<%= assetPath('js/vendor/codemirror-json.js') %>"></script>
     <script src="<%= assetPath('js/json-editor.js') %>"></script>

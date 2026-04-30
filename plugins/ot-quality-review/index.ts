@@ -43,33 +43,39 @@ declare module "#opendiscord-types" {
 }
 
 class OTQualityReviewPluginService extends api.ODManagerData {
-    private readonly service: OTQualityReviewService
+    private service: OTQualityReviewService | null = null
     private backgroundTimer: NodeJS.Timeout | null = null
     private lastRawFeedbackSweepAt = 0
     private lastReminderScanAt = 0
 
     constructor() {
         super(SERVICE_ID)
-        this.service = new OTQualityReviewService({
-            database: opendiscord.databases.get("opendiscord:global"),
-            assetRoot: "./runtime/ot-quality-review/assets",
-            config: readConfig()
-        })
+    }
+
+    private getQualityReviewService(config = readConfig()) {
+        if (!this.service) {
+            const database = opendiscord.databases.get("opendiscord:global")
+            if (!database) throw new Error("Quality review requires opendiscord:global database to be loaded.")
+            this.service = new OTQualityReviewService({
+                database,
+                assetRoot: "./runtime/ot-quality-review/assets",
+                config
+            })
+        }
+        this.service.updateConfig(config)
+        return this.service
     }
 
     restore() {
-        this.service.updateConfig(readConfig())
-        return this.service.restore()
+        return this.getQualityReviewService().restore()
     }
 
     async sweepExpiredRawFeedback() {
-        this.service.updateConfig(readConfig())
-        return await this.service.sweepExpiredRawFeedback()
+        return await this.getQualityReviewService().sweepExpiredRawFeedback()
     }
 
     async runNotificationCycle(now = Date.now()) {
-        this.service.updateConfig(readConfig())
-        return await this.service.runNotificationCycle({
+        return await this.getQualityReviewService().runNotificationCycle({
             tickets: await collectQualityReviewNotificationSignals(),
             now,
             queueHref: buildDashboardQualityReviewQueueHref(),
@@ -89,10 +95,10 @@ class OTQualityReviewPluginService extends api.ODManagerData {
 
     async runBackgroundTick(now = Date.now()) {
         const config = readConfig()
-        this.service.updateConfig(config)
+        const service = this.getQualityReviewService(config)
         if (now - this.lastRawFeedbackSweepAt >= SWEEP_INTERVAL_MS) {
             this.lastRawFeedbackSweepAt = now
-            await this.service.sweepExpiredRawFeedback(now)
+            await service.sweepExpiredRawFeedback(now)
         }
         if (!config.notificationsEnabled) return null
         if (now - this.lastReminderScanAt < config.reminderCheckMinutes * BACKGROUND_TICK_MS) return null
@@ -101,33 +107,27 @@ class OTQualityReviewPluginService extends api.ODManagerData {
     }
 
     captureFeedbackPayload(payload: { session?: unknown; responses?: unknown[] }) {
-        this.service.updateConfig(readConfig())
-        return this.service.captureFeedbackPayload(payload as any)
+        return this.getQualityReviewService().captureFeedbackPayload(payload as any)
     }
 
     listDashboardQualityReviewCases(input: Parameters<OTQualityReviewService["listDashboardQualityReviewCases"]>[0]) {
-        this.service.updateConfig(readConfig())
-        return this.service.listDashboardQualityReviewCases(input)
+        return this.getQualityReviewService().listDashboardQualityReviewCases(input)
     }
 
     getDashboardQualityReviewCase(ticketId: string, signal?: Parameters<OTQualityReviewService["getDashboardQualityReviewCase"]>[1]) {
-        this.service.updateConfig(readConfig())
-        return this.service.getDashboardQualityReviewCase(ticketId, signal)
+        return this.getQualityReviewService().getDashboardQualityReviewCase(ticketId, signal)
     }
 
     runDashboardQualityReviewAction(input: Parameters<OTQualityReviewService["runDashboardQualityReviewAction"]>[0]) {
-        this.service.updateConfig(readConfig())
-        return this.service.runDashboardQualityReviewAction(input)
+        return this.getQualityReviewService().runDashboardQualityReviewAction(input)
     }
 
     resolveQualityReviewAsset(ticketId: string, sessionId: string, assetId: string) {
-        this.service.updateConfig(readConfig())
-        return this.service.resolveQualityReviewAsset(ticketId, sessionId, assetId)
+        return this.getQualityReviewService().resolveQualityReviewAsset(ticketId, sessionId, assetId)
     }
 
     getDashboardQualityReviewNotificationStatus(input?: Parameters<OTQualityReviewService["getDashboardQualityReviewNotificationStatus"]>[0]) {
-        this.service.updateConfig(readConfig())
-        return this.service.getDashboardQualityReviewNotificationStatus(input)
+        return this.getQualityReviewService().getDashboardQualityReviewNotificationStatus(input)
     }
 }
 

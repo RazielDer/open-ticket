@@ -159,7 +159,11 @@
                 <div class="form-grid two-up general-connection-primary">
                   <label class="general-token-field">
                     <span class="field-label"><%= t("general.fields.token") %></span>
-                    <input class="text-input" type="text" name="token" value="<%= config.token || '' %>">
+                    <input class="text-input" type="password" name="token" value="" placeholder="<%= config.token ? t('general.fields.tokenConfiguredPlaceholder') : '' %>" autocomplete="new-password">
+                  </label>
+                  <label class="checkbox-field general-token-clear">
+                    <input type="checkbox" name="tokenClear">
+                    <span><%= t("general.fields.tokenClear") %></span>
                   </label>
                   <label class="checkbox-field general-token-source">
                     <input type="checkbox" name="tokenFromENV" <%= config.tokenFromENV ? 'checked' : '' %>>

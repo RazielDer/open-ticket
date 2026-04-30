@@ -23,22 +23,28 @@ declare module "#opendiscord-types" {
 }
 
 class OTTelemetryPluginService extends api.ODManagerData {
-    private readonly service: OTTelemetryService
+    private service: OTTelemetryService | null = null
     private readonly previousSnapshots = new Map<string, OTTelemetryTicketSnapshot>()
 
     constructor() {
         super(SERVICE_ID)
-        this.service = new OTTelemetryService({
-            database: opendiscord.databases.get("opendiscord:global")
-        })
+    }
+
+    private getTelemetryService() {
+        if (!this.service) {
+            const database = opendiscord.databases.get("opendiscord:global")
+            if (!database) throw new Error("Telemetry requires opendiscord:global database to be loaded.")
+            this.service = new OTTelemetryService({ database })
+        }
+        return this.service
     }
 
     restore() {
-        return this.service.restore()
+        return this.getTelemetryService().restore()
     }
 
     snapshotTicket(ticket: TelemetryTicketLike | null | undefined) {
-        return this.service.createTicketSnapshot(ticket)
+        return this.getTelemetryService().createTicketSnapshot(ticket)
     }
 
     capturePreviousSnapshot(eventType: OTTelemetryLifecycleEventType, ticket: TelemetryTicketLike) {
@@ -59,19 +65,19 @@ class OTTelemetryPluginService extends api.ODManagerData {
     }
 
     appendLifecycleEvent(input: Parameters<OTTelemetryService["appendLifecycleEvent"]>[0]) {
-        return this.service.appendLifecycleEvent(input)
+        return this.getTelemetryService().appendLifecycleEvent(input)
     }
 
     storeFeedbackSession(payload: OTTelemetryFeedbackPayload<any>, input: Parameters<OTTelemetryService["storeFeedbackSession"]>[1] = {}) {
-        return this.service.storeFeedbackSession(payload, input)
+        return this.getTelemetryService().storeFeedbackSession(payload, input)
     }
 
     listLifecycleHistory(filters?: Parameters<OTTelemetryService["listLifecycleHistory"]>[0]) {
-        return this.service.listLifecycleHistory(filters)
+        return this.getTelemetryService().listLifecycleHistory(filters)
     }
 
     listFeedbackHistory(filters?: Parameters<OTTelemetryService["listFeedbackHistory"]>[0]) {
-        return this.service.listFeedbackHistory(filters)
+        return this.getTelemetryService().listFeedbackHistory(filters)
     }
 }
 

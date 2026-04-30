@@ -40,31 +40,31 @@
     <div class="form-grid two-up">
       <label>
         <span class="field-label"><%= t("security.fields.ownerUserIds") %></span>
-        <textarea class="text-input" name="rbac.ownerUserIds" rows="4"><%= values.ownerUserIds %></textarea>
+        <textarea class="text-input" name="rbac.ownerUserIds" rows="4" data-field-tools="id-list"><%= values.ownerUserIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.reviewerRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.reviewer" rows="4"><%= values.reviewerRoleIds %></textarea>
+        <textarea class="text-input" name="rbac.roleIds.reviewer" rows="4" data-field-tools="id-list"><%= values.reviewerRoleIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.editorRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.editor" rows="4"><%= values.editorRoleIds %></textarea>
+        <textarea class="text-input" name="rbac.roleIds.editor" rows="4" data-field-tools="id-list"><%= values.editorRoleIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.adminRoleIds") %></span>
-        <textarea class="text-input" name="rbac.roleIds.admin" rows="4"><%= values.adminRoleIds %></textarea>
+        <textarea class="text-input" name="rbac.roleIds.admin" rows="4" data-field-tools="id-list"><%= values.adminRoleIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.reviewerUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.reviewer" rows="4"><%= values.reviewerUserIds %></textarea>
+        <textarea class="text-input" name="rbac.userIds.reviewer" rows="4" data-field-tools="id-list"><%= values.reviewerUserIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.editorUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.editor" rows="4"><%= values.editorUserIds %></textarea>
+        <textarea class="text-input" name="rbac.userIds.editor" rows="4" data-field-tools="id-list"><%= values.editorUserIds %></textarea>
       </label>
       <label>
         <span class="field-label"><%= t("security.fields.adminUserIds") %></span>
-        <textarea class="text-input" name="rbac.userIds.admin" rows="4"><%= values.adminUserIds %></textarea>
+        <textarea class="text-input" name="rbac.userIds.admin" rows="4" data-field-tools="id-list"><%= values.adminUserIds %></textarea>
       </label>
     </div>
     <p class="field-help"><%= t("security.fields.listHelp") %></p>

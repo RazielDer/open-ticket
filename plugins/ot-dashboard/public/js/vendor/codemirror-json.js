@@ -12715,6 +12715,278 @@
   var showTooltip = /* @__PURE__ */ Facet.define({
     enables: [tooltipPlugin, baseTheme]
   });
+  var showHoverTooltip = /* @__PURE__ */ Facet.define({
+    combine: (inputs) => inputs.reduce((a, i) => a.concat(i), [])
+  });
+  var HoverTooltipHost = class _HoverTooltipHost {
+    // Needs to be static so that host tooltip instances always match
+    static create(view) {
+      return new _HoverTooltipHost(view);
+    }
+    constructor(view) {
+      this.view = view;
+      this.mounted = false;
+      this.dom = document.createElement("div");
+      this.dom.classList.add("cm-tooltip-hover");
+      this.manager = new TooltipViewManager(view, showHoverTooltip, (t2, p) => this.createHostedView(t2, p), (t2) => t2.dom.remove());
+    }
+    createHostedView(tooltip, prev) {
+      let hostedView = tooltip.create(this.view);
+      hostedView.dom.classList.add("cm-tooltip-section");
+      this.dom.insertBefore(hostedView.dom, prev ? prev.dom.nextSibling : this.dom.firstChild);
+      if (this.mounted && hostedView.mount)
+        hostedView.mount(this.view);
+      return hostedView;
+    }
+    mount(view) {
+      for (let hostedView of this.manager.tooltipViews) {
+        if (hostedView.mount)
+          hostedView.mount(view);
+      }
+      this.mounted = true;
+    }
+    positioned(space) {
+      for (let hostedView of this.manager.tooltipViews) {
+        if (hostedView.positioned)
+          hostedView.positioned(space);
+      }
+    }
+    update(update) {
+      this.manager.update(update);
+    }
+    destroy() {
+      var _a2;
+      for (let t2 of this.manager.tooltipViews)
+        (_a2 = t2.destroy) === null || _a2 === void 0 ? void 0 : _a2.call(t2);
+    }
+    passProp(name2) {
+      let value = void 0;
+      for (let view of this.manager.tooltipViews) {
+        let given = view[name2];
+        if (given !== void 0) {
+          if (value === void 0)
+            value = given;
+          else if (value !== given)
+            return void 0;
+        }
+      }
+      return value;
+    }
+    get offset() {
+      return this.passProp("offset");
+    }
+    get getCoords() {
+      return this.passProp("getCoords");
+    }
+    get overlap() {
+      return this.passProp("overlap");
+    }
+    get resize() {
+      return this.passProp("resize");
+    }
+  };
+  var showHoverTooltipHost = /* @__PURE__ */ showTooltip.compute([showHoverTooltip], (state) => {
+    let tooltips = state.facet(showHoverTooltip);
+    if (tooltips.length === 0)
+      return null;
+    return {
+      pos: Math.min(...tooltips.map((t2) => t2.pos)),
+      end: Math.max(...tooltips.map((t2) => {
+        var _a2;
+        return (_a2 = t2.end) !== null && _a2 !== void 0 ? _a2 : t2.pos;
+      })),
+      create: HoverTooltipHost.create,
+      above: tooltips[0].above,
+      arrow: tooltips.some((t2) => t2.arrow)
+    };
+  });
+  var HoverPlugin = class {
+    constructor(view, source, field, setHover, hoverTime) {
+      this.view = view;
+      this.source = source;
+      this.field = field;
+      this.setHover = setHover;
+      this.hoverTime = hoverTime;
+      this.hoverTimeout = -1;
+      this.restartTimeout = -1;
+      this.pending = null;
+      this.lastMove = { x: 0, y: 0, target: view.dom, time: 0 };
+      this.checkHover = this.checkHover.bind(this);
+      view.dom.addEventListener("mouseleave", this.mouseleave = this.mouseleave.bind(this));
+      view.dom.addEventListener("mousemove", this.mousemove = this.mousemove.bind(this));
+    }
+    update() {
+      if (this.pending) {
+        this.pending = null;
+        clearTimeout(this.restartTimeout);
+        this.restartTimeout = setTimeout(() => this.startHover(), 20);
+      }
+    }
+    get active() {
+      return this.view.state.field(this.field);
+    }
+    checkHover() {
+      this.hoverTimeout = -1;
+      if (this.active.length)
+        return;
+      let hovered = Date.now() - this.lastMove.time;
+      if (hovered < this.hoverTime)
+        this.hoverTimeout = setTimeout(this.checkHover, this.hoverTime - hovered);
+      else
+        this.startHover();
+    }
+    startHover() {
+      clearTimeout(this.restartTimeout);
+      let { view, lastMove } = this;
+      let tile = view.docView.tile.nearest(lastMove.target);
+      if (!tile)
+        return;
+      let pos, side = 1;
+      if (tile.isWidget()) {
+        pos = tile.posAtStart;
+      } else {
+        pos = view.posAtCoords(lastMove);
+        if (pos == null)
+          return;
+        let posCoords = view.coordsAtPos(pos);
+        if (!posCoords || lastMove.y < posCoords.top || lastMove.y > posCoords.bottom || lastMove.x < posCoords.left - view.defaultCharacterWidth || lastMove.x > posCoords.right + view.defaultCharacterWidth)
+          return;
+        let bidi = view.bidiSpans(view.state.doc.lineAt(pos)).find((s) => s.from <= pos && s.to >= pos);
+        let rtl = bidi && bidi.dir == Direction.RTL ? -1 : 1;
+        side = lastMove.x < posCoords.left ? -rtl : rtl;
+      }
+      let open = this.source(view, pos, side);
+      if (open === null || open === void 0 ? void 0 : open.then) {
+        let pending = this.pending = { pos };
+        open.then((result) => {
+          if (this.pending == pending) {
+            this.pending = null;
+            if (result && !(Array.isArray(result) && !result.length))
+              view.dispatch({ effects: this.setHover.of(Array.isArray(result) ? result : [result]) });
+          }
+        }, (e) => logException(view.state, e, "hover tooltip"));
+      } else if (open && !(Array.isArray(open) && !open.length)) {
+        view.dispatch({ effects: this.setHover.of(Array.isArray(open) ? open : [open]) });
+      }
+    }
+    get tooltip() {
+      let plugin = this.view.plugin(tooltipPlugin);
+      let index = plugin ? plugin.manager.tooltips.findIndex((t2) => t2.create == HoverTooltipHost.create) : -1;
+      return index > -1 ? plugin.manager.tooltipViews[index] : null;
+    }
+    mousemove(event) {
+      var _a2, _b;
+      this.lastMove = { x: event.clientX, y: event.clientY, target: event.target, time: Date.now() };
+      if (this.hoverTimeout < 0)
+        this.hoverTimeout = setTimeout(this.checkHover, this.hoverTime);
+      let { active, tooltip } = this;
+      if (active.length && tooltip && !isInTooltip(tooltip.dom, event) || this.pending) {
+        let { pos } = active[0] || this.pending, end = (_b = (_a2 = active[0]) === null || _a2 === void 0 ? void 0 : _a2.end) !== null && _b !== void 0 ? _b : pos;
+        if (pos == end ? this.view.posAtCoords(this.lastMove) != pos : !isOverRange(this.view, pos, end, event.clientX, event.clientY)) {
+          this.view.dispatch({ effects: this.setHover.of([]) });
+          this.pending = null;
+        }
+      }
+    }
+    mouseleave(event) {
+      clearTimeout(this.hoverTimeout);
+      this.hoverTimeout = -1;
+      let { active } = this;
+      if (active.length) {
+        let { tooltip } = this;
+        let inTooltip = tooltip && tooltip.dom.contains(event.relatedTarget);
+        if (!inTooltip)
+          this.view.dispatch({ effects: this.setHover.of([]) });
+        else
+          this.watchTooltipLeave(tooltip.dom);
+      }
+    }
+    watchTooltipLeave(tooltip) {
+      let watch = (event) => {
+        tooltip.removeEventListener("mouseleave", watch);
+        if (this.active.length && !this.view.dom.contains(event.relatedTarget))
+          this.view.dispatch({ effects: this.setHover.of([]) });
+      };
+      tooltip.addEventListener("mouseleave", watch);
+    }
+    destroy() {
+      clearTimeout(this.hoverTimeout);
+      clearTimeout(this.restartTimeout);
+      this.view.dom.removeEventListener("mouseleave", this.mouseleave);
+      this.view.dom.removeEventListener("mousemove", this.mousemove);
+    }
+  };
+  var tooltipMargin = 4;
+  function isInTooltip(tooltip, event) {
+    let { left, right, top: top2, bottom } = tooltip.getBoundingClientRect(), arrow;
+    if (arrow = tooltip.querySelector(".cm-tooltip-arrow")) {
+      let arrowRect = arrow.getBoundingClientRect();
+      top2 = Math.min(arrowRect.top, top2);
+      bottom = Math.max(arrowRect.bottom, bottom);
+    }
+    return event.clientX >= left - tooltipMargin && event.clientX <= right + tooltipMargin && event.clientY >= top2 - tooltipMargin && event.clientY <= bottom + tooltipMargin;
+  }
+  function isOverRange(view, from, to, x, y, margin) {
+    let rect = view.scrollDOM.getBoundingClientRect();
+    let docBottom = view.documentTop + view.documentPadding.top + view.contentHeight;
+    if (rect.left > x || rect.right < x || rect.top > y || Math.min(rect.bottom, docBottom) < y)
+      return false;
+    let pos = view.posAtCoords({ x, y }, false);
+    return pos >= from && pos <= to;
+  }
+  function hoverTooltip(source, options = {}) {
+    let setHover = StateEffect.define();
+    let hoverState = StateField.define({
+      create() {
+        return [];
+      },
+      update(value, tr) {
+        if (value.length) {
+          if (options.hideOnChange && (tr.docChanged || tr.selection))
+            value = [];
+          else if (options.hideOn)
+            value = value.filter((v) => !options.hideOn(tr, v));
+          if (tr.docChanged) {
+            let mapped = [];
+            for (let tooltip of value) {
+              let newPos = tr.changes.mapPos(tooltip.pos, -1, MapMode.TrackDel);
+              if (newPos != null) {
+                let copy = Object.assign(/* @__PURE__ */ Object.create(null), tooltip);
+                copy.pos = newPos;
+                if (copy.end != null)
+                  copy.end = tr.changes.mapPos(copy.end);
+                mapped.push(copy);
+              }
+            }
+            value = mapped;
+          }
+        }
+        for (let effect of tr.effects) {
+          if (effect.is(setHover))
+            value = effect.value;
+          if (effect.is(closeHoverTooltipEffect))
+            value = [];
+        }
+        return value;
+      },
+      provide: (f) => showHoverTooltip.from(f)
+    });
+    return {
+      active: hoverState,
+      extension: [
+        hoverState,
+        ViewPlugin.define((view) => new HoverPlugin(
+          view,
+          source,
+          hoverState,
+          setHover,
+          options.hoverTime || 300
+          /* Hover.Time */
+        )),
+        showHoverTooltipHost
+      ]
+    };
+  }
   function getTooltip(view, tooltip) {
     let plugin = view.plugin(tooltipPlugin);
     if (!plugin)
@@ -12722,6 +12994,7 @@
     let found = plugin.manager.tooltips.indexOf(tooltip);
     return found < 0 ? null : plugin.manager.tooltipViews[found];
   }
+  var closeHoverTooltipEffect = /* @__PURE__ */ StateEffect.define();
   var panelConfig = /* @__PURE__ */ Facet.define({
     combine(configs) {
       let topContainer, bottomContainer;
@@ -16743,6 +17016,32 @@
     });
     return found;
   }
+  function maybeEnable(state, other) {
+    return state.field(foldState, false) ? other : other.concat(StateEffect.appendConfig.of(codeFolding()));
+  }
+  var foldAll = (view) => {
+    let { state } = view, effects = [];
+    for (let pos = 0; pos < state.doc.length; ) {
+      let line = view.lineBlockAt(pos), range = foldable(state, line.from, line.to);
+      if (range)
+        effects.push(foldEffect.of(range));
+      pos = (range ? view.lineBlockAt(range.to) : line).to + 1;
+    }
+    if (effects.length)
+      view.dispatch({ effects: maybeEnable(view.state, effects) });
+    return !!effects.length;
+  };
+  var unfoldAll = (view) => {
+    let field = view.state.field(foldState, false);
+    if (!field || !field.size)
+      return false;
+    let effects = [];
+    field.between(0, view.state.doc.length, (from, to) => {
+      effects.push(unfoldEffect.of({ from, to }));
+    });
+    view.dispatch({ effects });
+    return true;
+  };
   var defaultConfig = {
     placeholderDOM: null,
     preparePlaceholder: null,
@@ -18964,6 +19263,10 @@
     },
     provide: (f) => showPanel.from(f, (val) => val.panel)
   });
+  function getSearchQuery(state) {
+    let curState = state.field(searchState, false);
+    return curState ? curState.query.spec : defaultQuery(state);
+  }
   var SearchState = class {
     constructor(query, panel) {
       this.query = query;
@@ -21123,6 +21426,30 @@
   });
 
   // node_modules/@codemirror/lang-json/dist/index.js
+  var jsonParseLinter = () => (view) => {
+    try {
+      JSON.parse(view.state.doc.toString());
+    } catch (e) {
+      if (!(e instanceof SyntaxError))
+        throw e;
+      const pos = getErrorPosition(e, view.state.doc);
+      return [{
+        from: pos,
+        message: e.message,
+        severity: "error",
+        to: pos
+      }];
+    }
+    return [];
+  };
+  function getErrorPosition(error, doc2) {
+    let m;
+    if (m = error.message.match(/at position (\d+)/))
+      return Math.min(+m[1], doc2.length);
+    if (m = error.message.match(/at line (\d+) column (\d+)/))
+      return Math.min(doc2.line(+m[1]).from + +m[2] - 1, doc2.length);
+    return 0;
+  }
   var jsonLanguage = /* @__PURE__ */ LRLanguage.define({
     name: "json",
     parser: /* @__PURE__ */ parser.configure({
@@ -21143,6 +21470,854 @@
   });
   function json() {
     return new LanguageSupport(jsonLanguage);
+  }
+
+  // node_modules/@codemirror/lint/dist/index.js
+  var SelectedDiagnostic = class {
+    constructor(from, to, diagnostic) {
+      this.from = from;
+      this.to = to;
+      this.diagnostic = diagnostic;
+    }
+  };
+  var LintState = class _LintState {
+    constructor(diagnostics, panel, selected) {
+      this.diagnostics = diagnostics;
+      this.panel = panel;
+      this.selected = selected;
+    }
+    static init(diagnostics, panel, state) {
+      let diagnosticFilter = state.facet(lintConfig).markerFilter;
+      if (diagnosticFilter)
+        diagnostics = diagnosticFilter(diagnostics, state);
+      let sorted = diagnostics.slice().sort((a, b) => a.from - b.from || a.to - b.to);
+      let deco = new RangeSetBuilder(), active = [], pos = 0;
+      let scan = state.doc.iter(), scanPos = 0, docLen = state.doc.length;
+      for (let i = 0; ; ) {
+        let next = i == sorted.length ? null : sorted[i];
+        if (!next && !active.length)
+          break;
+        let from, to;
+        if (active.length) {
+          from = pos;
+          to = active.reduce((p, d) => Math.min(p, d.to), next && next.from > from ? next.from : 1e8);
+        } else {
+          from = next.from;
+          if (from > docLen)
+            break;
+          to = next.to;
+          active.push(next);
+          i++;
+        }
+        while (i < sorted.length) {
+          let next2 = sorted[i];
+          if (next2.from == from && (next2.to > next2.from || next2.to == from)) {
+            active.push(next2);
+            i++;
+            to = Math.min(next2.to, to);
+          } else {
+            to = Math.min(next2.from, to);
+            break;
+          }
+        }
+        to = Math.min(to, docLen);
+        let widget = false;
+        if (active.some((d) => d.from == from && (d.to == to || to == docLen))) {
+          widget = from == to;
+          if (!widget && to - from < 10) {
+            let behind = from - (scanPos + scan.value.length);
+            if (behind > 0) {
+              scan.next(behind);
+              scanPos = from;
+            }
+            for (let check = from; ; ) {
+              if (check >= to) {
+                widget = true;
+                break;
+              }
+              if (!scan.lineBreak && scanPos + scan.value.length > check)
+                break;
+              check = scanPos + scan.value.length;
+              scanPos += scan.value.length;
+              scan.next();
+            }
+          }
+        }
+        let sev = maxSeverity(active);
+        if (widget) {
+          deco.add(from, from, Decoration.widget({
+            widget: new DiagnosticWidget(sev),
+            diagnostics: active.slice()
+          }));
+        } else {
+          let markClass = active.reduce((c, d) => d.markClass ? c + " " + d.markClass : c, "");
+          deco.add(from, to, Decoration.mark({
+            class: "cm-lintRange cm-lintRange-" + sev + markClass,
+            diagnostics: active.slice(),
+            inclusiveEnd: active.some((a) => a.to > to)
+          }));
+        }
+        pos = to;
+        if (pos == docLen)
+          break;
+        for (let i2 = 0; i2 < active.length; i2++)
+          if (active[i2].to <= pos)
+            active.splice(i2--, 1);
+      }
+      let set = deco.finish();
+      return new _LintState(set, panel, findDiagnostic(set));
+    }
+  };
+  function findDiagnostic(diagnostics, diagnostic = null, after = 0) {
+    let found = null;
+    diagnostics.between(after, 1e9, (from, to, { spec }) => {
+      if (diagnostic && spec.diagnostics.indexOf(diagnostic) < 0)
+        return;
+      if (!found)
+        found = new SelectedDiagnostic(from, to, diagnostic || spec.diagnostics[0]);
+      else if (spec.diagnostics.indexOf(found.diagnostic) < 0)
+        return false;
+      else
+        found = new SelectedDiagnostic(found.from, to, found.diagnostic);
+    });
+    return found;
+  }
+  function hideTooltip(tr, tooltip) {
+    let from = tooltip.pos, to = tooltip.end || from;
+    let result = tr.state.facet(lintConfig).hideOn(tr, from, to);
+    if (result != null)
+      return result;
+    let line = tr.startState.doc.lineAt(tooltip.pos);
+    return !!(tr.effects.some((e) => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(line.from, Math.max(line.to, to)));
+  }
+  function maybeEnableLint(state, effects) {
+    return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
+  }
+  function setDiagnostics(state, diagnostics) {
+    return {
+      effects: maybeEnableLint(state, [setDiagnosticsEffect.of(diagnostics)])
+    };
+  }
+  var setDiagnosticsEffect = /* @__PURE__ */ StateEffect.define();
+  var togglePanel2 = /* @__PURE__ */ StateEffect.define();
+  var movePanelSelection = /* @__PURE__ */ StateEffect.define();
+  var lintState = /* @__PURE__ */ StateField.define({
+    create() {
+      return new LintState(Decoration.none, null, null);
+    },
+    update(value, tr) {
+      if (tr.docChanged && value.diagnostics.size) {
+        let mapped = value.diagnostics.map(tr.changes), selected = null, panel = value.panel;
+        if (value.selected) {
+          let selPos = tr.changes.mapPos(value.selected.from, 1);
+          selected = findDiagnostic(mapped, value.selected.diagnostic, selPos) || findDiagnostic(mapped, null, selPos);
+        }
+        if (!mapped.size && panel && tr.state.facet(lintConfig).autoPanel)
+          panel = null;
+        value = new LintState(mapped, panel, selected);
+      }
+      for (let effect of tr.effects) {
+        if (effect.is(setDiagnosticsEffect)) {
+          let panel = !tr.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
+          value = LintState.init(effect.value, panel, tr.state);
+        } else if (effect.is(togglePanel2)) {
+          value = new LintState(value.diagnostics, effect.value ? LintPanel.open : null, value.selected);
+        } else if (effect.is(movePanelSelection)) {
+          value = new LintState(value.diagnostics, value.panel, effect.value);
+        }
+      }
+      return value;
+    },
+    provide: (f) => [
+      showPanel.from(f, (val) => val.panel),
+      EditorView.decorations.from(f, (s) => s.diagnostics)
+    ]
+  });
+  var activeMark = /* @__PURE__ */ Decoration.mark({ class: "cm-lintRange cm-lintRange-active" });
+  function lintTooltip(view, pos, side) {
+    let { diagnostics } = view.state.field(lintState);
+    let found, start = -1, end = -1;
+    diagnostics.between(pos - (side < 0 ? 1 : 0), pos + (side > 0 ? 1 : 0), (from, to, { spec }) => {
+      if (pos >= from && pos <= to && (from == to || (pos > from || side > 0) && (pos < to || side < 0))) {
+        found = spec.diagnostics;
+        start = from;
+        end = to;
+        return false;
+      }
+    });
+    let diagnosticFilter = view.state.facet(lintConfig).tooltipFilter;
+    if (found && diagnosticFilter)
+      found = diagnosticFilter(found, view.state);
+    if (!found)
+      return null;
+    return {
+      pos: start,
+      end,
+      above: view.state.doc.lineAt(start).to < end,
+      create() {
+        return { dom: diagnosticsTooltip(view, found) };
+      }
+    };
+  }
+  function diagnosticsTooltip(view, diagnostics) {
+    return crelt("ul", { class: "cm-tooltip-lint" }, diagnostics.map((d) => renderDiagnostic(view, d, false)));
+  }
+  var openLintPanel = (view) => {
+    let field = view.state.field(lintState, false);
+    if (!field || !field.panel)
+      view.dispatch({ effects: maybeEnableLint(view.state, [togglePanel2.of(true)]) });
+    let panel = getPanel(view, LintPanel.open);
+    if (panel)
+      panel.dom.querySelector(".cm-panel-lint ul").focus();
+    return true;
+  };
+  var closeLintPanel = (view) => {
+    let field = view.state.field(lintState, false);
+    if (!field || !field.panel)
+      return false;
+    view.dispatch({ effects: togglePanel2.of(false) });
+    return true;
+  };
+  var nextDiagnostic = (view) => {
+    let field = view.state.field(lintState, false);
+    if (!field)
+      return false;
+    let sel = view.state.selection.main, next = findDiagnostic(field.diagnostics, null, sel.to + 1);
+    if (!next) {
+      next = findDiagnostic(field.diagnostics, null, 0);
+      if (!next || next.from == sel.from && next.to == sel.to)
+        return false;
+    }
+    view.dispatch({ selection: { anchor: next.from, head: next.to }, scrollIntoView: true });
+    return true;
+  };
+  var lintKeymap = [
+    { key: "Mod-Shift-m", run: openLintPanel, preventDefault: true },
+    { key: "F8", run: nextDiagnostic }
+  ];
+  var lintPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.timeout = -1;
+      this.set = true;
+      let { delay } = view.state.facet(lintConfig);
+      this.lintTime = Date.now() + delay;
+      this.run = this.run.bind(this);
+      this.timeout = setTimeout(this.run, delay);
+    }
+    run() {
+      clearTimeout(this.timeout);
+      let now = Date.now();
+      if (now < this.lintTime - 10) {
+        this.timeout = setTimeout(this.run, this.lintTime - now);
+      } else {
+        this.set = false;
+        let { state } = this.view, { sources } = state.facet(lintConfig);
+        if (sources.length)
+          batchResults(sources.map((s) => Promise.resolve(s(this.view))), (annotations) => {
+            if (this.view.state.doc == state.doc)
+              this.view.dispatch(setDiagnostics(this.view.state, annotations.reduce((a, b) => a.concat(b))));
+          }, (error) => {
+            logException(this.view.state, error);
+          });
+      }
+    }
+    update(update) {
+      let config2 = update.state.facet(lintConfig);
+      if (update.docChanged || config2 != update.startState.facet(lintConfig) || config2.needsRefresh && config2.needsRefresh(update)) {
+        this.lintTime = Date.now() + config2.delay;
+        if (!this.set) {
+          this.set = true;
+          this.timeout = setTimeout(this.run, config2.delay);
+        }
+      }
+    }
+    force() {
+      if (this.set) {
+        this.lintTime = Date.now();
+        this.run();
+      }
+    }
+    destroy() {
+      clearTimeout(this.timeout);
+    }
+  });
+  function batchResults(promises, sink, error) {
+    let collected = [], timeout = -1;
+    for (let p of promises)
+      p.then((value) => {
+        collected.push(value);
+        clearTimeout(timeout);
+        if (collected.length == promises.length)
+          sink(collected);
+        else
+          timeout = setTimeout(() => sink(collected), 200);
+      }, error);
+  }
+  var lintConfig = /* @__PURE__ */ Facet.define({
+    combine(input) {
+      return {
+        sources: input.map((i) => i.source).filter((x) => x != null),
+        ...combineConfig(input.map((i) => i.config), {
+          delay: 750,
+          markerFilter: null,
+          tooltipFilter: null,
+          needsRefresh: null,
+          hideOn: () => null
+        }, {
+          delay: Math.max,
+          markerFilter: combineFilter,
+          tooltipFilter: combineFilter,
+          needsRefresh: (a, b) => !a ? b : !b ? a : (u) => a(u) || b(u),
+          hideOn: (a, b) => !a ? b : !b ? a : (t2, x, y) => a(t2, x, y) || b(t2, x, y),
+          autoPanel: (a, b) => a || b
+        })
+      };
+    }
+  });
+  function combineFilter(a, b) {
+    return !a ? b : !b ? a : (d, s) => b(a(d, s), s);
+  }
+  function linter(source, config2 = {}) {
+    return [
+      lintConfig.of({ source, config: config2 }),
+      lintPlugin,
+      lintExtensions
+    ];
+  }
+  function assignKeys(actions) {
+    let assigned = [];
+    if (actions)
+      actions: for (let { name: name2 } of actions) {
+        for (let i = 0; i < name2.length; i++) {
+          let ch = name2[i];
+          if (/[a-zA-Z]/.test(ch) && !assigned.some((c) => c.toLowerCase() == ch.toLowerCase())) {
+            assigned.push(ch);
+            continue actions;
+          }
+        }
+        assigned.push("");
+      }
+    return assigned;
+  }
+  function renderDiagnostic(view, diagnostic, inPanel) {
+    var _a2;
+    let keys = inPanel ? assignKeys(diagnostic.actions) : [];
+    return crelt("li", { class: "cm-diagnostic cm-diagnostic-" + diagnostic.severity }, crelt("span", { class: "cm-diagnosticText" }, diagnostic.renderMessage ? diagnostic.renderMessage(view) : diagnostic.message), (_a2 = diagnostic.actions) === null || _a2 === void 0 ? void 0 : _a2.map((action, i) => {
+      let fired = false, click = (e) => {
+        e.preventDefault();
+        if (fired)
+          return;
+        fired = true;
+        let found = findDiagnostic(view.state.field(lintState).diagnostics, diagnostic);
+        if (found)
+          action.apply(view, found.from, found.to);
+      };
+      let { name: name2 } = action, keyIndex = keys[i] ? name2.indexOf(keys[i]) : -1;
+      let nameElt = keyIndex < 0 ? name2 : [
+        name2.slice(0, keyIndex),
+        crelt("u", name2.slice(keyIndex, keyIndex + 1)),
+        name2.slice(keyIndex + 1)
+      ];
+      let markClass = action.markClass ? " " + action.markClass : "";
+      return crelt("button", {
+        type: "button",
+        class: "cm-diagnosticAction" + markClass,
+        onclick: click,
+        onmousedown: click,
+        "aria-label": ` Action: ${name2}${keyIndex < 0 ? "" : ` (access key "${keys[i]})"`}.`
+      }, nameElt);
+    }), diagnostic.source && crelt("div", { class: "cm-diagnosticSource" }, diagnostic.source));
+  }
+  var DiagnosticWidget = class extends WidgetType {
+    constructor(sev) {
+      super();
+      this.sev = sev;
+    }
+    eq(other) {
+      return other.sev == this.sev;
+    }
+    toDOM() {
+      return crelt("span", { class: "cm-lintPoint cm-lintPoint-" + this.sev });
+    }
+  };
+  var PanelItem = class {
+    constructor(view, diagnostic) {
+      this.diagnostic = diagnostic;
+      this.id = "item_" + Math.floor(Math.random() * 4294967295).toString(16);
+      this.dom = renderDiagnostic(view, diagnostic, true);
+      this.dom.id = this.id;
+      this.dom.setAttribute("role", "option");
+    }
+  };
+  var LintPanel = class _LintPanel {
+    constructor(view) {
+      this.view = view;
+      this.items = [];
+      let onkeydown = (event) => {
+        if (event.ctrlKey || event.altKey || event.metaKey)
+          return;
+        if (event.keyCode == 27) {
+          closeLintPanel(this.view);
+          this.view.focus();
+        } else if (event.keyCode == 38 || event.keyCode == 33) {
+          this.moveSelection((this.selectedIndex - 1 + this.items.length) % this.items.length);
+        } else if (event.keyCode == 40 || event.keyCode == 34) {
+          this.moveSelection((this.selectedIndex + 1) % this.items.length);
+        } else if (event.keyCode == 36) {
+          this.moveSelection(0);
+        } else if (event.keyCode == 35) {
+          this.moveSelection(this.items.length - 1);
+        } else if (event.keyCode == 13) {
+          this.view.focus();
+        } else if (event.keyCode >= 65 && event.keyCode <= 90 && this.selectedIndex >= 0) {
+          let { diagnostic } = this.items[this.selectedIndex], keys = assignKeys(diagnostic.actions);
+          for (let i = 0; i < keys.length; i++)
+            if (keys[i].toUpperCase().charCodeAt(0) == event.keyCode) {
+              let found = findDiagnostic(this.view.state.field(lintState).diagnostics, diagnostic);
+              if (found)
+                diagnostic.actions[i].apply(view, found.from, found.to);
+            }
+        } else {
+          return;
+        }
+        event.preventDefault();
+      };
+      let onclick = (event) => {
+        for (let i = 0; i < this.items.length; i++) {
+          if (this.items[i].dom.contains(event.target))
+            this.moveSelection(i);
+        }
+      };
+      this.list = crelt("ul", {
+        tabIndex: 0,
+        role: "listbox",
+        "aria-label": this.view.state.phrase("Diagnostics"),
+        onkeydown,
+        onclick
+      });
+      this.dom = crelt("div", { class: "cm-panel-lint" }, this.list, crelt("button", {
+        type: "button",
+        name: "close",
+        "aria-label": this.view.state.phrase("close"),
+        onclick: () => closeLintPanel(this.view)
+      }, "\xD7"));
+      this.update();
+    }
+    get selectedIndex() {
+      let selected = this.view.state.field(lintState).selected;
+      if (!selected)
+        return -1;
+      for (let i = 0; i < this.items.length; i++)
+        if (this.items[i].diagnostic == selected.diagnostic)
+          return i;
+      return -1;
+    }
+    update() {
+      let { diagnostics, selected } = this.view.state.field(lintState);
+      let i = 0, needsSync = false, newSelectedItem = null;
+      let seen = /* @__PURE__ */ new Set();
+      diagnostics.between(0, this.view.state.doc.length, (_start, _end, { spec }) => {
+        for (let diagnostic of spec.diagnostics) {
+          if (seen.has(diagnostic))
+            continue;
+          seen.add(diagnostic);
+          let found = -1, item;
+          for (let j = i; j < this.items.length; j++)
+            if (this.items[j].diagnostic == diagnostic) {
+              found = j;
+              break;
+            }
+          if (found < 0) {
+            item = new PanelItem(this.view, diagnostic);
+            this.items.splice(i, 0, item);
+            needsSync = true;
+          } else {
+            item = this.items[found];
+            if (found > i) {
+              this.items.splice(i, found - i);
+              needsSync = true;
+            }
+          }
+          if (selected && item.diagnostic == selected.diagnostic) {
+            if (!item.dom.hasAttribute("aria-selected")) {
+              item.dom.setAttribute("aria-selected", "true");
+              newSelectedItem = item;
+            }
+          } else if (item.dom.hasAttribute("aria-selected")) {
+            item.dom.removeAttribute("aria-selected");
+          }
+          i++;
+        }
+      });
+      while (i < this.items.length && !(this.items.length == 1 && this.items[0].diagnostic.from < 0)) {
+        needsSync = true;
+        this.items.pop();
+      }
+      if (this.items.length == 0) {
+        this.items.push(new PanelItem(this.view, {
+          from: -1,
+          to: -1,
+          severity: "info",
+          message: this.view.state.phrase("No diagnostics")
+        }));
+        needsSync = true;
+      }
+      if (newSelectedItem) {
+        this.list.setAttribute("aria-activedescendant", newSelectedItem.id);
+        this.view.requestMeasure({
+          key: this,
+          read: () => ({ sel: newSelectedItem.dom.getBoundingClientRect(), panel: this.list.getBoundingClientRect() }),
+          write: ({ sel, panel }) => {
+            let scaleY = panel.height / this.list.offsetHeight;
+            if (sel.top < panel.top)
+              this.list.scrollTop -= (panel.top - sel.top) / scaleY;
+            else if (sel.bottom > panel.bottom)
+              this.list.scrollTop += (sel.bottom - panel.bottom) / scaleY;
+          }
+        });
+      } else if (this.selectedIndex < 0) {
+        this.list.removeAttribute("aria-activedescendant");
+      }
+      if (needsSync)
+        this.sync();
+    }
+    sync() {
+      let domPos = this.list.firstChild;
+      function rm2() {
+        let prev = domPos;
+        domPos = prev.nextSibling;
+        prev.remove();
+      }
+      for (let item of this.items) {
+        if (item.dom.parentNode == this.list) {
+          while (domPos != item.dom)
+            rm2();
+          domPos = item.dom.nextSibling;
+        } else {
+          this.list.insertBefore(item.dom, domPos);
+        }
+      }
+      while (domPos)
+        rm2();
+    }
+    moveSelection(selectedIndex) {
+      if (this.selectedIndex < 0)
+        return;
+      let field = this.view.state.field(lintState);
+      let selection = findDiagnostic(field.diagnostics, this.items[selectedIndex].diagnostic);
+      if (!selection)
+        return;
+      this.view.dispatch({
+        selection: { anchor: selection.from, head: selection.to },
+        scrollIntoView: true,
+        effects: movePanelSelection.of(selection)
+      });
+    }
+    static open(view) {
+      return new _LintPanel(view);
+    }
+  };
+  function svg(content2, attrs = `viewBox="0 0 40 40"`) {
+    return `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" ${attrs}>${encodeURIComponent(content2)}</svg>')`;
+  }
+  function underline(color) {
+    return svg(`<path d="m0 2.5 l2 -1.5 l1 0 l2 1.5 l1 0" stroke="${color}" fill="none" stroke-width=".7"/>`, `width="6" height="3"`);
+  }
+  var baseTheme4 = /* @__PURE__ */ EditorView.baseTheme({
+    ".cm-diagnostic": {
+      padding: "3px 6px 3px 8px",
+      marginLeft: "-1px",
+      display: "block",
+      whiteSpace: "pre-wrap"
+    },
+    ".cm-diagnostic-error": { borderLeft: "5px solid #d11" },
+    ".cm-diagnostic-warning": { borderLeft: "5px solid orange" },
+    ".cm-diagnostic-info": { borderLeft: "5px solid #999" },
+    ".cm-diagnostic-hint": { borderLeft: "5px solid #66d" },
+    ".cm-diagnosticAction": {
+      font: "inherit",
+      border: "none",
+      padding: "2px 4px",
+      backgroundColor: "#444",
+      color: "white",
+      borderRadius: "3px",
+      marginLeft: "8px",
+      cursor: "pointer"
+    },
+    ".cm-diagnosticSource": {
+      fontSize: "70%",
+      opacity: 0.7
+    },
+    ".cm-lintRange": {
+      backgroundPosition: "left bottom",
+      backgroundRepeat: "repeat-x",
+      paddingBottom: "0.7px"
+    },
+    ".cm-lintRange-error": { backgroundImage: /* @__PURE__ */ underline("#d11") },
+    ".cm-lintRange-warning": { backgroundImage: /* @__PURE__ */ underline("orange") },
+    ".cm-lintRange-info": { backgroundImage: /* @__PURE__ */ underline("#999") },
+    ".cm-lintRange-hint": { backgroundImage: /* @__PURE__ */ underline("#66d") },
+    ".cm-lintRange-active": { backgroundColor: "#ffdd9980" },
+    ".cm-tooltip-lint": {
+      padding: 0,
+      margin: 0
+    },
+    ".cm-lintPoint": {
+      position: "relative",
+      "&:after": {
+        content: '""',
+        position: "absolute",
+        bottom: 0,
+        left: "-2px",
+        borderLeft: "3px solid transparent",
+        borderRight: "3px solid transparent",
+        borderBottom: "4px solid #d11"
+      }
+    },
+    ".cm-lintPoint-warning": {
+      "&:after": { borderBottomColor: "orange" }
+    },
+    ".cm-lintPoint-info": {
+      "&:after": { borderBottomColor: "#999" }
+    },
+    ".cm-lintPoint-hint": {
+      "&:after": { borderBottomColor: "#66d" }
+    },
+    ".cm-panel.cm-panel-lint": {
+      position: "relative",
+      "& ul": {
+        maxHeight: "100px",
+        overflowY: "auto",
+        "& [aria-selected]": {
+          backgroundColor: "#ddd",
+          "& u": { textDecoration: "underline" }
+        },
+        "&:focus [aria-selected]": {
+          background_fallback: "#bdf",
+          backgroundColor: "Highlight",
+          color_fallback: "white",
+          color: "HighlightText"
+        },
+        "& u": { textDecoration: "none" },
+        padding: 0,
+        margin: 0
+      },
+      "& [name=close]": {
+        position: "absolute",
+        top: "0",
+        right: "2px",
+        background: "inherit",
+        border: "none",
+        font: "inherit",
+        padding: 0,
+        margin: 0
+      }
+    },
+    "&dark .cm-lintRange-active": { backgroundColor: "#86714a80" },
+    "&dark .cm-panel.cm-panel-lint ul": {
+      "& [aria-selected]": {
+        backgroundColor: "#2e343e"
+      }
+    }
+  });
+  function severityWeight(sev) {
+    return sev == "error" ? 4 : sev == "warning" ? 3 : sev == "info" ? 2 : 1;
+  }
+  function maxSeverity(diagnostics) {
+    let sev = "hint", weight = 1;
+    for (let d of diagnostics) {
+      let w = severityWeight(d.severity);
+      if (w > weight) {
+        weight = w;
+        sev = d.severity;
+      }
+    }
+    return sev;
+  }
+  var LintGutterMarker = class extends GutterMarker {
+    constructor(diagnostics) {
+      super();
+      this.diagnostics = diagnostics;
+      this.severity = maxSeverity(diagnostics);
+    }
+    toDOM(view) {
+      let elt = document.createElement("div");
+      elt.className = "cm-lint-marker cm-lint-marker-" + this.severity;
+      let diagnostics = this.diagnostics;
+      let diagnosticsFilter = view.state.facet(lintGutterConfig).tooltipFilter;
+      if (diagnosticsFilter)
+        diagnostics = diagnosticsFilter(diagnostics, view.state);
+      if (diagnostics.length)
+        elt.onmouseover = () => gutterMarkerMouseOver(view, elt, diagnostics);
+      return elt;
+    }
+  };
+  function trackHoverOn(view, marker) {
+    let mousemove = (event) => {
+      let rect = marker.getBoundingClientRect();
+      if (event.clientX > rect.left - 10 && event.clientX < rect.right + 10 && event.clientY > rect.top - 10 && event.clientY < rect.bottom + 10)
+        return;
+      for (let target = event.target; target; target = target.parentNode) {
+        if (target.nodeType == 1 && target.classList.contains("cm-tooltip-lint"))
+          return;
+      }
+      window.removeEventListener("mousemove", mousemove);
+      if (view.state.field(lintGutterTooltip))
+        view.dispatch({ effects: setLintGutterTooltip.of(null) });
+    };
+    window.addEventListener("mousemove", mousemove);
+  }
+  function gutterMarkerMouseOver(view, marker, diagnostics) {
+    function hovered() {
+      let line = view.elementAtHeight(marker.getBoundingClientRect().top + 5 - view.documentTop);
+      const linePos = view.coordsAtPos(line.from);
+      if (linePos) {
+        view.dispatch({ effects: setLintGutterTooltip.of({
+          pos: line.from,
+          above: false,
+          clip: false,
+          create() {
+            return {
+              dom: diagnosticsTooltip(view, diagnostics),
+              getCoords: () => marker.getBoundingClientRect()
+            };
+          }
+        }) });
+      }
+      marker.onmouseout = marker.onmousemove = null;
+      trackHoverOn(view, marker);
+    }
+    let { hoverTime } = view.state.facet(lintGutterConfig);
+    let hoverTimeout = setTimeout(hovered, hoverTime);
+    marker.onmouseout = () => {
+      clearTimeout(hoverTimeout);
+      marker.onmouseout = marker.onmousemove = null;
+    };
+    marker.onmousemove = () => {
+      clearTimeout(hoverTimeout);
+      hoverTimeout = setTimeout(hovered, hoverTime);
+    };
+  }
+  function markersForDiagnostics(doc2, diagnostics) {
+    let byLine = /* @__PURE__ */ Object.create(null);
+    for (let diagnostic of diagnostics) {
+      let line = doc2.lineAt(diagnostic.from);
+      (byLine[line.from] || (byLine[line.from] = [])).push(diagnostic);
+    }
+    let markers = [];
+    for (let line in byLine) {
+      markers.push(new LintGutterMarker(byLine[line]).range(+line));
+    }
+    return RangeSet.of(markers, true);
+  }
+  var lintGutterExtension = /* @__PURE__ */ gutter({
+    class: "cm-gutter-lint",
+    markers: (view) => view.state.field(lintGutterMarkers),
+    widgetMarker: (view, widget, block) => {
+      let diagnostics = [];
+      view.state.field(lintGutterMarkers).between(block.from, block.to, (from, to, value) => {
+        if (from > block.from && from < block.to)
+          diagnostics.push(...value.diagnostics);
+      });
+      return diagnostics.length ? new LintGutterMarker(diagnostics) : null;
+    }
+  });
+  var lintGutterMarkers = /* @__PURE__ */ StateField.define({
+    create() {
+      return RangeSet.empty;
+    },
+    update(markers, tr) {
+      markers = markers.map(tr.changes);
+      let diagnosticFilter = tr.state.facet(lintGutterConfig).markerFilter;
+      for (let effect of tr.effects) {
+        if (effect.is(setDiagnosticsEffect)) {
+          let diagnostics = effect.value;
+          if (diagnosticFilter)
+            diagnostics = diagnosticFilter(diagnostics || [], tr.state);
+          markers = markersForDiagnostics(tr.state.doc, diagnostics.slice(0));
+        }
+      }
+      return markers;
+    }
+  });
+  var setLintGutterTooltip = /* @__PURE__ */ StateEffect.define();
+  var lintGutterTooltip = /* @__PURE__ */ StateField.define({
+    create() {
+      return null;
+    },
+    update(tooltip, tr) {
+      if (tooltip && tr.docChanged)
+        tooltip = hideTooltip(tr, tooltip) ? null : { ...tooltip, pos: tr.changes.mapPos(tooltip.pos) };
+      return tr.effects.reduce((t2, e) => e.is(setLintGutterTooltip) ? e.value : t2, tooltip);
+    },
+    provide: (field) => showTooltip.from(field)
+  });
+  var lintGutterTheme = /* @__PURE__ */ EditorView.baseTheme({
+    ".cm-gutter-lint": {
+      width: "1.4em",
+      "& .cm-gutterElement": {
+        padding: ".2em"
+      }
+    },
+    ".cm-lint-marker": {
+      width: "1em",
+      height: "1em"
+    },
+    ".cm-lint-marker-info": {
+      content: /* @__PURE__ */ svg(`<path fill="#aaf" stroke="#77e" stroke-width="6" stroke-linejoin="round" d="M5 5L35 5L35 35L5 35Z"/>`)
+    },
+    ".cm-lint-marker-warning": {
+      content: /* @__PURE__ */ svg(`<path fill="#fe8" stroke="#fd7" stroke-width="6" stroke-linejoin="round" d="M20 6L37 35L3 35Z"/>`)
+    },
+    ".cm-lint-marker-error": {
+      content: /* @__PURE__ */ svg(`<circle cx="20" cy="20" r="15" fill="#f87" stroke="#f43" stroke-width="6"/>`)
+    }
+  });
+  var lintExtensions = [
+    lintState,
+    /* @__PURE__ */ EditorView.decorations.compute([lintState], (state) => {
+      let { selected, panel } = state.field(lintState);
+      return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
+        activeMark.range(selected.from, selected.to)
+      ]);
+    }),
+    /* @__PURE__ */ hoverTooltip(lintTooltip, { hideOn: hideTooltip }),
+    baseTheme4
+  ];
+  var lintGutterConfig = /* @__PURE__ */ Facet.define({
+    combine(configs) {
+      return combineConfig(configs, {
+        hoverTime: 300,
+        markerFilter: null,
+        tooltipFilter: null
+      });
+    }
+  });
+  function lintGutter(config2 = {}) {
+    return [lintGutterConfig.of(config2), lintGutterMarkers, lintGutterExtension, lintGutterTheme, lintGutterTooltip];
+  }
+  function forEachDiagnostic(state, f) {
+    let lState = state.field(lintState, false);
+    if (lState && lState.diagnostics.size) {
+      let pending = [], pendingStart = [], lastEnd = -1;
+      for (let iter = RangeSet.iter([lState.diagnostics]); ; iter.next()) {
+        for (let i = 0; i < pending.length; i++)
+          if (!iter.value || iter.value.spec.diagnostics.indexOf(pending[i]) < 0) {
+            f(pending[i], pendingStart[i], lastEnd);
+            pending.splice(i, 1);
+            pendingStart.splice(i--, 1);
+          }
+        if (!iter.value)
+          break;
+        for (let d of iter.value.spec.diagnostics)
+          if (pending.indexOf(d) < 0) {
+            pending.push(d);
+            pendingStart.push(iter.from);
+          }
+        lastEnd = iter.to;
+      }
+    }
   }
 
   // node_modules/@codemirror/autocomplete/dist/index.js
@@ -22355,7 +23530,7 @@
       return false;
     }
   }));
-  var baseTheme4 = /* @__PURE__ */ EditorView.baseTheme({
+  var baseTheme5 = /* @__PURE__ */ EditorView.baseTheme({
     ".cm-tooltip.cm-tooltip-autocomplete": {
       "& > ul": {
         fontFamily: "monospace",
@@ -22715,7 +23890,7 @@
       completionConfig.of(config2),
       completionPlugin,
       completionKeymapExt,
-      baseTheme4
+      baseTheme5
     ];
   }
   var completionKeymap = [
@@ -22814,6 +23989,136 @@
       return true;
     }
   };
+  var jsonLintSource = jsonParseLinter();
+  var DEFAULT_SEARCH_MESSAGES = {
+    find: "fieldTools.json.searchFind",
+    next: "fieldTools.json.searchNext",
+    previous: "fieldTools.json.searchPrevious",
+    all: "fieldTools.json.searchAll",
+    close: "fieldTools.json.searchClose"
+  };
+  function searchLabel(messages, key) {
+    return String(messages && messages[key] ? messages[key] : DEFAULT_SEARCH_MESSAGES[key]);
+  }
+  function createButton(label, onClick) {
+    const button = document.createElement("button");
+    button.className = "cm-button";
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function createSearchOnlyPanel(messages = {}) {
+    return (view) => {
+      const dom = document.createElement("div");
+      dom.className = "cm-search dashboard-cm-search";
+      const input = document.createElement("input");
+      input.className = "cm-textfield";
+      input.name = "search";
+      input.setAttribute("form", "");
+      input.setAttribute("main-field", "true");
+      const findLabel = searchLabel(messages, "find");
+      input.placeholder = findLabel;
+      input.setAttribute("aria-label", findLabel);
+      input.setAttribute("title", findLabel);
+      input.value = getSearchQuery(view.state).search;
+      const commit = () => {
+        const current = getSearchQuery(view.state);
+        const next = new SearchQuery({
+          search: input.value,
+          caseSensitive: current.caseSensitive,
+          literal: current.literal,
+          regexp: current.regexp,
+          wholeWord: current.wholeWord
+        });
+        if (!next.eq(current)) {
+          view.dispatch({ effects: setSearchQuery.of(next) });
+        }
+      };
+      input.addEventListener("change", commit);
+      input.addEventListener("keyup", commit);
+      dom.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+          (event.shiftKey ? findPrevious : findNext)(view);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeSearchPanel(view);
+        }
+      });
+      dom.append(
+        input,
+        createButton(searchLabel(messages, "next"), () => {
+          commit();
+          findNext(view);
+        }),
+        createButton(searchLabel(messages, "previous"), () => {
+          commit();
+          findPrevious(view);
+        }),
+        createButton(searchLabel(messages, "all"), () => {
+          commit();
+          selectMatches(view);
+        }),
+        createButton(searchLabel(messages, "close"), () => {
+          closeSearchPanel(view);
+        })
+      );
+      return {
+        top: true,
+        dom,
+        mount() {
+          input.focus();
+          input.select();
+        },
+        update(update) {
+          const current = getSearchQuery(update.state);
+          if (input !== view.root.activeElement && input.value !== current.search) {
+            input.value = current.search;
+          }
+        }
+      };
+    };
+  }
+  function collectDiagnostics(state) {
+    const diagnostics = [];
+    forEachDiagnostic(state, (diagnostic, from, to) => {
+      diagnostics.push({
+        from,
+        to,
+        severity: diagnostic.severity,
+        source: diagnostic.source || "json",
+        message: diagnostic.message
+      });
+    });
+    return diagnostics.sort((left, right) => left.from - right.from || left.to - right.to);
+  }
+  function computeJsonDiagnostics(view) {
+    return jsonLintSource(view).map((diagnostic) => ({
+      from: diagnostic.from,
+      to: diagnostic.to,
+      severity: diagnostic.severity,
+      source: diagnostic.source || "json",
+      message: diagnostic.message
+    })).sort((left, right) => left.from - right.from || left.to - right.to);
+  }
+  function refreshJsonDiagnostics(view) {
+    const diagnostics = computeJsonDiagnostics(view);
+    view.dispatch(setDiagnostics(view.state, diagnostics));
+    return collectDiagnostics(view.state);
+  }
+  function replaceDocument(view, nextValue) {
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: String(nextValue ?? "")
+      }
+    });
+  }
   function createJsonEditor(options = {}) {
     const parent = options.parent;
     if (!parent) {
@@ -22821,6 +24126,7 @@
     }
     const onChange = options.onChange;
     const onSave = options.onSave;
+    const searchMessages = options.searchMessages || {};
     const state = EditorState.create({
       doc: String(options.value ?? ""),
       extensions: [
@@ -22834,9 +24140,11 @@
         bracketMatching(),
         closeBrackets(),
         autocompletion(),
-        search({ top: true }),
+        search({ top: true, createPanel: createSearchOnlyPanel(searchMessages) }),
+        lintGutter(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         json(),
+        linter(jsonLintSource, { delay: 300 }),
         editorTheme,
         EditorState.tabSize.of(2),
         keymap.of([
@@ -22847,6 +24155,7 @@
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
+          ...lintKeymap,
           ...completionKeymap
         ]),
         EditorView.updateListener.of((update) => {
@@ -22869,13 +24178,46 @@
         return view.state.doc.toString();
       },
       setValue(nextValue) {
+        replaceDocument(view, nextValue);
+      },
+      validateJson() {
+        return refreshJsonDiagnostics(view);
+      },
+      getFirstDiagnostic() {
+        return refreshJsonDiagnostics(view)[0] || null;
+      },
+      jumpToFirstError() {
+        const diagnostic = refreshJsonDiagnostics(view)[0] || null;
+        if (!diagnostic) {
+          return null;
+        }
+        const docLength = view.state.doc.length;
+        const from = Math.max(0, Math.min(diagnostic.from, docLength));
+        const to = Math.max(from, Math.min(diagnostic.to, docLength));
         view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: String(nextValue ?? "")
-          }
+          selection: { anchor: from, head: to },
+          effects: EditorView.scrollIntoView(from, { y: "center" })
         });
+        view.focus();
+        return diagnostic;
+      },
+      formatJson() {
+        const formatted = JSON.stringify(JSON.parse(view.state.doc.toString()), null, 2);
+        replaceDocument(view, formatted);
+        refreshJsonDiagnostics(view);
+        return formatted;
+      },
+      minifyJson() {
+        const minified = JSON.stringify(JSON.parse(view.state.doc.toString()));
+        replaceDocument(view, minified);
+        refreshJsonDiagnostics(view);
+        return minified;
+      },
+      foldAll() {
+        return foldAll(view);
+      },
+      unfoldAll() {
+        return unfoldAll(view);
       },
       openSearch() {
         openSearchPanel(view);

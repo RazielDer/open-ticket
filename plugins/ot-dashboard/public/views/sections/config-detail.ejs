@@ -54,7 +54,7 @@
     <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
     <input type="hidden" name="sourceLabel" value="Draft review">
     <label class="field-label" for="draftJson"><%= t("configDetail.previewLabel") %></label>
-    <textarea id="draftJson" name="candidateText" class="code-area" spellcheck="false" data-json-editor="true"><%= detail.currentText %></textarea>
+    <textarea id="draftJson" name="candidateText" class="code-area" spellcheck="false" data-json-editor="true" data-field-tools="json"><%= detail.currentText %></textarea>
     <label class="field-label" for="draftFile"><%= t("configDetail.importLabel") %></label>
     <input id="draftFile" type="file" accept=".json,application/json" data-load-json-into="#draftJson">
     <div class="sticky-actions">

@@ -36,6 +36,32 @@
     "previous": "Previous",
     "next": "Next"
   },
+  "fieldTools": {
+    "json": {
+      "format": "Format JSON",
+      "minify": "Minify JSON",
+      "validate": "Validate JSON",
+      "jumpToError": "Jump to error",
+      "foldAll": "Fold all",
+      "unfoldAll": "Unfold all",
+      "search": "Search",
+      "searchFind": "Find",
+      "searchNext": "Next match",
+      "searchPrevious": "Previous match",
+      "searchAll": "Select all matches",
+      "searchClose": "Close search",
+      "valid": "JSON is valid.",
+      "invalid": "Invalid JSON: {message}",
+      "savedDraft": "Saved draft",
+      "unsavedChanges": "Unsaved changes"
+    },
+    "common": {
+      "copy": "Copy",
+      "clear": "Clear",
+      "cleanupList": "Clean up list",
+      "expand": "Expand"
+    }
+  },
   "nav": {
     "home": "Home",
     "setup": "Setup",
@@ -314,6 +340,46 @@
           "invalid_mode": "Transcript delivery is enabled, but the mode is missing or invalid.",
           "configured": "Transcript delivery is enabled with a valid mode."
         }
+      },
+      "support-teams": {
+        "label": "Support teams",
+        "what": "Reusable support-team routing, Discord roles, and assignment behavior for ticket options.",
+        "tasks": "Create support teams before routing ticket options to team-owned queues.",
+        "primaryAction": "Open support teams workspace",
+        "reasons": {
+          "empty": "No support teams are configured yet.",
+          "configured": "Support-team routing data is available."
+        }
+      },
+      "integration-profiles": {
+        "label": "Integration profiles",
+        "what": "Non-secret integration bindings and provider settings used by ticket options.",
+        "tasks": "Review integration profiles before assigning them to ticket options.",
+        "primaryAction": "Open integration profiles JSON",
+        "reasons": {
+          "empty": "No integration profiles are configured yet.",
+          "configured": "Integration profiles are available."
+        }
+      },
+      "ai-assist-profiles": {
+        "label": "AI assist profiles",
+        "what": "Advisory AI assist settings, provider IDs, and knowledge-source bindings.",
+        "tasks": "Review AI assist profiles before enabling advisory actions in ticket details.",
+        "primaryAction": "Open AI assist profiles JSON",
+        "reasons": {
+          "empty": "No AI assist profiles are configured yet.",
+          "configured": "AI assist profiles are available."
+        }
+      },
+      "knowledge-sources": {
+        "label": "Knowledge sources",
+        "what": "Local knowledge-source references used by advisory AI assist profiles.",
+        "tasks": "Keep knowledge-source paths inside the allowed project documentation directories.",
+        "primaryAction": "Open knowledge sources JSON",
+        "reasons": {
+          "empty": "No knowledge sources are configured yet.",
+          "configured": "Knowledge sources are available."
+        }
       }
     }
   },
@@ -532,7 +598,10 @@
           "options": "Edit the raw Options configuration file.",
           "panels": "Edit the raw Panels configuration file.",
           "questions": "Edit the raw Questions configuration file.",
+          "support-teams": "Edit the raw Support Teams configuration file.",
           "integration-profiles": "Edit the raw Integration Profiles configuration file.",
+          "ai-assist-profiles": "Edit the raw AI Assist Profiles configuration file.",
+          "knowledge-sources": "Edit the raw Knowledge Sources configuration file.",
           "transcripts": "Edit the raw Transcripts configuration file."
         }
       },
@@ -721,6 +790,8 @@
     },
     "fields": {
       "token": "Bot token",
+      "tokenConfiguredPlaceholder": "Saved token configured",
+      "tokenClear": "Clear saved token",
       "mainColor": "Main color",
       "language": "Language",
       "prefix": "Command prefix",

@@ -103,6 +103,14 @@ test("submit for review compiles a transcript before case_created and keeps tran
     assert.equal(source.includes("prepareTranscriptAttachedEvent(channel.id, transcriptUrl, existingState)"), true)
 })
 
+test("bridge restore skips stale state when the ticket no longer exists", () => {
+    const sourcePath = path.resolve(__dirname, "..", "..", "..", "..", "plugins", "ot-eotfs-bridge", "index.ts")
+    const source = fs.readFileSync(sourcePath, "utf8")
+
+    assert.equal(source.includes('warnMissingCanonicalBridgeProfile(null, "restore-bridge-state")'), false)
+    assert.equal(source.includes('resolveRequiredBridgeConfigForTicket(ticket, "restore-bridge-state")'), true)
+})
+
 test("create-ticket decision blocks duplicate live whitelist tickets", () => {
     const decision = evaluateCreateTicketDecision(
         "whitelist-application-ticket-81642e12",
