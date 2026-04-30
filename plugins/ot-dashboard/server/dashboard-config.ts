@@ -258,7 +258,7 @@ export function getDashboardSecurityWarnings(config: DashboardConfig): string[] 
   }
 
   if (breakglassEnabled && !breakglassPasswordHash) {
-    warnings.push("Dashboard breakglass auth is enabled without auth.breakglass.passwordHash. Disable breakglass or configure a hashed emergency password before exposing the admin host.")
+    warnings.push("Dashboard breakglass auth is enabled without a hashed emergency password. Disable breakglass or configure the password hash before exposing the admin host.")
   }
 
   if (!sessionSecret || sessionSecret === DEFAULT_DASHBOARD_SESSION_SECRET || sessionSecret.length < 32) {

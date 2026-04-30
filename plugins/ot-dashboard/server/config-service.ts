@@ -93,6 +93,7 @@ function generateWorkspaceRecordId(prefix: string) {
 }
 
 const INTEGRATION_SECRET_REDACTION = "__OPEN_TICKET_REDACTED_SECRET__"
+const GENERAL_TOKEN_REDACTION = INTEGRATION_SECRET_REDACTION
 
 interface DashboardTranscriptHtmlStyleDraftShape {
   background: {
@@ -373,8 +374,9 @@ function parseStringArray(input: unknown): string[] {
     .filter(Boolean)
   if (Array.isArray(input)) return normalize(input)
   if (typeof input === "string" && input.trim().length > 0) {
+    const trimmed = input.trim()
     try {
-      const parsed = JSON.parse(input)
+      const parsed = trimmed.startsWith("[") ? JSON.parse(trimmed) : null
       if (Array.isArray(parsed)) return normalize(parsed)
     } catch {
       return input
@@ -382,6 +384,10 @@ function parseStringArray(input: unknown): string[] {
         .map((item) => item.trim())
         .filter(Boolean)
     }
+    return input
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean)
   }
   return []
 }
@@ -1343,6 +1349,8 @@ export interface DashboardConfigService {
   definitions: ManagedConfigDefinition[]
   getFilePath: (id: ManagedConfigId) => string
   readManagedText: (id: ManagedConfigId) => string
+  readManagedDisplayText: (id: ManagedConfigId) => string
+  redactManagedText: (id: ManagedConfigId, text: string) => string
   readManagedBackupText: (id: ManagedConfigId) => string
   readManagedJson: <T>(id: ManagedConfigId) => T
   writeManagedJson: (id: ManagedConfigId, value: unknown) => void
@@ -1456,6 +1464,16 @@ export function createConfigService(
     })
   }
 
+  const redactGeneralSecrets = (value: unknown): unknown => {
+    if (!isPlainObject(value)) return value
+    const general = { ...value }
+    const token = typeof general.token === "string" ? general.token.trim() : ""
+    if (token) {
+      general.token = GENERAL_TOKEN_REDACTION
+    }
+    return general
+  }
+
   const mergeRedactedIntegrationProfileSecrets = (profiles: unknown): unknown => {
     if (!Array.isArray(profiles)) return profiles
     let currentProfiles: any[] = []
@@ -1478,6 +1496,38 @@ export function createConfigService(
     })
   }
 
+  const mergeRedactedGeneralSecrets = (value: unknown): unknown => {
+    if (!isPlainObject(value)) return value
+    const general = { ...value }
+    if (general.token === GENERAL_TOKEN_REDACTION) {
+      try {
+        const currentGeneral = JSON.parse(readManagedText("general")) as Record<string, unknown>
+        general.token = typeof currentGeneral.token === "string" ? currentGeneral.token : ""
+      } catch {
+        general.token = ""
+      }
+    }
+    return general
+  }
+
+  const redactManagedText = (id: ManagedConfigId, text: string): string => {
+    try {
+      const parsed = JSON.parse(text)
+      if (id === "general") {
+        return JSON.stringify(redactGeneralSecrets(parsed), null, 2) + "\n"
+      }
+      if (id === "integration-profiles") {
+        return JSON.stringify(redactIntegrationProfileSecrets(parsed), null, 2) + "\n"
+      }
+    } catch {}
+
+    return text
+  }
+
+  const readManagedDisplayText = (id: ManagedConfigId): string => {
+    return redactManagedText(id, readManagedText(id))
+  }
+
   const readManagedBackupText = (id: ManagedConfigId): string => {
     if (id === "ai-assist-profiles") {
       return JSON.stringify(readManagedJson<any[]>("ai-assist-profiles").map(normalizeAiAssistProfile), null, 2) + "\n"
@@ -1485,16 +1535,18 @@ export function createConfigService(
     if (id === "knowledge-sources") {
       return JSON.stringify(readManagedJson<any[]>("knowledge-sources").map((source) => normalizeKnowledgeSource(source, projectRoot)), null, 2) + "\n"
     }
-    if (id !== "integration-profiles") return readManagedText(id)
-    return JSON.stringify(redactIntegrationProfileSecrets(readManagedJson<unknown>("integration-profiles")), null, 2) + "\n"
+    if (id === "general" || id === "integration-profiles") return readManagedDisplayText(id)
+    return readManagedText(id)
   }
 
   const writeManagedJson = (id: ManagedConfigId, value: unknown): void => {
     const filePath = getFilePath(id)
     const tempPath = `${filePath}.tmp`
-    const writableValue = id === "integration-profiles"
-      ? mergeRedactedIntegrationProfileSecrets(value)
-      : id === "ai-assist-profiles"
+    const writableValue = id === "general"
+      ? mergeRedactedGeneralSecrets(value)
+      : id === "integration-profiles"
+        ? mergeRedactedIntegrationProfileSecrets(value)
+        : id === "ai-assist-profiles"
         ? Array.isArray(value) ? value.map(normalizeAiAssistProfile) : value
         : id === "knowledge-sources"
           ? Array.isArray(value) ? value.map((source) => normalizeKnowledgeSource(source, projectRoot)) : value
@@ -2032,7 +2084,14 @@ export function createConfigService(
     body: Record<string, unknown>,
     globalAdmins: string[]
   ) => {
-    current.token = ensureString(body.token, current.token || "")
+    const tokenInput = ensureString(body.token, "")
+    if (ensureBoolean(body.tokenClear)) {
+      current.token = ""
+    } else if (tokenInput.trim().length > 0) {
+      current.token = tokenInput
+    } else {
+      current.token = ensureString(current.token, "")
+    }
     current.mainColor = ensureString(body.mainColor, current.mainColor || "")
     current.language = ensureString(body.language, current.language || "english")
     current.prefix = ensureString(body.prefix, current.prefix || "")
@@ -2243,6 +2302,8 @@ export function createConfigService(
     definitions: MANAGED_CONFIGS,
     getFilePath,
     readManagedText,
+    readManagedDisplayText,
+    redactManagedText,
     readManagedBackupText,
     readManagedJson,
     writeManagedJson,

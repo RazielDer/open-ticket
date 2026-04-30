@@ -1164,6 +1164,39 @@ test("authenticated sessions can access the raw config editor", async (t) => {
   assert.equal(editorResponse.status, 200)
   assert.match(editorHtml, /Advanced JSON editor/)
   assert.match(editorHtml, /general\.json/)
+  assert.match(editorHtml, /__OPEN_TICKET_REDACTED_SECRET__/)
+  assert.doesNotMatch(editorHtml, /(&quot;|&#34;)token(&quot;|&#34;):\s*(&quot;|&#34;)token/)
+
+  const csrfToken = parseHiddenValue(editorHtml, "csrfToken")
+  const currentGeneral = JSON.parse(fs.readFileSync(path.join(runtime.projectRoot, "config", "general.json"), "utf8"))
+  const saveResponse = await fetch(`${runtime.baseUrl}/dash/config/general`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      json: JSON.stringify({
+        ...currentGeneral,
+        token: "__OPEN_TICKET_REDACTED_SECRET__",
+        language: "german"
+      }, null, 2)
+    }).toString()
+  })
+  await saveResponse.arrayBuffer()
+
+  assert.equal(saveResponse.status, 302)
+  const savedGeneral = JSON.parse(fs.readFileSync(path.join(runtime.projectRoot, "config", "general.json"), "utf8"))
+  assert.equal(savedGeneral.token, "token")
+  assert.equal(savedGeneral.language, "german")
+
+  const exported = await (await fetch(`${runtime.baseUrl}/dash/admin/configs/general/export`, {
+    headers: { cookie }
+  })).text()
+  assert.match(exported, /__OPEN_TICKET_REDACTED_SECRET__/)
+  assert.doesNotMatch(exported, /"token": "token"/)
 })
 
 test("legacy in-scope config detail routes redirect to visual workspaces while transcripts detail stays available", async (t) => {
@@ -1449,8 +1482,12 @@ test("general visual editor renders runtime-aligned enum choices", async (t) => 
   const generalHtml = await (await fetch(`${runtime.baseUrl}/dash/visual/general`, {
     headers: { cookie }
   })).text()
+  const csrfToken = parseBodyData(generalHtml, "csrf-token")
 
+  assert.ok(csrfToken.length > 0)
   assert.match(generalHtml, /value="custom"/)
+  assert.match(generalHtml, /Saved token configured/)
+  assert.doesNotMatch(generalHtml, /name="token" value="token"/)
   assert.doesNotMatch(generalHtml, /hero-eyebrow/)
   assert.match(generalHtml, /data-responsive-disclosure="workspace-advanced-tools"/)
   assert.match(generalHtml, /class="card-actions editor-utility-actions"/)
@@ -1461,6 +1498,33 @@ test("general visual editor renders runtime-aligned enum choices", async (t) => 
   assert.match(generalHtml, /value="double"/)
   assert.match(generalHtml, /value="disabled"/)
   assert.doesNotMatch(generalHtml, /value="none"/)
+
+  const saveResponse = await fetch(`${runtime.baseUrl}/dash/api/config/general`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      csrfToken,
+      token: "",
+      mainColor: "#ffffff",
+      language: "english",
+      prefix: "!ticket ",
+      serverId: "1",
+      globalAdmins: "[]",
+      slashCommands: "on",
+      "status.type": "watching",
+      "status.mode": "online",
+      "system.emojiStyle": "before"
+    }).toString()
+  })
+  await saveResponse.arrayBuffer()
+
+  assert.equal(saveResponse.status, 302)
+  const savedGeneral = JSON.parse(fs.readFileSync(path.join(runtime.projectRoot, "config", "general.json"), "utf8"))
+  assert.equal(savedGeneral.token, "token")
 })
 
 test("array visual editors expose compact toolbar and savebar hooks without duplicate item-card kickers", async (t) => {
@@ -1773,15 +1837,19 @@ test("authenticated admin home renders the beginner-first nav and keeps advanced
     headers: { cookie }
   })
 
-  await advancedResponse.arrayBuffer()
+  const advancedHtml = await advancedResponse.text()
   await securityResponse.arrayBuffer()
   await runtimeResponse.arrayBuffer()
-  await evidenceResponse.arrayBuffer()
+  const evidenceHtml = await evidenceResponse.text()
 
   assert.equal(advancedResponse.status, 200)
+  assert.doesNotMatch(advancedHtml, /setup\.areas\./)
+  assert.doesNotMatch(advancedHtml, /advanced\.sections\.editors\.items\./)
   assert.equal(securityResponse.status, 200)
   assert.equal(runtimeResponse.status, 200)
   assert.equal(evidenceResponse.status, 200)
+  assert.match(evidenceHtml, /evidence[\\/]ot-dashboard-plugin-self-containment-verification\.md/)
+  assert.doesNotMatch(evidenceHtml, /C:\\Users\\/)
 })
 
 test("security workspace writes only allowed routing and RBAC fields, keeps secrets read-only, and records backups plus audit evidence", async (t) => {
@@ -1821,13 +1889,13 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
       publicBaseUrl: "https://admin.example",
       viewerPublicBaseUrl: "https://records.example",
       trustProxyHops: "3",
-      "rbac.ownerUserIds": "owner-user\nowner-two",
-      "rbac.roleIds.reviewer": "reviewer-role",
-      "rbac.roleIds.editor": "editor-role",
-      "rbac.roleIds.admin": "admin-role",
-      "rbac.userIds.reviewer": "reviewer-user",
-      "rbac.userIds.editor": "editor-user",
-      "rbac.userIds.admin": "admin-user",
+      "rbac.ownerUserIds": "100000000000000001\n100000000000000002",
+      "rbac.roleIds.reviewer": "200000000000000001",
+      "rbac.roleIds.editor": "200000000000000002",
+      "rbac.roleIds.admin": "200000000000000003",
+      "rbac.userIds.reviewer": "300000000000000001",
+      "rbac.userIds.editor": "300000000000000002",
+      "rbac.userIds.admin": "admin-user\n300000000000000003",
       "auth.breakglass.enabled": "true"
     }).toString()
   })
@@ -1840,16 +1908,24 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.equal(savedConfig.publicBaseUrl, "https://admin.example")
   assert.equal(savedConfig.viewerPublicBaseUrl, "https://records.example")
   assert.equal(savedConfig.trustProxyHops, 3)
-  assert.deepEqual(savedConfig.rbac.ownerUserIds, ["owner-user", "owner-two"])
-  assert.deepEqual(savedConfig.rbac.roleIds.reviewer, ["reviewer-role"])
-  assert.deepEqual(savedConfig.rbac.roleIds.editor, ["editor-role"])
-  assert.deepEqual(savedConfig.rbac.roleIds.admin, ["admin-role"])
-  assert.deepEqual(savedConfig.rbac.userIds.reviewer, ["reviewer-user"])
-  assert.deepEqual(savedConfig.rbac.userIds.editor, ["editor-user"])
-  assert.deepEqual(savedConfig.rbac.userIds.admin, ["admin-user"])
+  assert.deepEqual(savedConfig.rbac.ownerUserIds, ["100000000000000001", "100000000000000002"])
+  assert.deepEqual(savedConfig.rbac.roleIds.reviewer, ["200000000000000001"])
+  assert.deepEqual(savedConfig.rbac.roleIds.editor, ["200000000000000002"])
+  assert.deepEqual(savedConfig.rbac.roleIds.admin, ["200000000000000003"])
+  assert.deepEqual(savedConfig.rbac.userIds.reviewer, ["300000000000000001"])
+  assert.deepEqual(savedConfig.rbac.userIds.editor, ["300000000000000002"])
+  assert.deepEqual(savedConfig.rbac.userIds.admin, ["admin-user", "300000000000000003"])
   assert.equal(savedConfig.auth.breakglass.enabled, true)
   assert.equal(savedConfig.auth.sessionSecret, beforeConfig.auth.sessionSecret)
   assert.equal(savedConfig.auth.passwordHash, beforeConfig.auth.passwordHash)
+
+  const savedSecurityResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    headers: { cookie }
+  })
+  const savedSecurityHtml = await savedSecurityResponse.text()
+  assert.equal(savedSecurityResponse.status, 200)
+  assert.match(savedSecurityHtml, /300000000000000003/)
+  assert.doesNotMatch(savedSecurityHtml, /auth\.breakglass\.passwordHash/)
 
   const runtimeBackupRoot = path.join(runtime.projectRoot, "runtime", "ot-dashboard", "backups")
   const runtimeBackups = fs.readdirSync(runtimeBackupRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())
@@ -1923,6 +1999,8 @@ test("config review flow applies changes, exports json, and records runtime-owne
   assert.equal(reviewResponse.status, 200)
   assert.match(reviewHtml, /Review general\.json before apply/)
   assert.match(reviewHtml, /Changed paths/)
+  assert.match(reviewHtml, /__OPEN_TICKET_REDACTED_SECRET__/)
+  assert.doesNotMatch(reviewHtml, /(&quot;|&#34;)token(&quot;|&#34;):\s*(&quot;|&#34;)token/)
   assert.ok(reviewToken.length > 0)
 
   const applyResponse = await fetch(`${runtime.baseUrl}/dash/admin/configs/general/apply`, {
@@ -1953,6 +2031,8 @@ test("config review flow applies changes, exports json, and records runtime-owne
     headers: { cookie }
   })).text()
   assert.match(exported, /"language": "dutch"/)
+  assert.match(exported, /__OPEN_TICKET_REDACTED_SECRET__/)
+  assert.doesNotMatch(exported, /"token": "token"/)
 })
 
 test("invalid config review drafts preserve the submitted json and surface an error", async (t) => {

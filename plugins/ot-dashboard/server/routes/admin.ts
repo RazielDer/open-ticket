@@ -818,7 +818,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
       return res.status(404).send(i18n.t("editor.notFound"))
     }
 
-    const text = configService.prettifyText(configService.readManagedText(definition.id))
+    const text = configService.prettifyText(configService.readManagedDisplayText(definition.id))
     res.setHeader("Content-Type", "application/json; charset=utf-8")
     res.setHeader("Content-Disposition", `attachment; filename="${definition.fileName}"`)
     res.send(text)
@@ -873,8 +873,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
     try {
       const candidateText = String(req.body?.candidateText || "")
-      const currentText = configService.prettifyText(configService.readManagedText(definition.id))
-      const review = prepareJsonReview(definition, currentText, candidateText)
+      const currentText = configService.prettifyText(configService.readManagedDisplayText(definition.id))
+      const review = prepareJsonReview(definition, currentText, configService.redactManagedText(definition.id, candidateText))
       const token = stashPendingReview(req, {
         kind: "managed-config",
         id: definition.id,
@@ -926,8 +926,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
 
     try {
       const candidateText = backupService.getBackupText(backup.id, definition.id)
-      const currentText = configService.prettifyText(configService.readManagedText(definition.id))
-      const review = prepareJsonReview(definition, currentText, candidateText)
+      const currentText = configService.prettifyText(configService.readManagedDisplayText(definition.id))
+      const review = prepareJsonReview(definition, currentText, configService.redactManagedText(definition.id, candidateText))
       const token = stashPendingReview(req, {
         kind: "managed-config",
         id: definition.id,
@@ -2988,8 +2988,8 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
             definition,
             review: prepareJsonReview(
               definition,
-              configService.prettifyText(configService.readManagedText(definition.id)),
-              backupService.getBackupText(backup.id, definition.id)
+              configService.prettifyText(configService.readManagedDisplayText(definition.id)),
+              configService.redactManagedText(definition.id, backupService.getBackupText(backup.id, definition.id))
             ),
             restoreHref: joinBasePath(basePath, `admin/configs/${definition.id}/restore/${encodeURIComponent(backup.id)}`)
           }
