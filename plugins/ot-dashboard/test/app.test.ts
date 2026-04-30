@@ -9,7 +9,7 @@ import { AddressInfo, Socket } from "net"
 import { createConfigService } from "../server/config-service"
 import { createDashboardApp } from "../server/create-app"
 import type { DashboardActionProviderBridge } from "../server/action-provider-bridge"
-import type { DashboardConfig } from "../server/dashboard-config"
+import { getDashboardSecurityWarnings, type DashboardConfig } from "../server/dashboard-config"
 import { defaultDashboardRuntimeBridge, type DashboardRuntimeBridge } from "../server/runtime-bridge"
 
 const pluginRoot = path.resolve(process.cwd(), "plugins", "ot-dashboard")
@@ -2356,6 +2356,7 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.match(securityHtml, /Reviewer/)
   assert.match(securityHtml, /Editor/)
   assert.match(securityHtml, /Full admin-host configuration access/)
+  assert.match(securityHtml, /<form[^>]+class="entry-stack security-workspace"[^>]+novalidate/)
   for (const fieldName of [
     "rbac.ownerUserIds",
     "rbac.roleIds.reviewer",
@@ -2527,6 +2528,48 @@ test("security workspace fails closed when pre-apply auth audit evidence cannot 
   assert.equal(saveResponse.status, 302)
   assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /pre-apply audit unavailable/)
   assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeConfig)
+})
+
+test("security workspace keeps URL validation warning-oriented and draft-compatible", async (t) => {
+  const runtime = await startTestServer("/dash", { useTempPluginRoot: true })
+  t.after(async () => {
+    await stopTestServer(runtime)
+  })
+
+  const { cookie } = await login(runtime)
+  const securityResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    headers: { cookie }
+  })
+  const securityHtml = await securityResponse.text()
+  const csrfToken = parseBodyData(securityHtml, "csrf-token")
+  const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
+
+  assert.match(securityHtml, /<form[^>]+class="entry-stack security-workspace"[^>]+novalidate/)
+
+  const saveResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: buildSecuritySaveBody(csrfToken, {
+      publicBaseUrl: "not a url",
+      viewerPublicBaseUrl: "ftp://records.example"
+    }).toString()
+  })
+  await saveResponse.arrayBuffer()
+
+  assert.equal(saveResponse.status, 302)
+  assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /Saved security settings/)
+
+  const savedConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
+  assert.equal(savedConfig.publicBaseUrl, "not a url")
+  assert.equal(savedConfig.viewerPublicBaseUrl, "ftp://records.example")
+
+  const warnings = getDashboardSecurityWarnings(savedConfig)
+  assert.ok(warnings.includes("Dashboard publicBaseUrl is invalid. Use an absolute http or https URL."))
+  assert.ok(warnings.includes("Dashboard viewerPublicBaseUrl is invalid. Use an absolute http or https URL."))
 })
 
 test("config review flow applies changes, exports json, and records runtime-owned backups", async (t) => {
