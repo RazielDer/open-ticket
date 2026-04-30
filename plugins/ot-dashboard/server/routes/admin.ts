@@ -1407,7 +1407,7 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
     }))
   })
 
-  app.post(joinBasePath(basePath, "admin/security"), adminGuard.form("config.write.security"), (req, res) => {
+  app.post(joinBasePath(basePath, "admin/security"), adminGuard.form("config.write.security"), async (req, res) => {
     try {
       const runtimeBackup = backupService.createBackup(i18n.t("security.messages.preApplyBackup"), "apply:dashboard-security")
       const actor = adminGuard.getAccess(res)?.identity
@@ -1415,23 +1415,31 @@ export function registerAdminRoutes(app: express.Express, context: DashboardAppC
         return res.status(403).type("text/plain; charset=utf-8").send("Forbidden")
       }
 
-      const result = configService.saveDashboardSecuritySettings(
+      const result = await configService.saveDashboardSecuritySettings(
         context.config,
         req.body as Record<string, unknown>,
         actor,
-        { runtimeBackupId: runtimeBackup.id }
-      )
-      void recordAdminAuditEvent(context, req, actor, {
-        eventType: "security-workspace-save",
-        target: "dashboard-security",
-        reason: "admin-security-workspace",
-        details: {
-          changedPaths: result.changedPaths,
-          backupId: result.backupId,
-          auditId: result.auditId,
-          runtimeBackupId: runtimeBackup.id
+        {
+          runtimeBackupId: runtimeBackup.id,
+          beforeApplyAudit: async (preApply) => {
+            await context.authStore.recordAuditEvent({
+              eventType: "security-workspace-save",
+              sessionScope: "admin",
+              sessionId: req.sessionID,
+              actor: buildDashboardAuditActor(actor),
+              target: "dashboard-security",
+              outcome: "success",
+              reason: "admin-security-workspace",
+              details: {
+                changedPaths: preApply.changedPaths,
+                backupId: preApply.backupId,
+                auditId: preApply.auditId,
+                runtimeBackupId: preApply.runtimeBackupId
+              }
+            })
+          }
         }
-      })
+      )
       res.redirect(
         `${joinBasePath(basePath, "admin/security")}?saved=1&backupId=${encodeURIComponent(result.backupId)}&msg=${encodeURIComponent(
           i18n.t("security.messages.saved")

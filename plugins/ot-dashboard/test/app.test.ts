@@ -581,6 +581,24 @@ function parseBodyData(html: string, key: string) {
   return match ? match[1] : ""
 }
 
+function buildSecuritySaveBody(csrfToken: string, overrides: Record<string, string> = {}) {
+  return new URLSearchParams({
+    csrfToken,
+    publicBaseUrl: "https://admin.example",
+    viewerPublicBaseUrl: "https://records.example",
+    trustProxyHops: "3",
+    "rbac.ownerUserIds": "100000000000000001",
+    "rbac.roleIds.reviewer": "200000000000000001",
+    "rbac.roleIds.editor": "200000000000000002",
+    "rbac.roleIds.admin": "200000000000000003",
+    "rbac.userIds.reviewer": "300000000000000001",
+    "rbac.userIds.editor": "300000000000000002",
+    "rbac.userIds.admin": "300000000000000003",
+    "auth.breakglass.enabled": "true",
+    ...overrides
+  })
+}
+
 class FakeDashboardEvent {
   type: string
   bubbles: boolean
@@ -2382,19 +2400,10 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
       cookie,
       "content-type": "application/x-www-form-urlencoded"
     },
-    body: new URLSearchParams({
-      csrfToken,
-      publicBaseUrl: "https://admin.example",
-      viewerPublicBaseUrl: "https://records.example",
-      trustProxyHops: "3",
+    body: buildSecuritySaveBody(csrfToken, {
       "rbac.ownerUserIds": " 100000000000000001,100000000000000002\n100000000000000001 ",
-      "rbac.roleIds.reviewer": "200000000000000001",
-      "rbac.roleIds.editor": "200000000000000002",
       "rbac.roleIds.admin": "200000000000000003, 200000000000000004",
-      "rbac.userIds.reviewer": "300000000000000001",
-      "rbac.userIds.editor": "300000000000000002",
-      "rbac.userIds.admin": "admin-user, 300000000000000003\n300000000000000003 ",
-      "auth.breakglass.enabled": "true"
+      "rbac.userIds.admin": "admin-user, 300000000000000003\n300000000000000003 "
     }).toString()
   })
   await saveResponse.arrayBuffer()
@@ -2449,6 +2458,75 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.match(auditText, /publicBaseUrl/)
   assert.match(auditText, /viewerPublicBaseUrl/)
   assert.match(auditText, /auth\.breakglass\.enabled/)
+
+  const authAuditEvents = await runtime.context.authStore.listAuditEvents({
+    eventType: "security-workspace-save",
+    limit: 5
+  })
+  assert.equal(authAuditEvents.length, 1)
+  assert.equal(authAuditEvents[0].target, "dashboard-security")
+  assert.equal(authAuditEvents[0].reason, "admin-security-workspace")
+  assert.equal(authAuditEvents[0].details.backupId, securityBackups[0].replace(/\.json$/, ""))
+  assert.equal(authAuditEvents[0].details.runtimeBackupId, runtimeBackups[0].name)
+  assert.equal(Array.isArray(authAuditEvents[0].details.changedPaths), true)
+  assert.equal((authAuditEvents[0].details.changedPaths as unknown[]).includes("publicBaseUrl"), true)
+
+  const beforeNumericJsonAttempt = JSON.parse(fs.readFileSync(configPath, "utf8"))
+  const numericJsonResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: buildSecuritySaveBody(csrfToken, {
+      "rbac.ownerUserIds": "[100000000000000001]"
+    }).toString()
+  })
+  await numericJsonResponse.arrayBuffer()
+  assert.equal(numericJsonResponse.status, 302)
+  assert.match(decodeURIComponent(String(numericJsonResponse.headers.get("location") || "")), /Security ID lists must contain only string values/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeNumericJsonAttempt)
+})
+
+test("security workspace fails closed when pre-apply auth audit evidence cannot be recorded", async (t) => {
+  const runtime = await startTestServer("/dash", { useTempPluginRoot: true })
+  t.after(async () => {
+    await stopTestServer(runtime)
+  })
+
+  const { cookie } = await login(runtime)
+  const securityResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    headers: { cookie }
+  })
+  const securityHtml = await securityResponse.text()
+  const csrfToken = parseBodyData(securityHtml, "csrf-token")
+  const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
+  const beforeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
+  const originalRecordAuditEvent = runtime.context.authStore.recordAuditEvent.bind(runtime.context.authStore)
+  runtime.context.authStore.recordAuditEvent = async (input) => {
+    if (input.eventType === "security-workspace-save") {
+      throw new Error("pre-apply audit unavailable")
+    }
+    return originalRecordAuditEvent(input)
+  }
+
+  const saveResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: buildSecuritySaveBody(csrfToken, {
+      publicBaseUrl: "https://should-not-apply.example"
+    }).toString()
+  })
+  await saveResponse.arrayBuffer()
+
+  assert.equal(saveResponse.status, 302)
+  assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /pre-apply audit unavailable/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeConfig)
 })
 
 test("config review flow applies changes, exports json, and records runtime-owned backups", async (t) => {

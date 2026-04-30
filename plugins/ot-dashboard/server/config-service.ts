@@ -411,16 +411,25 @@ function normalizeUniqueStringEntries(input: unknown): string[] {
 
 function parseSecurityStringArray(input: unknown): string[] {
   const normalize = (items: unknown[]) => items
-    .flatMap((item) => String(item).split(/\r?\n|,/))
+    .flatMap((item) => {
+      if (typeof item !== "string") {
+        throw new Error("Security ID lists must contain only string values.")
+      }
+
+      return item.split(/\r?\n|,/)
+    })
     .map((item) => item.trim())
     .filter(Boolean)
   if (Array.isArray(input)) return normalize(input)
   if (typeof input === "string" && input.trim().length > 0) {
     const trimmed = input.trim()
-    try {
-      const parsed = trimmed.startsWith("[") ? JSON.parse(trimmed) : null
+    if (trimmed.startsWith("[")) {
+      let parsed: unknown = null
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch {}
       if (Array.isArray(parsed)) return normalize(parsed)
-    } catch {}
+    }
     return normalize([input])
   }
   return []
@@ -441,6 +450,18 @@ function normalizeUniqueSecurityStringEntries(input: unknown): string[] {
   }
 
   return normalized
+}
+
+type DashboardSecuritySaveResult = {
+  backupId: string
+  auditId: string
+  auditFilePath: string
+  changedPaths: string[]
+  configPath: string
+}
+
+type DashboardSecurityPreApplyAuditInput = DashboardSecuritySaveResult & {
+  runtimeBackupId: string | null
 }
 
 function normalizeTicketOptionTranscriptRoutingConfig(input: unknown) {
@@ -1428,14 +1449,9 @@ export interface DashboardConfigService {
     },
     options?: {
       runtimeBackupId?: string | null
+      beforeApplyAudit?: (input: DashboardSecurityPreApplyAuditInput) => Promise<void> | void
     }
-  ) => {
-    backupId: string
-    auditId: string
-    auditFilePath: string
-    changedPaths: string[]
-    configPath: string
-  }
+  ) => Promise<DashboardSecuritySaveResult>
 }
 
 export function createConfigService(
@@ -1753,7 +1769,7 @@ export function createConfigService(
     return changed
   }
 
-  const saveDashboardSecuritySettings = (
+  const saveDashboardSecuritySettings = async (
     liveConfig: DashboardConfig,
     body: Record<string, unknown>,
     actor: {
@@ -1763,6 +1779,7 @@ export function createConfigService(
     },
     options: {
       runtimeBackupId?: string | null
+      beforeApplyAudit?: (input: DashboardSecurityPreApplyAuditInput) => Promise<void> | void
     } = {}
   ) => {
     const currentFileConfig = readDashboardPluginConfig()
@@ -1872,6 +1889,19 @@ export function createConfigService(
       snapshot: nextSnapshot
     }
     fs.appendFileSync(dashboardSecurityAuditPath, `${JSON.stringify(auditRecord)}\n`, "utf8")
+
+    const result = {
+      backupId,
+      auditId,
+      auditFilePath: dashboardSecurityAuditPath,
+      changedPaths,
+      configPath: dashboardConfigPath
+    }
+    await options.beforeApplyAudit?.({
+      ...result,
+      runtimeBackupId: options.runtimeBackupId || null
+    })
+
     writeDashboardPluginConfig(candidateConfig)
 
     liveConfig.publicBaseUrl = nextSnapshot.publicBaseUrl
@@ -1895,13 +1925,7 @@ export function createConfigService(
       }
     }
 
-    return {
-      backupId,
-      auditId,
-      auditFilePath: dashboardSecurityAuditPath,
-      changedPaths,
-      configPath: dashboardConfigPath
-    }
+    return result
   }
 
   const listAvailableLanguages = (): string[] => {
