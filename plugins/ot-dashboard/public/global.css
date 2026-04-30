@@ -110,6 +110,7 @@ input[type="radio"] {
   .brand-block,
   .rail-link,
   .btn,
+  .field-tool-button,
   .icon-button,
   .fab-button
 ):focus-visible {
@@ -1144,9 +1145,25 @@ input[type="radio"] {
 
 .json-editor-toolbar {
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px 14px;
+}
+
+.json-editor-actions {
+  gap: 8px;
+}
+
+.json-editor-actions .btn {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+  white-space: nowrap;
 }
 
 .json-editor-status {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.84rem;
 }
 
@@ -1169,6 +1186,48 @@ input[type="radio"] {
 
 .json-editor-source {
   display: none;
+}
+
+.field-tools-shell {
+  display: grid;
+  gap: 8px;
+}
+
+.field-tools-toolbar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.field-tool-button {
+  appearance: none;
+  min-height: 34px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.field-tool-button:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--border-strong));
+  color: var(--text-primary);
+}
+
+.field-tools-shell > .text-input,
+.field-tools-shell > .code-area {
+  width: 100%;
 }
 
 .plugin-workbench,

@@ -85,6 +85,7 @@ test("dashboard maintainer tooling lives under the plugin package boundary", () 
     "@codemirror/commands",
     "@codemirror/lang-json",
     "@codemirror/language",
+    "@codemirror/lint",
     "@codemirror/search",
     "@codemirror/state",
     "@codemirror/view",
@@ -94,6 +95,7 @@ test("dashboard maintainer tooling lives under the plugin package boundary", () 
   }
 
   assert.equal(pluginPackageJson.scripts?.["build:editor"], "node scripts/build-editor.mjs")
+  assert.equal(Boolean(pluginPackageJson.devDependencies?.["@codemirror/lint"]), true)
 })
 
 test("dashboard runtime API exposes plugin-owned registration hooks", async () => {

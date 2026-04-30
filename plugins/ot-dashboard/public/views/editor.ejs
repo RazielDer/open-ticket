@@ -31,7 +31,7 @@
         <form id="rawEditorForm" method="post" action="<%= rawHref %>" class="stack-form">
           <input type="hidden" name="csrfToken" value="<%= csrfToken %>">
           <label class="field-label" for="jsonEditor">Draft JSON</label>
-          <textarea id="jsonEditor" name="json" class="code-area" spellcheck="false" data-json-editor="true"><%= jsonText %></textarea>
+          <textarea id="jsonEditor" name="json" class="code-area" spellcheck="false" data-json-editor="true" data-field-tools="json"><%= jsonText %></textarea>
           <label class="field-label" for="jsonImport">Import JSON file</label>
           <input id="jsonImport" type="file" accept=".json,application/json" data-load-json-into="#jsonEditor">
           <div class="card-actions">

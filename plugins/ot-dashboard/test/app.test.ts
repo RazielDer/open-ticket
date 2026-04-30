@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import vm from "vm"
 import { AddressInfo, Socket } from "net"
 
 import { createConfigService } from "../server/config-service"
@@ -580,6 +581,306 @@ function parseBodyData(html: string, key: string) {
   return match ? match[1] : ""
 }
 
+class FakeDashboardEvent {
+  type: string
+  bubbles: boolean
+  defaultPrevented = false
+  returnValue: unknown = undefined
+  target: unknown = null
+
+  constructor(type: string, options: { bubbles?: boolean } = {}) {
+    this.type = type
+    this.bubbles = options.bubbles === true
+  }
+
+  preventDefault() {
+    this.defaultPrevented = true
+  }
+}
+
+class FakeDashboardElement {
+  tagName: string
+  children: FakeDashboardElement[] = []
+  parentNode: FakeDashboardElement | null = null
+  dataset: Record<string, string> = {}
+  attributes = new Map<string, string>()
+  listeners = new Map<string, Array<(event: FakeDashboardEvent) => void>>()
+  style: Record<string, string> = {}
+  className = ""
+  hidden = false
+  textContent = ""
+  value = ""
+  type = ""
+  form: FakeDashboardElement | null = null
+  readOnly = false
+  disabled = false
+  files: Array<{ text(): Promise<string> }> = []
+  classList: { add: (...names: string[]) => void }
+
+  constructor(tagName: string) {
+    this.tagName = tagName.toUpperCase()
+    this.classList = {
+      add: (...names: string[]) => {
+        const existing = new Set(this.className.split(/\s+/).filter(Boolean))
+        names.forEach((name) => existing.add(name))
+        this.className = Array.from(existing).join(" ")
+      }
+    }
+  }
+
+  append(...nodes: FakeDashboardElement[]) {
+    nodes.forEach((node) => {
+      if (node.parentNode) {
+        node.parentNode.children = node.parentNode.children.filter((child) => child !== node)
+      }
+      node.parentNode = this
+      this.children.push(node)
+    })
+  }
+
+  insertBefore(node: FakeDashboardElement, reference: FakeDashboardElement | null) {
+    if (node.parentNode) {
+      node.parentNode.children = node.parentNode.children.filter((child) => child !== node)
+    }
+    node.parentNode = this
+    const index = reference ? this.children.indexOf(reference) : -1
+    if (index >= 0) {
+      this.children.splice(index, 0, node)
+    } else {
+      this.children.push(node)
+    }
+  }
+
+  remove() {
+    if (this.parentNode) {
+      this.parentNode.children = this.parentNode.children.filter((child) => child !== this)
+      this.parentNode = null
+    }
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, String(value))
+    if (name === "type") this.type = String(value)
+    if (name === "readonly") this.readOnly = true
+    if (name === "disabled") this.disabled = true
+    if (name.startsWith("data-")) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+      this.dataset[key] = String(value)
+    }
+  }
+
+  getAttribute(name: string) {
+    if (name === "type") return this.type
+    if (name === "class") return this.className
+    return this.attributes.get(name) || ""
+  }
+
+  addEventListener(type: string, listener: (event: FakeDashboardEvent) => void) {
+    const listeners = this.listeners.get(type) || []
+    listeners.push(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  dispatchEvent(event: FakeDashboardEvent) {
+    event.target = event.target || this
+    for (const listener of this.listeners.get(event.type) || []) {
+      listener(event)
+    }
+    return !event.defaultPrevented
+  }
+
+  select() {}
+
+  querySelectorAll(selector: string): FakeDashboardElement[] {
+    const matches: FakeDashboardElement[] = []
+    const visit = (node: FakeDashboardElement) => {
+      node.children.forEach((child) => {
+        if (selector === "button" && child.tagName === "BUTTON") {
+          matches.push(child)
+        }
+        if (selector === "[data-field-tools]" && child.dataset.fieldTools) {
+          matches.push(child)
+        }
+        visit(child)
+      })
+    }
+    visit(this)
+    return matches
+  }
+}
+
+function findButton(root: FakeDashboardElement, label: string) {
+  return root.querySelectorAll("button").find((button) => button.textContent === label)
+}
+
+function dashboardFieldMessages() {
+  return {
+    fieldTools: {
+      json: {
+        format: "Format JSON",
+        minify: "Minify JSON",
+        validate: "Validate JSON",
+        jumpToError: "Jump to error",
+        foldAll: "Fold all",
+        unfoldAll: "Unfold all",
+        search: "Search",
+        valid: "JSON is valid.",
+        invalid: "Invalid JSON: {message}",
+        savedDraft: "Saved draft",
+        unsavedChanges: "Unsaved changes"
+      },
+      common: {
+        copy: "Copy",
+        clear: "Clear",
+        cleanupList: "Clean up list",
+        expand: "Expand"
+      }
+    }
+  }
+}
+
+function createFakeDocument() {
+  return {
+    createElement(tagName: string) {
+      return new FakeDashboardElement(tagName)
+    },
+    getElementById() {
+      return null
+    },
+    querySelector() {
+      return null
+    },
+    querySelectorAll() {
+      return []
+    },
+    addEventListener() {}
+  }
+}
+
+function runBrowserScript(sourcePath: string, windowObject: Record<string, any>, extras: Record<string, any> = {}) {
+  const source = fs.readFileSync(sourcePath, "utf8")
+  vm.runInNewContext(source, {
+    window: windowObject,
+    document: createFakeDocument(),
+    Event: FakeDashboardEvent,
+    console,
+    JSON,
+    Object,
+    Array,
+    String,
+    Promise,
+    ...extras
+  })
+}
+
+function createJsonEditorHarness(initialValue: string) {
+  const root = new FakeDashboardElement("div")
+  const form = new FakeDashboardElement("form")
+  const textarea = new FakeDashboardElement("textarea")
+  textarea.value = initialValue
+  textarea.form = form
+  root.append(textarea)
+
+  const toasts: Array<{ message: string; type: string }> = []
+  const windowObject: Record<string, any> = {
+    DashboardUI: {
+      readJson: () => dashboardFieldMessages(),
+      showToast(message: string, type: string) {
+        toasts.push({ message, type })
+      }
+    },
+    DashboardCodeMirrorJson: {
+      createJsonEditor(options: any) {
+        let value = String(options.value || "")
+        const diagnostics = () => {
+          try {
+            JSON.parse(value)
+            return []
+          } catch (error) {
+            return [{ from: 0, to: 0, severity: "error", source: "json", message: (error as Error).message }]
+          }
+        }
+        const update = (nextValue: string) => {
+          value = nextValue
+          if (typeof options.onChange === "function") {
+            options.onChange(value)
+          }
+        }
+        return {
+          focus() {},
+          getValue() {
+            return value
+          },
+          setValue(nextValue: string) {
+            update(String(nextValue || ""))
+          },
+          validateJson() {
+            return diagnostics()
+          },
+          getFirstDiagnostic() {
+            return diagnostics()[0] || null
+          },
+          jumpToFirstError() {
+            return diagnostics()[0] || null
+          },
+          formatJson() {
+            const formatted = JSON.stringify(JSON.parse(value), null, 2)
+            update(formatted)
+            return formatted
+          },
+          minifyJson() {
+            const minified = JSON.stringify(JSON.parse(value))
+            update(minified)
+            return minified
+          },
+          foldAll() {
+            return true
+          },
+          unfoldAll() {
+            return true
+          },
+          openSearch() {},
+          destroy() {}
+        }
+      }
+    },
+    addEventListener() {}
+  }
+
+  runBrowserScript(path.join(pluginRoot, "public", "js", "json-editor.js"), windowObject)
+  const api = windowObject.DashboardJsonEditor.mount(textarea)
+  return { root, form, textarea, api, toasts }
+}
+
+function createFieldToolsHarness(mode: string, value: string, attributes: Record<string, string> = {}) {
+  const root = new FakeDashboardElement("div")
+  const textarea = new FakeDashboardElement("textarea")
+  textarea.value = value
+  textarea.dataset.fieldTools = mode
+  Object.entries(attributes).forEach(([key, entryValue]) => {
+    textarea.setAttribute(key, entryValue)
+  })
+  root.append(textarea)
+
+  const windowObject: Record<string, any> = {
+    DashboardUI: {
+      readJson: () => dashboardFieldMessages()
+    }
+  }
+  runBrowserScript(path.join(pluginRoot, "public", "js", "field-tools.js"), windowObject, {
+    navigator: {},
+    document: {
+      ...createFakeDocument(),
+      body: new FakeDashboardElement("body"),
+      execCommand() {
+        return true
+      }
+    }
+  })
+  windowObject.DashboardFieldTools.mount(textarea)
+  return { root, textarea }
+}
+
 function buildRuntimeGuildMember(userId: string, roleIds: string[]) {
   return {
     guildId: "guild-1",
@@ -1024,6 +1325,8 @@ test("editors get ticket queue home without admin setup while reviewers stay ins
   assert.ok(csrfToken.length > 0)
   assert.doesNotMatch(optionsHtml, /Review JSON before apply/)
   assert.doesNotMatch(optionsHtml, /Create config backup/)
+  assert.match(optionsHtml, /id="overflowCategories"[^>]*data-field-tools="none"/)
+  assert.match(optionsHtml, /id="ticketAdmins"[^>]*data-field-tools="none"/)
 
   const panelsResponse = await fetch(`${runtime.baseUrl}/dash/visual/panels`, {
     headers: { cookie }
@@ -1165,6 +1468,13 @@ test("authenticated sessions can access the raw config editor", async (t) => {
   assert.match(editorHtml, /Advanced JSON editor/)
   assert.match(editorHtml, /general\.json/)
   assert.match(editorHtml, /__OPEN_TICKET_REDACTED_SECRET__/)
+  assert.match(editorHtml, /data-json-editor="true" data-field-tools="json"/)
+  assert.match(editorHtml, /codemirror-json\.js/)
+  assert.match(editorHtml, /json-editor\.js/)
+  assert.match(editorHtml, /Format JSON/)
+  assert.match(editorHtml, /Minify JSON/)
+  assert.match(editorHtml, /Validate JSON/)
+  assert.match(editorHtml, /Jump to error/)
   assert.doesNotMatch(editorHtml, /(&quot;|&#34;)token(&quot;|&#34;):\s*(&quot;|&#34;)token/)
 
   const csrfToken = parseHiddenValue(editorHtml, "csrfToken")
@@ -1199,6 +1509,124 @@ test("authenticated sessions can access the raw config editor", async (t) => {
   assert.doesNotMatch(exported, /"token": "token"/)
 })
 
+test("json editor toolbar actions preserve invalid drafts and sync formatted submitted text", () => {
+  const invalidDraft = "{\"broken\": true"
+  const harness = createJsonEditorHarness(invalidDraft)
+  assert.ok(harness.api)
+
+  let inputEvents = 0
+  harness.textarea.addEventListener("input", () => {
+    inputEvents += 1
+  })
+
+  findButton(harness.api.shell, "Validate JSON")?.dispatchEvent(new FakeDashboardEvent("click"))
+  assert.equal(harness.textarea.value, invalidDraft)
+  assert.equal(inputEvents, 0)
+
+  findButton(harness.api.shell, "Jump to error")?.dispatchEvent(new FakeDashboardEvent("click"))
+  assert.equal(harness.textarea.value, invalidDraft)
+  assert.equal(inputEvents, 0)
+
+  harness.api.setValue("{\"alpha\":1,\"beta\":2}")
+  inputEvents = 0
+  findButton(harness.api.shell, "Format JSON")?.dispatchEvent(new FakeDashboardEvent("click"))
+  assert.equal(harness.textarea.value, "{\n  \"alpha\": 1,\n  \"beta\": 2\n}")
+  assert.ok(inputEvents > 0)
+
+  inputEvents = 0
+  findButton(harness.api.shell, "Minify JSON")?.dispatchEvent(new FakeDashboardEvent("click"))
+  assert.equal(harness.textarea.value, "{\"alpha\":1,\"beta\":2}")
+  assert.ok(inputEvents > 0)
+
+  harness.form.dispatchEvent(new FakeDashboardEvent("submit"))
+  assert.equal(harness.textarea.value, "{\"alpha\":1,\"beta\":2}")
+})
+
+test("json editor visible toolbar strings come from the locale payload", () => {
+  const locale = JSON.parse(fs.readFileSync(path.join(pluginRoot, "locales", "english.json"), "utf8"))
+  for (const key of [
+    "format",
+    "minify",
+    "validate",
+    "jumpToError",
+    "foldAll",
+    "unfoldAll",
+    "search",
+    "searchFind",
+    "searchNext",
+    "searchPrevious",
+    "searchAll",
+    "searchClose",
+    "valid",
+    "invalid",
+    "savedDraft",
+    "unsavedChanges"
+  ]) {
+    assert.equal(typeof locale.fieldTools.json[key], "string")
+    assert.ok(locale.fieldTools.json[key].length > 0)
+  }
+
+  const source = fs.readFileSync(path.join(pluginRoot, "public", "js", "json-editor.js"), "utf8")
+  for (const hardcoded of [
+    "Format JSON",
+    "Minify JSON",
+    "Validate JSON",
+    "Jump to error",
+    "Fold all",
+    "Unfold all",
+    "Find",
+    "Next match",
+    "Previous match",
+    "Select all matches",
+    "Close search",
+    "Saved draft",
+    "Unsaved changes"
+  ]) {
+    assert.equal(
+      source.includes(`"${hardcoded}"`) || source.includes(`'${hardcoded}'`) || source.includes(`\`${hardcoded}\``),
+      false
+    )
+  }
+  assert.match(source, /fieldTools\.json/)
+
+  const bundleSource = fs.readFileSync(path.join(pluginRoot, "scripts", "build-editor.mjs"), "utf8")
+  assert.match(bundleSource, /createSearchOnlyPanel/)
+  assert.match(bundleSource, /searchMessages/)
+  assert.match(bundleSource, /button\.setAttribute\("title", label\)/)
+  assert.match(bundleSource, /input\.setAttribute\("title", findLabel\)/)
+  assert.doesNotMatch(bundleSource, /replaceNext|replaceAll|replaceField/)
+})
+
+test("field tools clean up opted-in id lists, keep values as strings, and honor opt-out and secret guards", () => {
+  const idList = createFieldToolsHarness("id-list", " 123456789012345678 \n\n234567890123456789,\n 345678901234567890 ")
+  let inputEvents = 0
+  idList.textarea.addEventListener("input", () => {
+    inputEvents += 1
+  })
+
+  findButton(idList.root, "Clean up list")?.dispatchEvent(new FakeDashboardEvent("click"))
+  assert.equal(idList.textarea.value, "123456789012345678\n234567890123456789\n345678901234567890")
+  assert.deepEqual(idList.textarea.value.split("\n"), [
+    "123456789012345678",
+    "234567890123456789",
+    "345678901234567890"
+  ])
+  assert.equal(inputEvents, 1)
+
+  const optedOut = createFieldToolsHarness("none", " 123 ")
+  assert.equal(Boolean(findButton(optedOut.root, "Clean up list")), false)
+
+  for (const attributes of [
+    { name: "apiToken", "data-field-tools-copy": "true" },
+    { name: "providerApiKey", "data-field-tools-copy": "true" },
+    { id: "bearerHeader", "data-field-tools-copy": "true" }
+  ] as Array<Record<string, string>>) {
+    const secretShaped = createFieldToolsHarness("id-list", "secret-value", attributes)
+    assert.equal(Boolean(findButton(secretShaped.root, "Copy")), false)
+    assert.equal(Boolean(findButton(secretShaped.root, "Clean up list")), false)
+  }
+})
+
 test("legacy in-scope config detail routes redirect to visual workspaces while transcripts detail stays available", async (t) => {
   const runtime = await startTestServer()
   t.after(async () => {
@@ -1227,6 +1655,9 @@ test("legacy in-scope config detail routes redirect to visual workspaces while t
   assert.equal(transcriptsResponse.status, 200)
   assert.match(transcriptsHtml, /Transcript delivery/)
   assert.match(transcriptsHtml, /Open visual editor/)
+  assert.match(transcriptsHtml, /data-json-editor="true" data-field-tools="json"/)
+  assert.match(transcriptsHtml, /codemirror-json\.js/)
+  assert.match(transcriptsHtml, /Validate JSON/)
 })
 
 test("config service blocks duplicate ids, reference-breaking edits, and persists array reorder", (t) => {
@@ -1869,10 +2300,23 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.ok(csrfToken.length > 0)
   assert.match(securityHtml, /Security workspace/)
   assert.match(securityHtml, /Secret readiness/)
+  for (const fieldName of [
+    "rbac.ownerUserIds",
+    "rbac.roleIds.reviewer",
+    "rbac.roleIds.editor",
+    "rbac.roleIds.admin",
+    "rbac.userIds.reviewer",
+    "rbac.userIds.editor",
+    "rbac.userIds.admin"
+  ]) {
+    assert.match(securityHtml, new RegExp(`name="${fieldName.replace(/[.]/g, "\\.")}"[^>]*data-field-tools="id-list"`))
+  }
   assert.doesNotMatch(securityHtml, /name="sessionSecret"/)
   assert.doesNotMatch(securityHtml, /name="auth\.breakglass\.passwordHash"/)
   assert.doesNotMatch(securityHtml, /name="auth\.discord\.clientSecret"/)
   assert.doesNotMatch(securityHtml, /name="auth\.maxAgeHours"/)
+  assert.doesNotMatch(securityHtml, /data-field-tools-copy/)
+  assert.doesNotMatch(securityHtml, /data-field-tools="secret"/)
 
   const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
   const beforeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
@@ -1889,13 +2333,13 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
       publicBaseUrl: "https://admin.example",
       viewerPublicBaseUrl: "https://records.example",
       trustProxyHops: "3",
-      "rbac.ownerUserIds": "100000000000000001\n100000000000000002",
+      "rbac.ownerUserIds": " 100000000000000001 \n\n100000000000000002 ",
       "rbac.roleIds.reviewer": "200000000000000001",
       "rbac.roleIds.editor": "200000000000000002",
       "rbac.roleIds.admin": "200000000000000003",
       "rbac.userIds.reviewer": "300000000000000001",
       "rbac.userIds.editor": "300000000000000002",
-      "rbac.userIds.admin": "admin-user\n300000000000000003",
+      "rbac.userIds.admin": "admin-user\n\n 300000000000000003 ",
       "auth.breakglass.enabled": "true"
     }).toString()
   })
@@ -2234,8 +2678,10 @@ test("plugin manifest and asset flows apply changes, preserve fields, export dat
 
   assert.equal(assetResponse.status, 200)
   assert.match(assetHtml, /data-json-editor="true"/)
+  assert.match(assetHtml, /data-field-tools="json"/)
   assert.match(assetHtml, /data-load-json-into="#pluginAssetDraft"/)
   assert.match(assetHtml, /codemirror-json\.js/)
+  assert.match(assetHtml, /Validate JSON/)
 
   const assetReviewResponse = await fetch(`${runtime.baseUrl}/dash/admin/plugins/manifest-only/assets/${assetId}/review`, {
     method: "POST",

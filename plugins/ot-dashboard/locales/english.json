@@ -36,6 +36,32 @@
     "previous": "Previous",
     "next": "Next"
   },
+  "fieldTools": {
+    "json": {
+      "format": "Format JSON",
+      "minify": "Minify JSON",
+      "validate": "Validate JSON",
+      "jumpToError": "Jump to error",
+      "foldAll": "Fold all",
+      "unfoldAll": "Unfold all",
+      "search": "Search",
+      "searchFind": "Find",
+      "searchNext": "Next match",
+      "searchPrevious": "Previous match",
+      "searchAll": "Select all matches",
+      "searchClose": "Close search",
+      "valid": "JSON is valid.",
+      "invalid": "Invalid JSON: {message}",
+      "savedDraft": "Saved draft",
+      "unsavedChanges": "Unsaved changes"
+    },
+    "common": {
+      "copy": "Copy",
+      "clear": "Clear",
+      "cleanupList": "Clean up list",
+      "expand": "Expand"
+    }
+  },
   "nav": {
     "home": "Home",
     "setup": "Setup",
