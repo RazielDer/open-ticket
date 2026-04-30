@@ -2488,6 +2488,34 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.equal(numericJsonResponse.status, 302)
   assert.match(decodeURIComponent(String(numericJsonResponse.headers.get("location") || "")), /Security ID lists must contain only string values/)
   assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeNumericJsonAttempt)
+
+  const beforeNumericJsonScalarAttempt = JSON.parse(fs.readFileSync(configPath, "utf8"))
+  const numericJsonScalarResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken
+    },
+    body: JSON.stringify({
+      publicBaseUrl: "https://json-blocked.example",
+      viewerPublicBaseUrl: "https://records.example",
+      trustProxyHops: "3",
+      "auth.breakglass.enabled": true,
+      "rbac.ownerUserIds": 100000000000000001,
+      "rbac.roleIds.reviewer": "200000000000000001",
+      "rbac.roleIds.editor": "200000000000000002",
+      "rbac.roleIds.admin": "200000000000000003",
+      "rbac.userIds.reviewer": "300000000000000001",
+      "rbac.userIds.editor": "300000000000000002",
+      "rbac.userIds.admin": "300000000000000003"
+    })
+  })
+  await numericJsonScalarResponse.arrayBuffer()
+  assert.equal(numericJsonScalarResponse.status, 302)
+  assert.match(decodeURIComponent(String(numericJsonScalarResponse.headers.get("location") || "")), /Security ID lists must contain only string values/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeNumericJsonScalarAttempt)
 })
 
 test("security workspace fails closed when pre-apply auth audit evidence cannot be recorded", async (t) => {

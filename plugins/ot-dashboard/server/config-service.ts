@@ -452,6 +452,27 @@ function normalizeUniqueSecurityStringEntries(input: unknown): string[] {
   return normalized
 }
 
+const SECURITY_ID_LIST_FIELD_NAMES = [
+  "rbac.ownerUserIds",
+  "rbac.roleIds.reviewer",
+  "rbac.roleIds.editor",
+  "rbac.roleIds.admin",
+  "rbac.userIds.reviewer",
+  "rbac.userIds.editor",
+  "rbac.userIds.admin"
+] as const
+
+function assertSecurityIdListBodyValues(body: Record<string, unknown>) {
+  for (const fieldName of SECURITY_ID_LIST_FIELD_NAMES) {
+    const value = body[fieldName]
+    if (value === undefined || value === null || typeof value === "string" || Array.isArray(value)) {
+      continue
+    }
+
+    throw new Error("Security ID lists must contain only string values.")
+  }
+}
+
 type DashboardSecuritySaveResult = {
   backupId: string
   auditId: string
@@ -1801,6 +1822,7 @@ export function createConfigService(
     if (!Number.isFinite(trustProxyHops) || trustProxyHops < 0) {
       throw new Error("trustProxyHops must be a non-negative whole number.")
     }
+    assertSecurityIdListBodyValues(body)
 
     const nextSnapshot = normalizeSecuritySnapshot({
       publicBaseUrl: normalizeDashboardPublicBaseUrl(typeof body.publicBaseUrl === "string" ? body.publicBaseUrl : ""),
