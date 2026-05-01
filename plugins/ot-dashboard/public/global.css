@@ -160,8 +160,15 @@ input[type="radio"] {
 }
 
 .entry-stack {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: var(--space-4);
+}
+
+.inline-panel {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .site-header,
@@ -319,6 +326,8 @@ input[type="radio"] {
 .subsection-card,
 .summary-card,
 .message-card {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: var(--space-4);
   color: var(--text-primary);
@@ -676,6 +685,8 @@ input[type="radio"] {
 
 .item-card-header,
 .section-heading {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1090,6 +1101,8 @@ input[type="radio"] {
 }
 
 .table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
   border-radius: var(--radius-card);
   border: 1px solid var(--border-subtle);
@@ -1275,6 +1288,90 @@ input[type="radio"] {
 
 .security-rbac-not-applicable {
   margin: 0;
+}
+
+@media (max-width: 960px) {
+  .security-rbac-wrap {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .security-rbac-wrap .data-table,
+  .security-rbac-table,
+  .security-rbac-table thead,
+  .security-rbac-table tbody,
+  .security-rbac-table tr,
+  .security-rbac-table th,
+  .security-rbac-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .security-rbac-table {
+    border-collapse: separate;
+  }
+
+  .security-rbac-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .security-rbac-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .security-rbac-table tr {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    background: var(--inset-surface);
+  }
+
+  .security-rbac-table tbody tr:hover {
+    background: var(--inset-surface);
+  }
+
+  .security-rbac-table th[scope="row"],
+  .security-rbac-table td {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .security-rbac-table th[scope="row"] {
+    width: auto;
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    letter-spacing: 0;
+    background: transparent;
+  }
+
+  .security-rbac-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-tertiary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .security-rbac-not-applicable {
+    padding: 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-control);
+    background: var(--raised-surface);
+  }
 }
 
 .security-save-detail {
@@ -2399,9 +2496,17 @@ input[type="radio"] {
 }
 
 .control-content {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: var(--space-5);
   align-content: start;
+}
+
+.control-main > *,
+.control-content > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .admin-shell-body .site-footer,
@@ -2420,10 +2525,14 @@ input[type="radio"] {
 }
 
 .admin-shell-body .control-main > * {
+  min-width: 0;
+  max-width: 100%;
   align-self: start;
 }
 
 .admin-shell-body .control-content {
+  min-width: 0;
+  max-width: 100%;
   gap: 18px;
 }
 
@@ -3285,6 +3394,7 @@ input[type="radio"] {
 }
 
 .status-strip span {
+  min-width: 0;
   color: var(--text-secondary);
 }
 

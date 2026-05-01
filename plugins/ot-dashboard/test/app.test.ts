@@ -2357,6 +2357,8 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.match(securityHtml, /Editor/)
   assert.match(securityHtml, /Full admin-host configuration access/)
   assert.match(securityHtml, /<form[^>]+class="entry-stack security-workspace"[^>]+novalidate/)
+  assert.match(securityHtml, /<td data-label="Role IDs">/)
+  assert.match(securityHtml, /<td data-label="User IDs">/)
   for (const fieldName of [
     "rbac.ownerUserIds",
     "rbac.roleIds.reviewer",
@@ -2375,6 +2377,12 @@ test("security workspace writes only allowed routing and RBAC fields, keeps secr
   assert.doesNotMatch(securityHtml, /name="auth\.maxAgeHours"/)
   assert.doesNotMatch(securityHtml, /data-field-tools-copy/)
   assert.doesNotMatch(securityHtml, /data-field-tools="secret"/)
+
+  const globalCss = fs.readFileSync(path.join(pluginRoot, "public", "global.css"), "utf8")
+  assert.match(globalCss, /\.security-rbac-wrap \.data-table\s*{\s*min-width: 820px;/)
+  assert.match(globalCss, /@media \(max-width: 960px\)[\s\S]*\.security-rbac-table td::before/)
+  assert.match(globalCss, /\.control-content > \*[\s\S]*min-width: 0;/)
+  assert.match(globalCss, /\.table-wrap\s*{[\s\S]*max-width: 100%;/)
 
   const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
   const beforeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))

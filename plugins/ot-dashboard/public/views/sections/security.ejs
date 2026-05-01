@@ -36,7 +36,7 @@
                 <strong><%= row.label %></strong>
                 <p class="field-help"><%= row.detail %></p>
               </th>
-              <td>
+              <td data-label="<%= t('security.rbac.roleHeader') %>">
                 <% if (row.roleField) { %>
                   <label class="security-rbac-field">
                     <span class="field-label"><%= row.roleField.label %></span>
@@ -47,7 +47,7 @@
                   <p class="field-help security-rbac-not-applicable"><%= t("security.rbac.notApplicable") %></p>
                 <% } %>
               </td>
-              <td>
+              <td data-label="<%= t('security.rbac.userHeader') %>">
                 <label class="security-rbac-field">
                   <span class="field-label"><%= row.userField.label %></span>
                   <textarea class="text-input security-id-list" name="<%= row.userField.name %>" rows="4" data-field-tools="id-list"><%= row.userField.value %></textarea>
