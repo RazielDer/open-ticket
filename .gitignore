@@ -11,6 +11,7 @@ plugins/*
 !plugins/example-plugin/
 !plugins/**/
 !plugins/**/*
+plugins/*/node_modules/
 plugins/*/config.json
 database/openticket.sqlite
 dist/
