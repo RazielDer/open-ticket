@@ -4,6 +4,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 
+import { checkAiAssistStaffAuthorization } from "../authorization.js"
 import { OTAiAssistService, resolveKnowledgeSourcePath } from "../service/ai-assist-runtime.js"
 import {
   REFERENCE_PROVIDER_MISSING_CONFIG_REASON,
@@ -65,6 +66,66 @@ function channel() {
     }
   }
 }
+
+function permissionManager(level: number, type: string) {
+  return {
+    async getPermissions() {
+      return {
+        type,
+        scope: "default",
+        level,
+        source: null
+      }
+    },
+    hasPermissions(minimum: string, data: { level: number }) {
+      const required = minimum === "support" ? 1 : 0
+      return data.level >= required
+    },
+    async checkCommandPerms() {
+      throw new Error("AI assist authorization must not use command permission modes.")
+    }
+  }
+}
+
+test("AI assist staff authorization requires support or higher and ignores ticket close command modes", async () => {
+  const member = await checkAiAssistStaffAuthorization({
+    permissions: permissionManager(0, "member") as never,
+    user: { id: "member-1" },
+    channel: { id: "ticket-1" },
+    guild: { id: "guild-1" }
+  })
+  const support = await checkAiAssistStaffAuthorization({
+    permissions: permissionManager(1, "support") as never,
+    user: { id: "support-1" },
+    channel: { id: "ticket-1" },
+    guild: { id: "guild-1" }
+  })
+  const admin = await checkAiAssistStaffAuthorization({
+    permissions: permissionManager(3, "admin") as never,
+    user: { id: "admin-1" },
+    channel: { id: "ticket-1" },
+    guild: { id: "guild-1" }
+  })
+
+  assert.equal(member.hasPerms, false)
+  assert.equal(support.hasPerms, true)
+  assert.equal(admin.hasPerms, true)
+})
+
+test("AI assist slash command source keeps denial private and audit metadata-only", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "plugins", "ot-ai-assist", "index.ts"), "utf8")
+
+  assert.doesNotMatch(source, /system\.permissions\.close/)
+  assert.doesNotMatch(source, /checkCommandPerms\(/)
+  assert.match(source, /checkAiAssistStaffAuthorization/)
+  assert.match(source, /ephemeral:\s*true/)
+  assert.match(source, /eventType:\s*"ai-assist-request"/)
+  const detailsMatch = source.match(/const details = \{([\s\S]*?)\n  \}/)
+  assert.ok(detailsMatch)
+  const detailsBlock = detailsMatch[1]
+  assert.match(detailsBlock, /action:[\s\S]*profileId:[\s\S]*providerId:[\s\S]*confidence:/)
+  assert.doesNotMatch(detailsBlock, /\b(prompt|answer|summary|draft)\s*:/)
+})
 
 test("reference provider registers but fails closed without host env", async () => {
   const provider = createReferenceAiAssistProvider({})

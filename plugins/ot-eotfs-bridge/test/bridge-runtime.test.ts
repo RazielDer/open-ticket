@@ -5,7 +5,10 @@ import {
     BridgeCompletedFormSnapshot,
     BridgeFormContractData,
     BridgeHandoffState,
+    assertBridgeEndpointAllowed,
+    bridgeRequestTargetFromUrl,
     buildCaseCreatedPayload,
+    createBridgeV2CanonicalString,
     createSignedBridgeHeaders,
     extractTranscriptUrl,
     isEligibleOptionId,
@@ -183,8 +186,51 @@ test("case_created payload shaping and HMAC signing stay deterministic", () => {
     assert.equal(payload.transcript_url, "https://example.com/transcripts/ot-123456789012345678.html")
 
     const rawBody = JSON.stringify(payload)
-    const headers = createSignedBridgeHeaders("shared-secret", "2026-03-29T00:00:00.000Z", "evt-1", rawBody)
-    assert.equal(headers["X-Bridge-Signature"], "sha256=a5f3b2ae1d421781c605b85474760b59770b9e6355b66e56c02d5ad0267ea7e1")
+    const headers = createSignedBridgeHeaders("shared-secret", "2026-03-29T00:00:00.000Z", "evt-1", rawBody, "POST", "/ticket-bridge/intake/whitelist/eotfs")
+    assert.equal(headers["X-Bridge-Signature-Version"], "v2")
+    assert.match(headers["X-Bridge-Signature"], /^sha256=[a-f0-9]{64}$/)
+})
+
+test("bridge v2 canonical signing fixture is deterministic", () => {
+    const rawBody = JSON.stringify({ hello: "world" })
+    const canonical = createBridgeV2CanonicalString({
+        method: "post",
+        requestTarget: "/ticket-bridge/intake/whitelist/eotfs/eligibility?trace=1",
+        timestamp: "2026-03-29T00:00:00.000Z",
+        eventId: "evt-1",
+        rawBody
+    })
+    const headers = createSignedBridgeHeaders(
+        "shared-secret",
+        "2026-03-29T00:00:00.000Z",
+        "evt-1",
+        rawBody,
+        "post",
+        "/ticket-bridge/intake/whitelist/eotfs/eligibility?trace=1"
+    )
+
+    assert.equal(canonical, [
+        "v2",
+        "POST",
+        "/ticket-bridge/intake/whitelist/eotfs/eligibility?trace=1",
+        "2026-03-29T00:00:00.000Z",
+        "evt-1",
+        "93a23971a914e5eacbf0a8d25154cda309c3c1c72fbb9914d47c60f3cb681588"
+    ].join("\n"))
+    assert.equal(headers["X-Bridge-Signature-Version"], "v2")
+    assert.equal(headers["X-Bridge-Signature"], "sha256=dd45d2b736aeac92f5858d1bef2d8d7b3f09ce8bd2f0fb4d03ce57d800eae906")
+})
+
+test("bridge endpoint scheme policy rejects public http and allows loopback http or https", () => {
+    assert.doesNotThrow(() => assertBridgeEndpointAllowed("https://bridge.example/ticket-bridge"))
+    assert.doesNotThrow(() => assertBridgeEndpointAllowed("http://127.0.0.1:8000"))
+    assert.doesNotThrow(() => assertBridgeEndpointAllowed("http://localhost:8000"))
+    assert.doesNotThrow(() => assertBridgeEndpointAllowed("http://[::1]:8000"))
+    assert.throws(() => assertBridgeEndpointAllowed("http://bridge.example"), /HTTPS/)
+    assert.equal(
+        bridgeRequestTargetFromUrl("https://bridge.example/ticket-bridge/intake/whitelist/eotfs?action=accept"),
+        "/ticket-bridge/intake/whitelist/eotfs?action=accept"
+    )
 })
 
 test("completed form applicant snapshot stays authoritative when the live ticket owner changed", () => {

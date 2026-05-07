@@ -33,6 +33,8 @@ import {
     BridgeOpenTicketSnapshot,
     BridgeOptionLimitSnapshot,
     BridgeStatusResponse,
+    assertBridgeEndpointAllowed,
+    bridgeRequestTargetFromUrl,
     createBridgeStateKey,
     createSignedBridgeHeaders,
     extractTranscriptUrl,
@@ -360,6 +362,7 @@ function registerTicketPlatformProvider() {
             }
             const config = bridgeConfigFromSettings(settings, referencedByOptionIds)
             if (!config.endpointBaseUrl) throw new Error("Whitelist bridge integration profile requires endpointBaseUrl.")
+            assertBridgeEndpointAllowed(config.endpointBaseUrl)
             if (!config.sharedSecret) throw new Error("Whitelist bridge integration profile requires sharedSecret.")
             if (!config.formId) throw new Error("Whitelist bridge integration profile requires formId.")
             if (!config.targetGroupKey) throw new Error("Whitelist bridge integration profile requires targetGroupKey.")
@@ -1369,6 +1372,7 @@ async function submitApplicantReview(ticketChannelId: string, applicantDiscordUs
 }
 
 function buildOperationEndpoint(config: BridgeConfigData, operation?: string): string {
+    assertBridgeEndpointAllowed(config.endpointBaseUrl)
     const basePath = `${normalizeEndpointBaseUrl(config.endpointBaseUrl)}/ticket-bridge/intake/whitelist/${encodeURIComponent(config.integrationId)}`
     return operation ? `${basePath}/${operation}` : basePath
 }
@@ -1382,7 +1386,14 @@ async function postBridgeJson(
     const rawBody = JSON.stringify(payload)
     const eventId = crypto.randomUUID()
     const timestamp = new Date().toISOString()
-    const headers = createSignedBridgeHeaders(config.sharedSecret, timestamp, eventId, rawBody)
+    const headers = createSignedBridgeHeaders(
+        config.sharedSecret,
+        timestamp,
+        eventId,
+        rawBody,
+        "POST",
+        bridgeRequestTargetFromUrl(endpoint)
+    )
     const response = await fetch(endpoint, {
         method: "POST",
         headers,

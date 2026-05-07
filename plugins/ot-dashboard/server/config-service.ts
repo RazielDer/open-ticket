@@ -4,6 +4,7 @@ import path from "path"
 import type { ManagedConfigDefinition, ManagedConfigId } from "./config-registry"
 import { getManagedConfig, MANAGED_CONFIGS } from "./config-registry"
 import {
+  getDashboardExposureBlockers,
   normalizeDashboardPublicBaseUrl,
   type DashboardConfig
 } from "./dashboard-config"
@@ -1875,6 +1876,37 @@ export function createConfigService(
       reviewer: nextSnapshot.rbac.userIds.reviewer,
       editor: nextSnapshot.rbac.userIds.editor,
       admin: nextSnapshot.rbac.userIds.admin
+    }
+
+    const exposureCandidate: DashboardConfig = {
+      ...liveConfig,
+      publicBaseUrl: nextSnapshot.publicBaseUrl,
+      viewerPublicBaseUrl: nextSnapshot.viewerPublicBaseUrl,
+      trustProxyHops: nextSnapshot.trustProxyHops,
+      auth: {
+        ...liveConfig.auth,
+        breakglass: {
+          ...(liveConfig.auth.breakglass || {}),
+          enabled: nextSnapshot.auth.breakglass.enabled
+        }
+      },
+      rbac: {
+        ownerUserIds: nextSnapshot.rbac.ownerUserIds,
+        roleIds: {
+          reviewer: nextSnapshot.rbac.roleIds.reviewer,
+          editor: nextSnapshot.rbac.roleIds.editor,
+          admin: nextSnapshot.rbac.roleIds.admin
+        },
+        userIds: {
+          reviewer: nextSnapshot.rbac.userIds.reviewer,
+          editor: nextSnapshot.rbac.userIds.editor,
+          admin: nextSnapshot.rbac.userIds.admin
+        }
+      }
+    }
+    const exposureBlockers = getDashboardExposureBlockers(exposureCandidate)
+    if (exposureBlockers.length > 0) {
+      throw new Error(`Dashboard public exposure blocked: ${exposureBlockers.join(" ")}`)
     }
 
     ensureDirectory(dashboardSecurityBackupDir)

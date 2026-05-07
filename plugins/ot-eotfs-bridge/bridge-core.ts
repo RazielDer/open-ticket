@@ -20,6 +20,7 @@ export const BRIDGE_ACTION_HARD_DENY = "hard_deny" as const
 export const BRIDGE_ACTION_RETRY_APPLY = "retry_apply" as const
 export const BRIDGE_ACTION_REFRESH_STATUS = "refresh_status" as const
 export const BRIDGE_ACTION_REFRESH_REVIEW_PACKET = "refresh_review_packet" as const
+export const BRIDGE_SIGNATURE_VERSION_V2 = "v2" as const
 
 export const BRIDGE_BLOCK_STATE_NONE = "none" as const
 export const BRIDGE_BLOCK_STATE_RETRY_COOLDOWN = "retry_cooldown" as const
@@ -314,6 +315,34 @@ export function normalizeEndpointBaseUrl(endpointBaseUrl: string): string {
     return endpointBaseUrl.trim().replace(/\/+$/, "")
 }
 
+function parseBridgeEndpointUrl(endpointUrl: string): URL {
+    try {
+        return new URL(endpointUrl)
+    } catch {
+        throw new Error("Whitelist bridge endpoint must be an absolute URL.")
+    }
+}
+
+export function isLoopbackBridgeEndpointHost(hostname: string): boolean {
+    const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+    return normalized == "localhost"
+        || normalized == "127.0.0.1"
+        || normalized == "::1"
+        || normalized == "[::1]"
+}
+
+export function assertBridgeEndpointAllowed(endpointUrl: string): void {
+    const parsed = parseBridgeEndpointUrl(endpointUrl)
+    if (parsed.protocol == "https:") return
+    if (parsed.protocol == "http:" && isLoopbackBridgeEndpointHost(parsed.hostname)) return
+    throw new Error("Whitelist bridge endpoint must use HTTPS unless it targets loopback HTTP.")
+}
+
+export function bridgeRequestTargetFromUrl(endpointUrl: string): string {
+    const parsed = parseBridgeEndpointUrl(endpointUrl)
+    return `${parsed.pathname}${parsed.search}`
+}
+
 export function hasBridgeAuthorizedRole(
     actorRoleIds: readonly string[],
     authorizedRoleIds: readonly string[]
@@ -509,14 +538,50 @@ export function extractTranscriptUrl(record: { publicUrl: string | null } | null
     return normalized.length > 0 ? normalized : null
 }
 
-export function createSignedBridgeHeaders(sharedSecret: string, timestamp: string, eventId: string, rawBody: string) {
+export function createBridgeV2CanonicalString(input: {
+    method: string
+    requestTarget: string
+    timestamp: string
+    eventId: string
+    rawBody: string
+}): string {
+    const bodyHash = crypto
+        .createHash("sha256")
+        .update(Buffer.from(input.rawBody, "utf8"))
+        .digest("hex")
+    return [
+        BRIDGE_SIGNATURE_VERSION_V2,
+        input.method.toUpperCase(),
+        input.requestTarget,
+        input.timestamp,
+        input.eventId,
+        bodyHash
+    ].join("\n")
+}
+
+export function createSignedBridgeHeaders(
+    sharedSecret: string,
+    timestamp: string,
+    eventId: string,
+    rawBody: string,
+    method: string = "POST",
+    requestTarget: string = "/"
+) {
+    const canonicalString = createBridgeV2CanonicalString({
+        method,
+        requestTarget,
+        timestamp,
+        eventId,
+        rawBody
+    })
     const signature = crypto
         .createHmac("sha256", sharedSecret)
-        .update(`${timestamp}\n${rawBody}`)
+        .update(canonicalString)
         .digest("hex")
 
     return {
         "Content-Type": "application/json",
+        "X-Bridge-Signature-Version": BRIDGE_SIGNATURE_VERSION_V2,
         "X-Bridge-Timestamp": timestamp,
         "X-Bridge-Event-Id": eventId,
         "X-Bridge-Signature": `sha256=${signature}`

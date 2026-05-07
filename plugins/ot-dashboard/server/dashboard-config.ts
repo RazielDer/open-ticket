@@ -167,6 +167,16 @@ export function isLoopbackHost(input?: string): boolean {
   return /^127(?:\.\d{1,3}){3}$/.test(normalized)
 }
 
+function hasPublicDashboardUrl(input?: string): boolean {
+  const parsed = parseDashboardPublicBaseUrl(input)
+  return Boolean(parsed && !isLoopbackHost(parsed.hostname))
+}
+
+function isWeakDashboardSessionSecret(input?: string): boolean {
+  const sessionSecret = String(input || "").trim()
+  return !sessionSecret || sessionSecret === DEFAULT_DASHBOARD_SESSION_SECRET || sessionSecret.length < 32
+}
+
 function parseBooleanInput(value: unknown, fallback = false) {
   if (value === true || value === "true" || value === "1" || value === "on") return true
   if (value === false || value === "false" || value === "0" || value === "off") return false
@@ -294,6 +304,64 @@ export function getDashboardSecurityWarnings(config: DashboardConfig): string[] 
   }
 
   return warnings
+}
+
+export function getDashboardExposureBlockers(config: DashboardConfig): string[] {
+  const blockers: string[] = []
+  const normalizedPublicBaseUrl = normalizeDashboardPublicBaseUrl(config.publicBaseUrl)
+  const normalizedViewerPublicBaseUrl = normalizeDashboardPublicBaseUrl(config.viewerPublicBaseUrl)
+  const publicBaseUrl = parseDashboardPublicBaseUrl(normalizedPublicBaseUrl)
+  const viewerPublicBaseUrl = parseDashboardPublicBaseUrl(normalizedViewerPublicBaseUrl)
+  const publicExposure = !isLoopbackHost(config.host)
+    || hasPublicDashboardUrl(normalizedPublicBaseUrl)
+    || hasPublicDashboardUrl(normalizedViewerPublicBaseUrl)
+
+  if (!isLoopbackHost(config.host)) {
+    blockers.push("Dashboard public exposure is blocked because host is not loopback-only.")
+  }
+
+  if (normalizedPublicBaseUrl && !publicBaseUrl) {
+    blockers.push("Dashboard publicBaseUrl must be an absolute http or https URL before exposure.")
+  } else if (publicBaseUrl && publicBaseUrl.protocol !== "https:" && !isLoopbackHost(publicBaseUrl.hostname)) {
+    blockers.push("Dashboard publicBaseUrl must use HTTPS unless it targets loopback.")
+  }
+
+  if (normalizedViewerPublicBaseUrl && !viewerPublicBaseUrl) {
+    blockers.push("Dashboard viewerPublicBaseUrl must be an absolute http or https URL before exposure.")
+  } else if (viewerPublicBaseUrl && viewerPublicBaseUrl.protocol !== "https:" && !isLoopbackHost(viewerPublicBaseUrl.hostname)) {
+    blockers.push("Dashboard viewerPublicBaseUrl must use HTTPS unless it targets loopback.")
+  }
+
+  if (!publicExposure) {
+    return blockers
+  }
+
+  if (isWeakDashboardSessionSecret(config.auth.sessionSecret)) {
+    blockers.push("Dashboard auth.sessionSecret must be a non-default value with at least 32 characters before public exposure.")
+  }
+
+  if (!String(config.auth.sqlitePath || "").trim()) {
+    blockers.push("Dashboard auth.sqlitePath is required before public exposure.")
+  }
+
+  const maxAgeHours = Number(config.auth.maxAgeHours || 0)
+  if (!Number.isFinite(maxAgeHours) || maxAgeHours <= 0) {
+    blockers.push("Dashboard auth.maxAgeHours must be positive before public exposure.")
+  }
+
+  const discord = resolveDashboardDiscordAuthConfig(config)
+  if (!discord.clientId) {
+    blockers.push("Dashboard Discord OAuth client id is required before public exposure.")
+  }
+  if (!discord.clientSecret) {
+    blockers.push("Dashboard Discord OAuth client secret is required before public exposure.")
+  }
+
+  if (config.auth.breakglass?.enabled === true && !String(config.auth.breakglass.passwordHash || "").trim()) {
+    blockers.push("Dashboard breakglass auth requires a password hash before public exposure.")
+  }
+
+  return blockers
 }
 
 function readPluginConfig(pluginRoot: string): Partial<DashboardConfig> {

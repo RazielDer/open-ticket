@@ -561,7 +561,7 @@ async function startServer(options: {
     auth: {
       passwordHash: "",
       password: "",
-      sessionSecret: "test-secret",
+      sessionSecret: "test-session-secret-with-safe-length",
       sqlitePath: "runtime/ot-dashboard/auth.sqlite",
       discord: { clientId: "discord-client-id", clientSecret: "discord-client-secret" },
       breakglass: { enabled: false, passwordHash: "" },

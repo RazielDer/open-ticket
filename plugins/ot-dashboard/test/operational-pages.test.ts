@@ -649,7 +649,7 @@ async function startTestServer(projectRoot: string, basePath = "/dash") {
     auth: {
       passwordHash: "",
       password: "",
-      sessionSecret: "test-secret",
+      sessionSecret: "test-session-secret-with-safe-length",
       sqlitePath: "runtime/ot-dashboard/auth.sqlite",
       discord: {
         clientId: "discord-client-id",

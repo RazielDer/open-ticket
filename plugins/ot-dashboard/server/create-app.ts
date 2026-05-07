@@ -27,7 +27,7 @@ import {
 } from "./auth"
 import { createConfigService, type DashboardConfigService } from "./config-service"
 import { csrfProtection } from "./csrf"
-import { joinBasePath, loadDashboardConfig, resolveDashboardTrustProxy, type DashboardConfig } from "./dashboard-config"
+import { getDashboardExposureBlockers, joinBasePath, loadDashboardConfig, resolveDashboardTrustProxy, type DashboardConfig } from "./dashboard-config"
 import { canonicalHostMiddleware, classifyDashboardRouteFamily, selectDashboardSessionScope } from "./host-routing"
 import { loadI18n, type DashboardI18n } from "./i18n"
 import { createPluginManagementService, type DashboardPluginManagementService } from "./plugin-management-service"
@@ -82,6 +82,10 @@ export function createDashboardApp(options: CreateDashboardAppOptions = {}) {
   const publicDir = path.join(pluginRoot, "public")
   const viewsDir = path.join(publicDir, "views")
   const config = options.configOverride || loadDashboardConfig(pluginRoot)
+  const exposureBlockers = getDashboardExposureBlockers(config)
+  if (exposureBlockers.length > 0) {
+    throw new Error(`Dashboard public exposure blocked: ${exposureBlockers.join(" ")}`)
+  }
   const brand = buildBrand(pluginRoot, config.brand, config.dashboardName)
   const i18n = loadI18n(pluginRoot, config.locale)
   const configService = createConfigService(projectRoot, pluginRoot)

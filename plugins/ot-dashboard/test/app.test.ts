@@ -9,7 +9,7 @@ import { AddressInfo, Socket } from "net"
 import { createConfigService } from "../server/config-service"
 import { createDashboardApp } from "../server/create-app"
 import type { DashboardActionProviderBridge } from "../server/action-provider-bridge"
-import { getDashboardSecurityWarnings, type DashboardConfig } from "../server/dashboard-config"
+import type { DashboardConfig } from "../server/dashboard-config"
 import { defaultDashboardRuntimeBridge, type DashboardRuntimeBridge } from "../server/runtime-bridge"
 
 const pluginRoot = path.resolve(process.cwd(), "plugins", "ot-dashboard")
@@ -1031,7 +1031,7 @@ async function startTestServer(
     auth: {
       passwordHash: "",
       password: "",
-      sessionSecret: "test-secret",
+      sessionSecret: "test-session-secret-with-safe-length",
       sqlitePath: "runtime/ot-dashboard/auth.sqlite",
       discord: {
         clientId: "discord-client-id",
@@ -1039,7 +1039,7 @@ async function startTestServer(
       },
       breakglass: {
         enabled: false,
-        passwordHash: ""
+        passwordHash: "test-breakglass-password-hash"
       },
       maxAgeHours: 1,
       loginRateLimit: { windowMinutes: 15, maxAttempts: 3 }
@@ -2566,7 +2566,7 @@ test("security workspace fails closed when pre-apply auth audit evidence cannot 
   assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), beforeConfig)
 })
 
-test("security workspace keeps URL validation warning-oriented and draft-compatible", async (t) => {
+test("security workspace blocks unsafe public URL saves before apply", async (t) => {
   const runtime = await startTestServer("/dash", { useTempPluginRoot: true })
   t.after(async () => {
     await stopTestServer(runtime)
@@ -2581,6 +2581,7 @@ test("security workspace keeps URL validation warning-oriented and draft-compati
   const configPath = path.join(runtime.projectRoot, "plugins", "ot-dashboard", "config.json")
 
   assert.match(securityHtml, /<form[^>]+class="entry-stack security-workspace"[^>]+novalidate/)
+  const beforeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
 
   const saveResponse = await fetch(`${runtime.baseUrl}/dash/admin/security`, {
     method: "POST",
@@ -2590,22 +2591,17 @@ test("security workspace keeps URL validation warning-oriented and draft-compati
       "content-type": "application/x-www-form-urlencoded"
     },
     body: buildSecuritySaveBody(csrfToken, {
-      publicBaseUrl: "not a url",
-      viewerPublicBaseUrl: "ftp://records.example"
+      publicBaseUrl: "http://dashboard.example",
+      viewerPublicBaseUrl: "http://records.example"
     }).toString()
   })
   await saveResponse.arrayBuffer()
 
   assert.equal(saveResponse.status, 302)
-  assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /Saved security settings/)
+  assert.match(decodeURIComponent(String(saveResponse.headers.get("location") || "")), /Dashboard public exposure blocked/)
 
   const savedConfig = JSON.parse(fs.readFileSync(configPath, "utf8"))
-  assert.equal(savedConfig.publicBaseUrl, "not a url")
-  assert.equal(savedConfig.viewerPublicBaseUrl, "ftp://records.example")
-
-  const warnings = getDashboardSecurityWarnings(savedConfig)
-  assert.ok(warnings.includes("Dashboard publicBaseUrl is invalid. Use an absolute http or https URL."))
-  assert.ok(warnings.includes("Dashboard viewerPublicBaseUrl is invalid. Use an absolute http or https URL."))
+  assert.deepEqual(savedConfig, beforeConfig)
 })
 
 test("config review flow applies changes, exports json, and records runtime-owned backups", async (t) => {

@@ -1,6 +1,7 @@
 import { api, opendiscord, utilities } from "#opendiscord"
 import * as discord from "discord.js"
 
+import { checkAiAssistStaffAuthorization } from "./authorization"
 import { OTAiAssistService } from "./service/ai-assist-runtime"
 import {
   REFERENCE_PROVIDER_ID,
@@ -227,8 +228,12 @@ opendiscord.events.get("onCommandResponderLoad").listen((commands) => {
         return cancel()
       }
 
-      const closePermission = generalConfig.data.system.permissions.close
-      const permission = await opendiscord.permissions.checkCommandPerms(closePermission, "support", user, member, channel, guild)
+      const permission = await checkAiAssistStaffAuthorization({
+        permissions: opendiscord.permissions,
+        user,
+        channel,
+        guild
+      })
       if (!permission.hasPerms) {
         await recordAiAssistAudit({ ticketId: ticket.id.value, actorUser: user, action, outcome: "denied", reason: "Open Ticket denied this AI assist request." })
         await instance.reply(await quickMessage("Open Ticket denied this AI assist request."))

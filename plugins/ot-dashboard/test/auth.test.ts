@@ -13,7 +13,7 @@ import {
 } from "../server/auth"
 import { DashboardAuthStore } from "../server/auth-store"
 import type { DashboardConfig } from "../server/dashboard-config"
-import { getDashboardSecurityWarnings, loadDashboardConfig, resolveDashboardTrustProxy } from "../server/dashboard-config"
+import { getDashboardExposureBlockers, getDashboardSecurityWarnings, loadDashboardConfig, resolveDashboardTrustProxy } from "../server/dashboard-config"
 import { getDashboardRuntimeApi, installDashboardRuntimeApi } from "../server/dashboard-runtime-api"
 
 const baseConfig: DashboardConfig = {
@@ -191,6 +191,47 @@ test("dashboard security warnings flag public binds, missing breakglass hash, an
   assert.equal(warnings.some((warning) => warning.includes("breakglass auth is enabled")), true)
   assert.equal(warnings.some((warning) => warning.includes("sessionSecret")), true)
   assert.equal(warnings.some((warning) => warning.includes("publicBaseUrl uses http")), true)
+})
+
+test("dashboard exposure blockers fail unsafe public configurations but allow loopback development", async () => {
+  const breakglassPasswordHash = await hashPassword("secret")
+  assert.deepEqual(getDashboardExposureBlockers(baseConfig), [])
+
+  const unsafe = getDashboardExposureBlockers({
+    ...baseConfig,
+    host: "0.0.0.0",
+    publicBaseUrl: "http://dashboard.example",
+    auth: {
+      ...baseConfig.auth,
+      sessionSecret: "change-this-session-secret",
+      discord: { clientId: "", clientSecret: "" },
+      breakglass: { enabled: true, passwordHash: "" }
+    }
+  })
+  assert.equal(unsafe.some((blocker) => blocker.includes("host is not loopback-only")), true)
+  assert.equal(unsafe.some((blocker) => blocker.includes("publicBaseUrl must use HTTPS")), true)
+  assert.equal(unsafe.some((blocker) => blocker.includes("sessionSecret")), true)
+  assert.equal(unsafe.some((blocker) => blocker.includes("OAuth client id")), true)
+  assert.equal(unsafe.some((blocker) => blocker.includes("OAuth client secret")), true)
+  assert.equal(unsafe.some((blocker) => blocker.includes("breakglass auth requires")), true)
+
+  assert.deepEqual(getDashboardExposureBlockers({
+    ...baseConfig,
+    publicBaseUrl: "https://dashboard.example",
+    viewerPublicBaseUrl: "https://records.example",
+    auth: {
+      ...baseConfig.auth,
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      discord: {
+        clientId: "discord-client-id",
+        clientSecret: "discord-client-secret"
+      },
+      breakglass: {
+        enabled: true,
+        passwordHash: breakglassPasswordHash
+      }
+    }
+  }), [])
 })
 
 test("dashboard security warnings stay quiet for loopback binds, Discord auth, and https public URLs", async () => {
