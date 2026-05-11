@@ -106,6 +106,7 @@ Released whitelist stack order:
 ## Companion Docs
 
 - [OT EoTFS Bridge](../ot-eotfs-bridge/README.md)
+- [OT Local Runtime Config](../ot-local-runtime-config/README.md)
 - [Discord Staff Operator Guide](../../../../EoTFS Discord Bot/docs/staff-operators/README.md)
 - [Discord Host / Admin Guide](../../../../EoTFS Discord Bot/docs/host-admin/README.md)
 

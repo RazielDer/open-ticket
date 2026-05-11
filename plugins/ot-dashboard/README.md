@@ -19,6 +19,8 @@ In the EoTFS stack, `ot-dashboard` is the operator-facing browser surface that p
 
 - [`../ot-html-transcripts/README.md`](../ot-html-transcripts/README.md) for transcript storage, slug lifecycle, and transcript service APIs
 - [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) when whitelist tickets stage through pre-close transcript-backed `case_created`, with later `transcript_attached` reserved for fallback repair
+- [`../ot-quality-review/README.md`](../ot-quality-review/README.md) for the quality-review queue, raw-feedback custody, and dashboard action surface
+- [`../ot-telemetry/README.md`](../ot-telemetry/README.md) for analytics-safe lifecycle and feedback records consumed by quality-review workflows
 - [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side bring-up and bridge worker contract
 
 ## Admin Host Vs Viewer Host
@@ -84,13 +86,13 @@ Bootstrap guidance:
 
 ## What To Fill Out
 
-The live loader merges values in this order:
+The live loader resolves values in this order for env-backed fields:
 
 1. `OT_DASHBOARD_*` environment variables
 2. `plugins/ot-dashboard/config.json`
 3. defaults from `server/dashboard-config.ts`
 
-File-backed fields such as `dashboardName` and `brand.*` currently come from `config.json`. Most network, auth, and RBAC fields support environment overrides.
+File-backed fields such as `dashboardName` and `brand.*` currently come from `config.json`. Most network, auth, viewer-auth, and RBAC fields support environment overrides. Viewer OAuth values are resolved separately, while admin OAuth may fall back to viewer OAuth only when admin-specific values are absent.
 
 ### Required Before Exposure
 

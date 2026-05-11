@@ -1,5 +1,9 @@
 # Active Slice
 
+> Historical record: this active-slice pointer belongs to a completed nested
+> `ot-dashboard` controller-era program. New EoTFS work starts from the wrapper
+> `AGENTS.md` plus the current `tasks/<slug>.md`.
+
 - Active slice: `none`
 - Last completed slice: `73-final-global-admin-roles-json-repair-verification`
 - Phase: `P65`
@@ -28,19 +32,20 @@ Phase `P65` is complete. The General workspace now enforces strict role-ID JSON 
 
 ## Kernel state
 
-- `workflow.yaml`, `workflow-ledger.yaml`, `runtime/controller-state.yaml`, and this file now mark `P65` complete.
-- No prepared next slice remains in the controller kernel.
+- The nested historical workflow files mark `P65` complete.
+- No prepared next slice remains in this historical program.
 
 ## Resume note
 
 Resume from:
 
-1. `workflow.yaml`
+1. `workflow.md`
 2. `active/active-slice.md`
-3. `workflow.md`
-4. `evidence/72-global-admin-roles-json-repair-and-legacy-recovery.md`
-5. `evidence/73-final-global-admin-roles-json-repair-verification.md`
-6. `runtime/controller-state.yaml`
+3. `evidence/72-global-admin-roles-json-repair-and-legacy-recovery.md`
+4. `evidence/73-final-global-admin-roles-json-repair-verification.md`
+
+For new work, start from the wrapper `AGENTS.md` and the active AGENTS-first
+task file instead.
 
 Prepared next slice:
 

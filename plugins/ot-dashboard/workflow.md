@@ -1,5 +1,9 @@
 # `ot-dashboard` Admin Surface Workflow
 
+> Historical record: this controller-era dashboard workflow is completed
+> evidence for the nested `ot-dashboard` implementation program. New EoTFS work
+> starts from the wrapper `AGENTS.md` plus the current `tasks/<slug>.md`.
+
 ## Goal
 
 Keep OT Dashboard on the restrained flat-black UI system already established, then keep refining shared chrome, auth surfaces, and operator pages so they do not drift into vendor branding, redundant copy, oversized mobile stacks, oversized desktop chrome, or non-login-like proportions.

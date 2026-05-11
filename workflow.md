@@ -1,12 +1,16 @@
 # OT Whitelist Application UX and Reliability Redesign
 
+> Historical record: this controller-era workflow is completed evidence for the
+> nested Open Ticket whitelist UX redesign. New EoTFS work starts from the
+> wrapper `AGENTS.md` plus the current `tasks/<slug>.md`, not from this file.
+
 ## Summary
 
 This kernel locks the implementation plan for the EoTFS whitelist application flow inside `open-ticket`. The work is intentionally scoped to `plugins/ot-ticket-forms/**`, the narrow compatibility surface in `plugins/ot-eotfs-bridge/**`, and the controller-kernel files at repo root.
 
-This kernel is now a historical record for that completed task. Its plugin-scoped write boundaries applied only to that whitelist UX redesign and do not constrain later consolidated whole-project work, which should follow the workspace-root whole-stack kernel instead.
+This kernel is now a historical record for that completed task. Its plugin-scoped write boundaries applied only to that whitelist UX redesign and do not constrain later consolidated whole-project work, which should follow the wrapper AGENTS-first task-file workflow instead.
 
-The overall consolidated project is still active and incomplete under the workspace-root parity kernel. Only this historical sub-kernel is complete.
+Only this historical sub-kernel is complete.
 
 The product target is:
 
@@ -83,8 +87,6 @@ node --test dist/plugins/ot-ticket-forms/test/draft-session.test.js dist/plugins
 
 ## Resume order
 
-1. `workflow.yaml`
-2. `active/active-slice.md`
-3. `workflow.md`
-4. `evidence/whitelist-application-ux-reliability-planning.md`
-5. `runtime/controller-state.yaml`
+1. For new work, start from the wrapper `AGENTS.md` and the active AGENTS-first task file.
+2. Return to this historical record only when whitelist UX redesign evidence or prior verification details are needed.
+3. Use `evidence/whitelist-application-ux-reliability-planning.md` for the original planning basis.

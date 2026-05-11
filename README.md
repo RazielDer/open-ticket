@@ -4,7 +4,7 @@
 <sub align="center">Related Projects:</sub><br>
 <a href="https://odplugins.dj-dj.be"><img src="https://apis.dj-dj.be/cdn/opendiscord/logo.png" alt="Open Discord" height="55px"></a><br><br>
 <a href="https://discord.com/invite/26vT9wt3n3"><img alt="Discord Invite Link" src="https://img.shields.io/badge/discord-support%20server-5865F2.svg?style=flat-square&logo=discord"></img></a>
-<a href="https://github.com/open-discord-bots/open-ticket/releases/tag/v4.1.3"><img alt="Open Ticket Version" src="https://img.shields.io/badge/version-4.1.3-brightgreen.svg?style=flat-square"></img></a>
+<a href="https://github.com/open-discord-bots/open-ticket/releases/tag/v4.1.4"><img alt="Open Ticket Version" src="https://img.shields.io/badge/version-4.1.4-brightgreen.svg?style=flat-square"></img></a>
 <a href="https://otdocs.dj-dj.be"><img alt="Open Ticket Documentation" src="https://img.shields.io/badge/discord.js-v14-CB3837.svg?style=flat-square&logo=npm"></img></a>
 <a href="https://github.com/open-discord-bots/open-ticket/blob/main/LICENSE"><img alt="Open Ticket License" src="https://img.shields.io/badge/license-GPL%203.0-important.svg?style=flat-square"></img></a>
 <a href="https://otdocs.dj-dj.be"><img alt="Open Ticket Stars" src="https://img.shields.io/github/stars/djj123dj/open-ticket?color=yellow&label=stars&logo=github&style=flat-square"></img></a>
@@ -35,6 +35,7 @@ This workspace uses `C:\Users\Administrator\Desktop\PoT\Bot\EoTFS Ticket Bot\ope
 
 For the EoTFS-local documentation set, start with:
 
+- [Wrapper Documentation Map](../docs/documentation-map.md)
 - [Discord Bot README](../../EoTFS Discord Bot/README.md)
 - [Player Guide](../../EoTFS Discord Bot/docs/player/README.md)
 - [Staff Operator Guide](../../EoTFS Discord Bot/docs/staff-operators/README.md)
@@ -44,6 +45,11 @@ For the EoTFS-local documentation set, start with:
 - [OT EoTFS Bridge](plugins/ot-eotfs-bridge/README.md)
 - [OT Dashboard](plugins/ot-dashboard/README.md)
 - [OT HTML Transcripts](plugins/ot-html-transcripts/README.md)
+- [OT Local Runtime Config](plugins/ot-local-runtime-config/README.md)
+- [OT Quality Review](plugins/ot-quality-review/README.md)
+- [OT Telemetry](plugins/ot-telemetry/README.md)
+
+The wrapper root `AGENTS.md` and any active wrapper task file are the current workflow authority for EoTFS work. The controller-era workflow and slice files inside this nested checkout are historical local implementation records unless a current task explicitly reopens them.
 
 ### 📌 Features
 - **⏳ Quick Setup** - Using the interactive Quick Setup CLI, you can **configure Open Ticket in less than 5min!**

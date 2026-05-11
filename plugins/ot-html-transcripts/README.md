@@ -19,6 +19,7 @@ In the EoTFS stack, this plugin pairs with:
 
 - [`../ot-dashboard/README.md`](../ot-dashboard/README.md) for Discord-gated browser viewing in `private-discord` mode
 - [`../ot-eotfs-bridge/README.md`](../ot-eotfs-bridge/README.md) for pre-close whitelist transcript compilation, transcript URL lookup, and fallback-only `transcript_attached` repair delivery into the staged whitelist workflow
+- [`../ot-quality-review/README.md`](../ot-quality-review/README.md) when transcript and feedback review workflows need a separate dashboard custody trail
 - [`../../../../EoTFS Discord Bot/docs/host-admin/README.md`](../../../../EoTFS Discord Bot/docs/host-admin/README.md) for the Discord-side intake worker and host coordination contract
 
 ## What Changes When `ot-dashboard` Is Installed

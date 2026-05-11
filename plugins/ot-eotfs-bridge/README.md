@@ -5,6 +5,7 @@ Local plugin only. Do not treat this as an upstream Open Ticket plugin.
 - keep it only in `open-ticket/plugins/ot-eotfs-bridge/`
 - do not push it to the upstream base repo
 - it depends on `ot-ticket-forms`, `ot-html-transcripts`, and the Discord-side whitelist intake HTTP worker
+- local runtime defaults and env-backed normalization are applied by [`../ot-local-runtime-config/README.md`](../ot-local-runtime-config/README.md)
 
 ## What It Does
 
@@ -26,6 +27,8 @@ The bridge is intentionally narrow:
 - OT never creates a second moderation plane outside the Discord-side whitelist workflow
 
 Working-tree-only review-packet refresh behavior, stricter pre-handoff validation details, and control-card placement or repair notes live in [`../../CURRENT_BRANCH.md`](../../CURRENT_BRANCH.md), not in this released README.
+
+Current EoTFS workflow authority lives in the wrapper `AGENTS.md` and active task files. This README describes the released plugin contract; old nested workflow files are historical implementation records.
 
 ## Exact Config Fields
 

@@ -1,5 +1,9 @@
 # Active Slice
 
+> Historical record: this active-slice pointer belongs to a completed nested
+> transcript/dashboard controller-era program. New EoTFS work starts from the
+> wrapper `AGENTS.md` plus the current `tasks/<slug>.md`.
+
 - Active slice: `none`
 - Last completed slice: `28-final-auth-access-polish-and-verification`
 - Phase: `P14`
@@ -25,20 +29,21 @@ Phase `P14` is complete. The shipped admin login, viewer login, `My Transcripts`
 
 ## Kernel state
 
-- `workflow.yaml`, `workflow-ledger.yaml`, `runtime/controller-state.yaml`, and this file now mark `P14` complete.
-- No prepared next slice remains in the controller kernel.
+- The nested historical workflow files mark `P14` complete.
+- No prepared next slice remains in this historical program.
 - A later whole-stack follow-on aligned to `SLICE-008A` is now reserved after `P14` for document-`2.0` richer-result transcript support with legacy `1.0` read compatibility.
-- This completed plugin kernel is historical evidence only; the overall consolidated project remains active and incomplete under the workspace-root parity kernel, and future whole-project work should follow that root kernel instead of inheriting this kernel's old plugin-only write limits.
+- This completed plugin kernel is historical evidence only. Future whole-project work should follow the wrapper AGENTS-first task-file workflow instead of inheriting this kernel's old plugin-only write limits.
 
 ## Resume note
 
 Resume from:
 
-1. `workflow.yaml`
+1. `workflow.md`
 2. `active/active-slice.md`
-3. `workflow.md`
-4. `evidence/phase-14-stricter-access-and-portal-basis.md`
-5. `runtime/controller-state.yaml`
+3. `evidence/phase-14-stricter-access-and-portal-basis.md`
+
+For new work, start from the wrapper `AGENTS.md` and the active AGENTS-first
+task file instead.
 
 Prepared next slice:
 

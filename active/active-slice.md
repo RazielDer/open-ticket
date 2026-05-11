@@ -1,5 +1,9 @@
 # Active Slice
 
+> Historical record: this active-slice pointer belongs to a completed nested
+> Open Ticket controller-era task. New EoTFS work starts from the wrapper
+> `AGENTS.md` plus the current `tasks/<slug>.md`.
+
 - Active slice: `none`
 - Phase: `closed`
 - Status: `task complete`
@@ -25,6 +29,8 @@ node --test dist/plugins/ot-ticket-forms/test/draft-session.test.js dist/plugins
 
 ## Closeout Note
 
-The controller-kernel is closed. Resume should start from `workflow.yaml` only if a new task or follow-up change is opened.
+The historical nested controller-kernel is closed. Resume this record only for
+historical research. New task or follow-up work should start from wrapper
+`AGENTS.md` and the relevant AGENTS-first task file.
 
-This closeout remains historical evidence for the completed whitelist UX redesign. The overall consolidated project remains active and incomplete under the workspace-root parity kernel, and future whole-project work should follow that root kernel instead of inheriting this kernel's old plugin-scoped write limits.
+This closeout remains historical evidence for the completed whitelist UX redesign. Future whole-project work should follow the wrapper AGENTS-first task-file workflow instead of inheriting this kernel's old plugin-scoped write limits.

@@ -2,7 +2,7 @@
 
 This file captures working-tree-only behavior in the canonical Open Ticket repo at `C:\Users\Administrator\Desktop\PoT\Bot\EoTFS Ticket Bot\open-ticket`.
 
-Do not treat these notes as released EoTFS behavior until they are promoted into the stable READMEs and the Discord-side workflow kernel.
+Do not treat these notes as released EoTFS behavior until they are promoted into the stable READMEs and any active AGENTS-first task file or cross-repo operating doc that owns the change.
 
 For released behavior, use:
 
@@ -13,6 +13,10 @@ For released behavior, use:
 - [`plugins/ot-html-transcripts/README.md`](plugins/ot-html-transcripts/README.md)
 
 ## Working-Tree Deltas
+
+The stable plugin READMEs now own the released whitelist applicant flow,
+bridge validation, and `Submit for Review` contract. Keep this file limited to
+implementation details that are still absent from those READMEs.
 
 ### `ot-ticket-forms`: persistent ticket drafts and true edit mode
 
@@ -27,21 +31,6 @@ For released behavior, use:
 - The OT bridge exposes a local service boundary so forms can ask whether the applicant is still allowed to edit the application while the staged Discord review remains open.
 - Start-form message placement and repair now keep the applicant entry button present in eligible tickets even after drift or restart.
 
-### `ot-eotfs-bridge`: stricter handoff validation
-
-- Handoff now validates the configured `formContract` rather than a single “ready for review” answer.
-- `Send to Staff Review` now requires:
-  - at least one Alderon ID in the configured machine-readable position
-  - a rules-password match against `EOTFS_OT_WHITELIST_RULES_PASSWORDS`
-  - every configured acknowledgement position answered `Yes`
-- Invalid applications stay in OT with exact correction reasons instead of posting a malformed `case_created` payload.
-
-### Review-packet refresh behavior
-
-- A new `Refresh Review Packet` control exists in the working tree.
-- The bridge can repost a signed `case_created` payload from the latest completed form snapshot only while the Discord-side case status remains `pending_review`, `retry_denied`, or `limit_locked`.
-- If the Discord-side case is no longer reviewable, the refresh attempt is blocked instead of silently mutating a closed or terminal case.
-
 ### Control-card placement and repair
 
 - The bridge now tracks both the staff control card and the applicant start-form surface.
@@ -54,4 +43,4 @@ When any item here becomes release-baselined:
 
 1. move it into the matching stable plugin README or root README
 2. remove or shrink the matching note here in the same pass
-3. keep the Discord-side workflow kernel and stable cross-repo docs aligned to the promoted behavior
+3. keep the wrapper task file, stable cross-repo docs, and Discord-side operator docs aligned to the promoted behavior

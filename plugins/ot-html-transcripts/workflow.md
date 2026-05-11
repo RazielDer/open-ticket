@@ -1,19 +1,24 @@
 # `ot-html-transcripts` Enhancement Workflow v2
 
+> Historical record: this controller-era transcript workflow is completed
+> evidence for the nested transcript/dashboard implementation program. New
+> EoTFS work starts from the wrapper `AGENTS.md` plus the current
+> `tasks/<slug>.md`.
+
 ## Goal
 
 Extend and stabilize the shipped local transcript and dashboard plugins in controlled phases without touching Open Ticket core outside `plugins/ot-html-transcripts/**` and `plugins/ot-dashboard/**`.
 
-This kernel is now a historical record for that completed plugin roadmap. Its plugin-only write boundaries applied only to that transcript program and do not constrain later consolidated whole-project work, which should follow the workspace-root whole-stack kernel instead.
+This kernel is now a historical record for that completed plugin roadmap. Its plugin-only write boundaries applied only to that transcript program and do not constrain later consolidated whole-project work, which should follow the wrapper AGENTS-first task-file workflow instead.
 
-The overall consolidated project is still active and incomplete under the workspace-root parity kernel. Only this historical plugin roadmap is complete.
+Only this historical plugin roadmap is complete.
 
 ## Current status
 
 - Status: `completed`
 - Last completed slice: `28-final-auth-access-polish-and-verification`
 - Prepared next slice: `none`
-- New implementation should resume from the workspace-root whole-stack kernel; return to this document only for transcript-specific historical evidence or a deliberate later reopen.
+- New implementation should start from the wrapper AGENTS-first task-file workflow; return to this document only for transcript-specific historical evidence or a deliberate later reopen.
 
 ## Current baseline
 
@@ -80,11 +85,11 @@ That wave stayed entirely inside the two plugin folders and explicitly did not a
 
 ## Historical execution cadence
 
-1. Keep `workflow.yaml` and this document as the master roadmap.
-2. Keep one active slice implementation-ready at a time.
-3. Promote the prepared next slice only after the active slice is implemented, verified, and the kernel is updated.
-4. The user has explicitly approved sequential execution across slices `23` through `28`, but the implementer must still update kernel state between slices.
-5. Implement only the active slice until its locked verification passes.
+1. This historical program used nested controller-kernel files as its roadmap.
+2. It kept one active slice implementation-ready at a time.
+3. It promoted the prepared next slice only after the active slice was implemented, verified, and the kernel was updated.
+4. The user approved sequential execution across slices `23` through `28`, with kernel updates between slices.
+5. New work should not inherit this cadence unless a current AGENTS-first task file explicitly reopens it.
 
 ## Roadmap
 
@@ -144,14 +149,13 @@ That wave stayed entirely inside the two plugin folders and explicitly did not a
 - Prepared next slice: `none`
 - Prepared following slice: `none`
 - Final locked verification for the completed roadmap is recorded in `evidence/phase-14-stricter-access-and-portal-basis.md`.
-- The later whole-stack follow-on aligned to `SLICE-008A` now belongs under the workspace-root kernel rather than as a live prepared slice in this plugin kernel.
+- The later whole-stack follow-on aligned to `SLICE-008A` is not a live prepared slice in this historical plugin kernel. Reopen it only through the wrapper AGENTS-first task-file workflow.
 
 ## Resume guidance
 
-1. Resume new implementation from the workspace-root `workflow.yaml`.
-2. Use the workspace-root `active/active-slice.md` to determine the live whole-stack slice.
-3. Return to this plugin kernel only when transcript-specific historical evidence or prior verification details are needed.
-4. Use `evidence/phase-14-stricter-access-and-portal-basis.md` as the final proof of the completed plugin roadmap.
+1. Start new implementation from the wrapper `AGENTS.md` and the active AGENTS-first task file.
+2. Return to this plugin kernel only when transcript-specific historical evidence or prior verification details are needed.
+3. Use `evidence/phase-14-stricter-access-and-portal-basis.md` as the final proof of the completed plugin roadmap.
 
 ## Program verification posture
 
